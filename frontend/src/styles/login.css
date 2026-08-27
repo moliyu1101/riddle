@@ -1,0 +1,216 @@
+/* ============================================================
+   知蠹 Riddle — 作战终端 / 样式模块
+   模块：login.css — 登录页
+   霓虹终端风格，与全站设计令牌一致。
+   ============================================================ */
+
+.login-page {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  overflow-y: auto;
+  background:
+    radial-gradient(circle at 18% 12%, var(--accent-bg), transparent 26rem),
+    radial-gradient(circle at 85% 88%, var(--info-bg), transparent 24rem),
+    linear-gradient(180deg, var(--nav), var(--bg) 26rem);
+}
+/* 网格底纹 */
+.login-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(color-mix(in oklch, var(--accent) 5%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in oklch, var(--accent) 5%, transparent) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: radial-gradient(ellipse at center, oklch(0% 0 0 / .9), transparent 72%);
+  pointer-events: none;
+}
+/* 顶部霓虹扫描线 */
+.login-scanline {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), var(--accent2, var(--accent)), transparent);
+  background-size: 200% 100%;
+  animation: login-scan 4s linear infinite;
+  pointer-events: none;
+}
+@keyframes login-scan {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.login-card {
+  position: relative;
+  width: 100%;
+  max-width: 400px;
+  padding: 30px 30px 22px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background:
+    linear-gradient(180deg, color-mix(in oklch, var(--surface) 98%, var(--accent) 2%), color-mix(in oklch, var(--surface) 94%, var(--bg)));
+  box-shadow: var(--shadow-lg), 0 0 40px color-mix(in oklch, var(--accent) 8%, transparent);
+  animation: login-in .5s var(--ease-out) both;
+}
+.login-card::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 22px; right: 22px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 55%, transparent), transparent);
+}
+@keyframes login-in {
+  from { opacity: 0; transform: translateY(14px) scale(.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* 品牌区 */
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 22px;
+}
+.login-logo {
+  width: 56px; height: 56px;
+  display: grid; place-items: center;
+  border-radius: 14px;
+  background: transparent;
+  animation: login-logo-glow 3s var(--ease) infinite;
+}
+.login-logo img {
+  display: block;
+  width: 52px; height: 52px;
+  object-fit: contain;
+  border-radius: 12px;
+}
+@keyframes login-logo-glow {
+  0%, 100% { box-shadow: 0 0 14px color-mix(in oklch, var(--accent) 18%, transparent); }
+  50%      { box-shadow: 0 0 26px color-mix(in oklch, var(--accent) 34%, transparent); }
+}
+.login-brand-text { display: flex; flex-direction: column; line-height: 1.25; }
+.login-brand-text b {
+  font-size: 19px; letter-spacing: -.02em; color: var(--ink);
+}
+.login-brand-text small {
+  font-size: 10px; color: var(--muted);
+  font-family: "IBM Plex Mono", monospace; letter-spacing: .14em;
+}
+
+.login-title { margin-bottom: 20px; }
+.login-title h2 {
+  font-size: 20px; margin-bottom: 6px; color: var(--ink);
+}
+.login-title p {
+  font-size: 12.5px; color: var(--muted); line-height: 1.5;
+}
+
+/* 表单 */
+.login-form { display: flex; flex-direction: column; gap: 14px; }
+.login-field { display: flex; flex-direction: column; gap: 7px; }
+.login-field-label {
+  font-size: 11.5px; font-weight: 600; color: var(--ink-2);
+  letter-spacing: .04em;
+}
+.login-input-wrap {
+  position: relative;
+  display: flex; align-items: center;
+}
+.login-input {
+  width: 100%;
+  padding: 11px 42px 11px 13px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease), background-color var(--dur) var(--ease);
+}
+.login-input:focus {
+  outline: none;
+  border-color: var(--focus-border);
+  box-shadow: var(--focus-ring), 0 0 18px color-mix(in oklch, var(--accent) 16%, transparent);
+  background: var(--surface);
+}
+.login-eye {
+  position: absolute;
+  right: 6px;
+  width: 32px; height: 32px;
+  display: grid; place-items: center;
+  border: none; background: transparent;
+  color: var(--faint); cursor: pointer;
+  border-radius: 8px;
+  transition: color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease);
+}
+.login-eye:hover { color: var(--ink); background: var(--surface-2); }
+
+.login-error {
+  font-size: 12.5px;
+  color: var(--danger);
+  padding: 8px 11px;
+  border-radius: var(--radius-sm);
+  background: var(--danger-bg);
+  border: 1px solid color-mix(in oklch, var(--danger) 30%, var(--border));
+  animation: fade-in .2s var(--ease-out);
+}
+
+.login-submit {
+  width: 100%;
+  min-height: 44px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  font-size: 14px; font-weight: 700; letter-spacing: .18em;
+}
+.login-submit:disabled { opacity: .55; cursor: not-allowed; }
+.login-spinner {
+  width: 15px; height: 15px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in oklch, currentColor 30%, transparent);
+  border-top-color: currentColor;
+  animation: spin .7s linear infinite;
+}
+
+.login-hint {
+  font-size: 11.5px; color: var(--faint);
+  text-align: center; line-height: 1.6;
+}
+
+/* 未启用令牌 */
+.login-noauth {
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  padding: 8px 0 4px;
+}
+.login-noauth-ico {
+  width: 46px; height: 46px;
+  display: grid; place-items: center;
+  font-size: 19px;
+  color: var(--ok);
+  border-radius: 14px;
+  background: var(--ok-bg);
+  border: 1px solid color-mix(in oklch, var(--ok) 35%, var(--border));
+  box-shadow: 0 0 18px color-mix(in oklch, var(--ok) 18%, transparent);
+  animation: float-y 3.2s var(--ease) infinite;
+}
+.login-noauth p {
+  font-size: 12.5px; color: var(--muted);
+  text-align: center; line-height: 1.7;
+}
+
+/* 底部署名 */
+.login-foot {
+  margin-top: 22px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-soft);
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  font-size: 11px; color: var(--faint);
+}
+.login-foot b { color: var(--ink-2); font-weight: 600; }
+.login-foot .dot { opacity: .6; }
+
+@media (max-width: 640px) {
+  .login-page { padding: 16px; }
+  .login-card { padding: 24px 20px 18px; }
+}

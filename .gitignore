@@ -1,0 +1,44 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.log
+findings/
+work/
+*.sqlite
+*.db
+!app/data_static/edu_ip.db
+.DS_Store
+web/dist/
+frontend/node_modules/
+node_modules/
+
+# SQLite 运行时 sidecar（测试打开 edu_ip.db 等会生成，勿提交）
+*.db-wal
+*.db-shm
+*.db-journal
+
+# 本机调试临时脚本（含绝对路径/本机 data 路径，勿上传）
+/_tmp_*.py
+/_inspect_*.py
+/_dump_*.py
+/_check_*.py
+/_restore_*.py
+/_test_save_*.py
+/_tmp_*.db
+/scripts/_seed_review.py
+/preview-layout.html
+
+# 本机 cookies / 会话数据（含真实站点会话，禁止上传）
+*.cookies.txt
+.src_hunter_cookies.txt
+
+# 本机工作区（含真实站点响应/HTML/凭据等运行时数据，禁止上传）
+/src_hunter_work/
+/work/
+/findings/
+
+# TRAE 本机技能目录（内部提示词与流水线，不入公开仓库）
+/.trae/

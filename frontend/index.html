@@ -1,0 +1,22 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <meta name="theme-color" content="#3b9eff" />
+  <title>知蠹 Riddle · 自动化 SRC 漏洞挖掘</title>
+  <script>
+    try {
+      var u = JSON.parse(localStorage.getItem("ah-ui") || "{}");
+      var t = u.theme || localStorage.getItem("ah-theme") || "dark";
+      document.documentElement.setAttribute("data-theme", t);
+      if (u.accentHue != null) document.documentElement.style.setProperty("--accent-h", String(u.accentHue));
+    } catch (e) {}
+  </script>
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
