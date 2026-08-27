@@ -54,6 +54,27 @@ def _is_git_deploy() -> bool:
     return (REPO_ROOT / ".git").exists()
 
 
+_remote_branch_cache: dict[str, str] = {}
+
+
+def _remote_default_branch() -> str:
+    """解析远程默认分支名（main/master/…），带缓存；解析失败回退 master。"""
+    cached = _remote_branch_cache.get("branch")
+    if cached:
+        return cached
+    branch = "master"
+    rc, out, _ = _git("ls-remote", "--symref", "origin", "HEAD", timeout=30)
+    if rc == 0:
+        for line in out.splitlines():
+            if line.startswith("ref:"):
+                ref = line.split("\t")[0].rsplit("/", 1)[-1]
+                if ref:
+                    branch = ref
+                break
+    _remote_branch_cache["branch"] = branch
+    return branch
+
+
 def _changed_files(base: str, head: str) -> list[str]:
     _, diff_out, _ = _git("diff", "--name-only", base, head)
     return [f for f in diff_out.split("\n") if f.strip()]
@@ -66,7 +87,7 @@ def _needs_rebuild(changed: list[str]) -> bool:
 # 同步 def：见模块 docstring（阻塞子进程放线程池，别阻塞事件循环）。
 @router.get("/check")
 def check_update():
-    """检测是否有新版本。对比当前 HEAD vs origin/main。"""
+    """检测是否有新版本。对比当前 HEAD vs 远程默认分支。"""
     releases_url = "https://github.com/moliyu1101/Riddle"
     if not _is_git_deploy():
         # Docker 镜像默认不带 .git（.dockerignore 排除），不能一键热更；
@@ -79,7 +100,8 @@ def check_update():
             "manual_only": True,
         }
 
-    rc, _, err = _git("fetch", "origin", "main", timeout=60)
+    branch = _remote_default_branch()
+    rc, _, err = _git("fetch", "origin", branch, timeout=60)
     if rc != 0:
         return {
             "update_available": False,
@@ -89,7 +111,7 @@ def check_update():
         }
 
     _, current, _ = _git("rev-parse", "HEAD")
-    _, latest, _ = _git("rev-parse", "origin/main")
+    _, latest, _ = _git("rev-parse", f"origin/{branch}")
     if not current or not latest:
         return {
             "update_available": False,
@@ -101,12 +123,12 @@ def check_update():
     if current == latest:
         return {"update_available": False, "current_commit": current[:8]}
 
-    changed = _changed_files("HEAD", "origin/main")
+    changed = _changed_files("HEAD", f"origin/{branch}")
     needs_rebuild = _needs_rebuild(changed)
-    _, msg, _ = _git("log", "-1", "--format=%s", "origin/main")
-    # 落后提交数 = 仅 origin/main 有、本地 HEAD 没有的提交（HEAD..origin/main）。
-    # 旧写法 `rev-list --count HEAD origin/main` 数的是并集，会高估落后数。
-    _, behind, _ = _git("rev-list", "--count", "HEAD..origin/main")
+    _, msg, _ = _git("log", "-1", "--format=%s", f"origin/{branch}")
+    # 落后提交数 = 仅 origin/{branch} 有、本地 HEAD 没有的提交（HEAD..origin/{branch}）。
+    # 旧写法 `rev-list --count HEAD origin/{branch}` 数的是并集，会高估落后数。
+    _, behind, _ = _git("rev-list", "--count", f"HEAD..origin/{branch}")
 
     return {
         "update_available": True,
@@ -133,16 +155,17 @@ def run_update():
 
     restart_scheduled = False
     try:
-        rc, _, err = _git("fetch", "origin", "main", timeout=60)
+        branch = _remote_default_branch()
+        rc, _, err = _git("fetch", "origin", branch, timeout=60)
         if rc != 0:
             return {"ok": False, "error": f"git fetch 失败: {err}"}
 
         _, current, _ = _git("rev-parse", "HEAD")
-        _, latest, _ = _git("rev-parse", "origin/main")
+        _, latest, _ = _git("rev-parse", f"origin/{branch}")
         if current == latest:
             return {"ok": False, "error": "已是最新版本"}
 
-        changed = _changed_files("HEAD", "origin/main")
+        changed = _changed_files("HEAD", f"origin/{branch}")
         if _needs_rebuild(changed):
             return {
                 "ok": False,
@@ -162,7 +185,7 @@ def run_update():
             }
 
         # --ff-only：只做快进合并，绝不产生合并提交或冲突；本地已分叉则干净失败。
-        rc, _, err = _git("pull", "--ff-only", "origin", "main", timeout=120)
+        rc, _, err = _git("pull", "--ff-only", "origin", branch, timeout=120)
         if rc != 0:
             logger.warning("auto-update git pull 失败: %s", err)
             return {"ok": False, "error": f"git pull 失败（可能本地已分叉）: {err}"}
