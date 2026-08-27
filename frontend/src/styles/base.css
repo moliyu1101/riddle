@@ -1,0 +1,633 @@
+/* ============================================================
+   知蠹 Riddle — 赛博霓虹 / 样式模块
+   模块：base.css — 设计令牌 / 重置 / 滚动条 / 字阶 / 表单控件
+   配色：主霓虹(--accent-h) + 副霓虹(--accent2-h) + 背景色调(--bg-h)
+         + 霓虹强度(--glow)，全部可在设置里自定义
+   ============================================================ */
+
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap");
+
+/* ============================================================
+   设计令牌 v3 — 赛博霓虹
+   - 深紫黑基底 + 霓虹品红主色 + 霓虹青副色
+   - 玻璃拟态表面（半透明 + 霓虹描边）
+   - 霓虹辉光阴影（强度随 --glow 缩放）
+   - 5 级表面 + 3 级边框 + 间距/圆角/阴影尺度
+   ============================================================ */
+
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* 背景色调（可自定义：深紫/深蓝/深青/近黑） */
+  --bg-h: 295;
+
+  /* 中性层 — 5 级表面，深紫黑基底 */
+  --bg:          oklch(13% 0.035 var(--bg-h));
+  --surface:     oklch(17% 0.04 var(--bg-h));
+  --surface-2:   oklch(21% 0.045 var(--bg-h));
+  --surface-3:   oklch(25% 0.05 var(--bg-h));
+  --surface-4:   oklch(29% 0.05 var(--bg-h));
+
+  /* 边框 — 3 级：柔 / 标准 / 强调（紫调） */
+  --border-soft:  oklch(23% 0.04 var(--bg-h));
+  --border:       oklch(30% 0.05 var(--bg-h));
+  --border-strong:oklch(38% 0.06 var(--bg-h));
+
+  /* 侧边栏专属 */
+  --sidebar-bg:     oklch(15% 0.04 var(--bg-h));
+  --sidebar-border: oklch(24% 0.04 var(--bg-h));
+
+  /* 文字阶（淡紫白） */
+  --ink:    oklch(96% 0.012 300);
+  --ink-2:  oklch(85% 0.02 300);
+  --muted:  oklch(72% 0.03 300);
+  --faint:  oklch(58% 0.03 300);
+
+  /* 霓虹强度（0.2 ~ 2，默认 1） */
+  --glow: 1;
+
+  /* 主霓虹色（默认品红） */
+  --accent-h: 330;
+  --accent:     oklch(72% 0.22 var(--accent-h));
+  --accent-ink: oklch(78% 0.20 var(--accent-h));
+  --accent-bg:  oklch(72% 0.22 var(--accent-h) / 0.16);
+  --accent-bg-2:oklch(72% 0.22 var(--accent-h) / 0.30);
+  --on-accent:  oklch(20% 0.02 300);
+
+  /* 副霓虹色（默认青） */
+  --accent2-h: 195;
+  --accent2:     oklch(78% 0.16 var(--accent2-h));
+  --accent2-ink: oklch(82% 0.14 var(--accent2-h));
+  --accent2-bg:  oklch(78% 0.16 var(--accent2-h) / 0.14);
+  --accent2-bg-2:oklch(78% 0.16 var(--accent2-h) / 0.26);
+  --on-accent2:  oklch(18% 0.02 300);
+
+  /* 语义状态色（霓虹化） */
+  --ok:     oklch(78% 0.16 155);
+  --warn:   oklch(82% 0.15 85);
+  --danger: oklch(72% 0.20 15);
+  --info:   oklch(76% 0.15 var(--accent2-h));
+
+  --ok-bg:     oklch(78% 0.16 155 / 0.16);
+  --warn-bg:   oklch(82% 0.15 85 / 0.16);
+  --danger-bg: oklch(72% 0.20 15 / 0.16);
+  --info-bg:   oklch(76% 0.15 var(--accent2-h) / 0.16);
+
+  /* 霓虹辉光 — 强度随 --glow 缩放 */
+  --glow-accent: 0 0 calc(6px * var(--glow)) var(--accent-bg-2),
+                 0 0 calc(18px * var(--glow)) var(--accent-bg);
+  --glow-accent2: 0 0 calc(6px * var(--glow)) var(--accent2-bg-2),
+                  0 0 calc(18px * var(--glow)) var(--accent2-bg);
+  --glow-ok: 0 0 calc(6px * var(--glow)) var(--ok-bg);
+  --glow-danger: 0 0 calc(6px * var(--glow)) var(--danger-bg);
+
+  /* 阴影 — 3 级 */
+  --shadow-sm: 0 1px 2px oklch(0% 0 0 / 0.4), 0 0 calc(8px * var(--glow)) var(--accent-bg);
+  --shadow:    0 2px 8px oklch(0% 0 0 / 0.35), 0 8px 24px oklch(0% 0 0 / 0.25), 0 0 calc(16px * var(--glow)) var(--accent-bg);
+  --shadow-lg: 0 12px 48px oklch(0% 0 0 / 0.5), 0 0 calc(24px * var(--glow)) var(--accent-bg);
+
+  /* 圆角 — 3 级 */
+  --radius-sm: 6px;
+  --radius:    10px;
+  --radius-lg: 14px;
+
+  /* 焦点环（霓虹） */
+  --focus-ring: 0 0 0 3px var(--accent-bg), var(--glow-accent);
+  --focus-border: color-mix(in oklch, var(--accent) 55%, var(--border));
+
+  /* 网格线（霓虹青） */
+  --grid-line: oklch(72% 0.14 var(--accent2-h) / 0.07);
+
+  /* 壁纸 */
+  --wallpaper-dim: 0.28;
+  --wallpaper-fit: cover;
+
+  /* z-index */
+  --z-sidebar: 20;
+  --z-sticky: 30;
+  --z-backdrop: 40;
+  --z-drawer: 50;
+  --z-toast: 60;
+  --z-modal: 70;
+
+  /* 侧栏宽度 */
+  --sidebar-width: 232px;
+  --sidebar-width-collapsed: 64px;
+
+  /* ===== 动效令牌 ===== */
+  --dur-fast: 120ms;
+  --dur: 180ms;
+  --dur-slow: 320ms;
+  --ease: cubic-bezier(.25, .1, .25, 1);
+  --ease-out: cubic-bezier(.16, 1, .3, 1);
+  --ease-spring: cubic-bezier(.34, 1.56, .64, 1);
+  --ease-snap: cubic-bezier(.7, 0, .9, .4);
+  --motion: 1;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  /* 亮色：蓝白 — 纯白底 + 淡蓝灰中性层（固定色相，不随 --bg-h 变化） */
+  --bg:          oklch(99.5% 0.004 230);
+  --surface:     oklch(100% 0 0);
+  --surface-2:   oklch(97.5% 0.006 230);
+  --surface-3:   oklch(95.5% 0.008 230);
+  --surface-4:   oklch(93% 0.01 230);
+
+  --border-soft:  oklch(95.5% 0.007 230);
+  --border:       oklch(90% 0.011 230);
+  --border-strong:oklch(82% 0.018 230);
+
+  --sidebar-bg:     oklch(98.5% 0.005 230);
+  --sidebar-border: oklch(93.5% 0.009 230);
+
+  --ink:    oklch(25% 0.028 245);
+  --ink-2:  oklch(37% 0.028 245);
+  --muted:  oklch(50% 0.028 245);
+  --faint:  oklch(62% 0.028 245);
+
+  --glow: 1;
+
+  /* 主色（蓝白配蓝，默认回退；实际色相由设置里的主霓虹色决定） */
+  --accent-h: 228;
+  --accent:     oklch(55% 0.19 var(--accent-h));
+  --accent-ink: oklch(48% 0.21 var(--accent-h));
+  --accent-bg:  oklch(55% 0.19 var(--accent-h) / 0.12);
+  --accent-bg-2:oklch(55% 0.19 var(--accent-h) / 0.20);
+  --on-accent:  oklch(99% 0 0);
+
+  --accent2-h: 195;
+  --accent2:     oklch(52% 0.14 var(--accent2-h));
+  --accent2-ink: oklch(46% 0.15 var(--accent2-h));
+  --accent2-bg:  oklch(52% 0.14 var(--accent2-h) / 0.12);
+  --accent2-bg-2:oklch(52% 0.14 var(--accent2-h) / 0.20);
+  --on-accent2:  oklch(99% 0 0);
+
+  --ok:     oklch(48% 0.14 155);
+  --warn:   oklch(55% 0.14 75);
+  --danger: oklch(52% 0.20 15);
+  --info:   oklch(48% 0.15 var(--accent2-h));
+
+  --ok-bg:     oklch(48% 0.14 155 / 0.10);
+  --warn-bg:   oklch(55% 0.14 75 / 0.10);
+  --danger-bg: oklch(52% 0.20 15 / 0.10);
+  --info-bg:   oklch(48% 0.15 var(--accent2-h) / 0.10);
+
+  --glow-accent: 0 0 calc(6px * var(--glow)) var(--accent-bg-2),
+                 0 0 calc(16px * var(--glow)) var(--accent-bg);
+  --glow-accent2: 0 0 calc(6px * var(--glow)) var(--accent2-bg-2),
+                  0 0 calc(16px * var(--glow)) var(--accent2-bg);
+  --glow-ok: 0 0 calc(6px * var(--glow)) var(--ok-bg);
+  --glow-danger: 0 0 calc(6px * var(--glow)) var(--danger-bg);
+
+  --shadow-sm: 0 1px 2px oklch(0% 0 0 / 0.05), 0 0 calc(6px * var(--glow)) var(--accent-bg);
+  --shadow:    0 2px 8px oklch(0% 0 0 / 0.07), 0 8px 24px oklch(0% 0 0 / 0.06), 0 0 calc(12px * var(--glow)) var(--accent-bg);
+  --shadow-lg: 0 12px 48px oklch(0% 0 0 / 0.14), 0 0 calc(18px * var(--glow)) var(--accent-bg);
+
+  --grid-line: oklch(48% 0.15 var(--accent2-h) / 0.07);
+}
+
+* { box-sizing: border-box; }
+html {
+  min-height: 100%;
+  background: var(--bg);
+  /* 界面缩放：整体 zoom（现代浏览器均支持），影响全站字号与间距 */
+  zoom: var(--ui-scale, 1);
+}
+body { min-height: 100svh; margin: 0; }
+
+/* 关闭动效：所有过渡/动画时长归零（录屏、低配机器、动效敏感场景） */
+html[data-motion="off"] *,
+html[data-motion="off"] *::before,
+html[data-motion="off"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+body {
+  color: var(--ink);
+  background-color: var(--bg);
+  font-family: "IBM Plex Sans", -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background-color .2s ease, color .2s ease;
+}
+
+/* 背景装饰：霓虹径向光晕 + 青调网格 + 品红辉光 */
+body::before {
+  content: "";
+  position: fixed; inset: 0;
+  pointer-events: none; z-index: 0;
+  background-image:
+    radial-gradient(ellipse 70% 45% at 50% -10%, var(--accent-bg), transparent 62%),
+    radial-gradient(ellipse 45% 35% at 90% 100%, var(--accent2-bg), transparent 60%),
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 40px 40px, 40px 40px;
+  mask-image: linear-gradient(180deg, oklch(0% 0 0 / 1), oklch(0% 0 0 / 0.45) 60%, oklch(0% 0 0 / 0.18));
+}
+
+.ah-wallpaper {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: var(--wallpaper-fit);
+  opacity: 0;
+  transition: opacity .25s ease;
+}
+.ah-wallpaper::after {
+  content: "";
+  position: absolute; inset: 0;
+  background: color-mix(in oklch, var(--bg) calc(var(--wallpaper-dim) * 100%), transparent);
+}
+html[data-wallpaper="on"] .ah-wallpaper { opacity: 1; }
+html[data-wallpaper="on"],
+html[data-wallpaper="on"] body {
+  background-color: transparent;
+  background-image: none;
+}
+html[data-wallpaper="on"] body::before { opacity: .06; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ah-wallpaper, * { transition: none !important; animation: none !important; }
+}
+
+::selection { background: var(--accent-bg); color: var(--ink); }
+
+/* 滚动条 */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 10px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+  transition: background-color .15s;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--faint); background-clip: content-box; }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* 字阶 */
+h1, h2, h3, h4 { margin: 0; font-weight: 600; letter-spacing: -.01em; }
+h1 { font-size: 1.5rem; line-height: 1.3; }
+h2 { font-size: 1.25rem; line-height: 1.35; }
+h3 { font-size: 1.05rem; line-height: 1.4; }
+h4 { font-size: 0.95rem; line-height: 1.4; }
+p { margin: 0; }
+small { font-size: 12px; }
+code, .mono {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 12.5px;
+}
+
+/* ---------- 按钮系统 ---------- */
+.btn, button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  border-radius: var(--radius-sm);
+  padding: 7px 14px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease-snap), box-shadow var(--dur) var(--ease);
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.btn:hover, button:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-3);
+  color: var(--ink);
+}
+.btn:active, button:active { transform: translateY(1px) scale(.99); }
+.btn:focus-visible, button:focus-visible {
+  outline: none;
+  border-color: var(--focus-border);
+  box-shadow: var(--focus-ring);
+}
+.btn:disabled, button:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* 按钮霓虹光效扫过（仅 .btn 体系，避免影响裸 button 的布局） */
+.btn { position: relative; overflow: hidden; }
+.btn::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 42%, oklch(100% 0 0 / .14) 50%, transparent 58%);
+  background-size: 260% 100%;
+  background-position: 220% 0;
+  transition: background-position .55s var(--ease-out);
+  pointer-events: none;
+}
+.btn:hover::after { background-position: -120% 0; }
+.btn.primary::after {
+  background: linear-gradient(105deg, transparent 42%, oklch(100% 0 0 / .22) 50%, transparent 58%);
+  background-size: 260% 100%;
+  background-position: 220% 0;
+}
+
+/* 主按钮（霓虹） */
+.btn.primary, button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+  box-shadow: var(--shadow-sm), inset 0 1px 0 oklch(100% 0 0 / 0.1), var(--glow-accent);
+}
+.btn.primary:hover, button.primary:hover {
+  background: var(--accent-ink);
+  border-color: var(--accent-ink);
+  box-shadow: var(--shadow), inset 0 1px 0 oklch(100% 0 0 / 0.12), var(--glow-accent);
+  transform: translateY(-1px);
+}
+
+/* 幽灵按钮 */
+.btn.ghost, button.ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+}
+.btn.ghost:hover, button.ghost:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+  border-color: var(--border-soft);
+}
+
+/* 危险按钮 */
+.btn.danger, button.danger {
+  color: var(--danger);
+  border-color: color-mix(in oklch, var(--danger) 35%, var(--border));
+}
+.btn.danger:hover, button.danger:hover {
+  background: var(--danger-bg);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+/* 图标按钮 */
+.icon-btn {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+}
+.icon-btn:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+  border-color: var(--border-soft);
+}
+.icon-btn.ghost {
+  background: transparent;
+  border-color: transparent;
+}
+
+/* ---------- 输入控件 ---------- */
+input, select, textarea {
+  width: 100%;
+  background: var(--surface-2);
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  transition: border-color .15s ease, box-shadow .15s ease, background-color .15s ease;
+}
+input::placeholder, textarea::placeholder { color: var(--faint); }
+input:hover, select:hover, textarea:hover {
+  border-color: var(--border-strong);
+}
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--focus-border);
+  box-shadow: var(--focus-ring);
+  background: var(--surface);
+  animation: focus-glow .9s var(--ease-out) infinite alternate;
+}
+@keyframes focus-glow {
+  from { box-shadow: var(--focus-ring); }
+  to   { box-shadow: 0 0 0 3px var(--accent-bg), 0 0 calc(22px * var(--glow)) var(--accent-bg-2); }
+}
+
+/* ---------- 链接 ---------- */
+a {
+  color: var(--accent-ink);
+  text-decoration: none;
+  transition: color .15s ease;
+}
+a:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+
+/* ---------- 徽章 / 标签 ---------- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.6;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--muted);
+  letter-spacing: .01em;
+}
+.badge.running, .badge.ok {
+  color: var(--ok);
+  border-color: color-mix(in oklch, var(--ok) 35%, transparent);
+  background: var(--ok-bg);
+}
+.badge.warn {
+  color: var(--warn);
+  border-color: color-mix(in oklch, var(--warn) 35%, transparent);
+  background: var(--warn-bg);
+}
+.badge.danger, .badge.failed, .badge.stopped {
+  color: var(--danger);
+  border-color: color-mix(in oklch, var(--danger) 35%, transparent);
+  background: var(--danger-bg);
+}
+.badge.info, .badge.idle {
+  color: var(--info);
+  border-color: color-mix(in oklch, var(--info) 35%, transparent);
+  background: var(--info-bg);
+}
+
+/* ---------- 模态通用 ---------- */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  background: oklch(0% 0 0 / 0.5);
+  backdrop-filter: blur(4px);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  animation: fade-in .18s ease-out;
+}
+.modal-card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 20px 22px 22px;
+  animation: modal-in .22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.modal-card h3 {
+  font-size: 15px;
+  margin-bottom: 4px;
+}
+.modal-hint {
+  color: var(--muted);
+  font-size: 12.5px;
+  margin: 4px 0 14px;
+  line-height: 1.5;
+}
+.modal-input {
+  width: 100%;
+  margin-bottom: 14px;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ---------- Toast ---------- */
+.toast {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 28px;
+  z-index: var(--z-toast);
+  padding: 10px 18px;
+  background: var(--surface-3);
+  color: var(--ink);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: var(--shadow-lg);
+  animation: toast-in .22s cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+
+/* ---------- 动画 ---------- */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes modal-in {
+  from { opacity: 0; transform: translateY(-8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes toast-in {
+  from { opacity: 0; transform: translate(-50%, 12px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: .6; transform: scale(1.25); }
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ============================================================
+   通用动效系统
+   - 进入动画：fade-up / fade-in-scale / rise
+   - 持续动画：glow-pulse / float / border-flow / shimmer
+   - 工具类：.anim-fade-up（支持 --i 延迟做 stagger）
+   ============================================================ */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fade-in-scale {
+  from { opacity: 0; transform: scale(.96); }
+  to   { opacity: 1; transform: scale(1); }
+}
+@keyframes rise {
+  from { opacity: 0; transform: translateY(18px) scale(.985); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 calc(6px * var(--glow)) var(--accent-bg-2), 0 0 calc(16px * var(--glow)) var(--accent-bg); }
+  50%      { box-shadow: 0 0 calc(12px * var(--glow)) var(--accent-bg-2), 0 0 calc(30px * var(--glow)) var(--accent-bg); }
+}
+@keyframes float-y {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-5px); }
+}
+@keyframes border-flow {
+  0%   { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+@keyframes shimmer-x {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* 列表项进入：配合 --i（0..n）做 stagger，元素挂载时播放一次。
+   填充用 backwards：延迟期保持 from 态，动画结束后元素回到自然态，
+   避免 fill-forwards 持续覆盖 hover 的 transform 抬升效果。 */
+.anim-fade-up {
+  animation: fade-up .42s var(--ease-out) backwards;
+  animation-delay: calc(var(--i, 0) * 45ms);
+}
+.anim-rise {
+  animation: rise .5s var(--ease-out) backwards;
+  animation-delay: calc(var(--i, 0) * 50ms);
+}
+.hover-lift {
+  transition: transform var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease), border-color var(--dur) var(--ease), background-color var(--dur) var(--ease);
+}
+.hover-lift:hover {
+  transform: translateY(-2px);
+}
+.float-slow { animation: float-y 5s var(--ease) infinite; }
+
+/* 数字滚动：配合 JS 在值变化时重放 */
+@keyframes count-pop {
+  0%   { opacity: 0; transform: translateY(8px) scale(.9); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.count-pop { animation: count-pop .45s var(--ease-spring); }
+
+/* ============================================================
+   路由切换过渡（App.vue router-view）
+   ============================================================ */
+.route-enter-active {
+  transition: opacity .24s var(--ease-out), transform .24s var(--ease-out);
+}
+.route-enter-from {
+  opacity: 0;
+  transform: translateY(14px) scale(.99);
+}
+.route-leave-active {
+  transition: opacity .16s var(--ease-snap), transform .16s var(--ease-snap);
+}
+.route-leave-to {
+  opacity: 0;
+  transform: translateY(-10px) scale(.995);
+}

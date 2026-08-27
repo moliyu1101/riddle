@@ -1,0 +1,481 @@
+"""查询语法识别 + 历史 FOFA 映射（仅作参考，运行时不再自动翻译）。
+
+产品约定：选了哪个引擎，就按该引擎官网语法原样请求。
+用户选 Hunter / Quake / ZoomEye 等时，禁止再把语句当 FOFA 改写。
+"""
+from __future__ import annotations
+
+import re
+from typing import Any
+
+
+# field 操作符 value；value 可为双引号 / 单引号 / 无空格裸值
+_TOKEN_RE = re.compile(
+    r'([a-zA-Z_][\w.]*)\s*(!=~|!=|=~|==|=)\s*'
+    r'("(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|[^\s&|()]+)'
+)
+
+
+def parse_fofa_query(query: str) -> tuple[list[dict[str, str]], list[str]]:
+    """解析 FOFA 风格条件，保留条件之间的 && / ||。
+
+    返回 (tokens, joins)：
+      tokens: [{field, op, value}, ...]
+      joins:  长度 len(tokens)-1，元素为 '&&' 或 '||'
+    """
+    q = (query or "").strip()
+    if not q:
+        return [], []
+
+    matches = list(_TOKEN_RE.finditer(q))
+    if not matches:
+        return [], []
+
+    tokens: list[dict[str, str]] = []
+    joins: list[str] = []
+    for i, m in enumerate(matches):
+        raw_val = m.group(3)
+        if (raw_val.startswith('"') and raw_val.endswith('"')) or (
+            raw_val.startswith("'") and raw_val.endswith("'")
+        ):
+            value = raw_val[1:-1].replace(r"\"", '"').replace(r"\'", "'").replace(r"\\", "\\")
+        else:
+            value = raw_val
+        tokens.append({
+            "field": m.group(1).lower().strip(),
+            "op": m.group(2),
+            "value": value,
+        })
+        if i > 0:
+            between = q[matches[i - 1].end(): m.start()]
+            joins.append("||" if "||" in between else "&&")
+    return tokens, joins
+
+
+def _join_parts(parts: list[str], joins: list[str], and_word: str, or_word: str) -> str:
+    if not parts:
+        return ""
+    out = [parts[0]]
+    for i, part in enumerate(parts[1:]):
+        op = joins[i] if i < len(joins) else "&&"
+        out.append(f" {or_word if op == '||' else and_word} ")
+        out.append(part)
+    return "".join(out)
+
+
+def _eq_ops(op: str) -> bool:
+    return op in ("=", "==", "=~")
+
+
+def _neq_ops(op: str) -> bool:
+    return op in ("!=", "!=~")
+
+
+# ── Quake ────────────────────────────────────────────────────
+# 官方 DSL：field:value / field:"value"，逻辑 AND / OR / NOT
+# domain 是独立字段（勿映射成 hostname）；protocol → service.name
+_FOFA_TO_QUAKE = {
+    "title": "title",
+    "body": "body",
+    "domain": "domain",
+    "host": "hostname",
+    "ip": "ip",
+    "port": "port",
+    "org": "org",
+    "protocol": "service.name",
+    "server": "server",
+    "country": "country",
+    "city": "city",
+    "header": "headers",
+    "app": "app",
+    "os": "os",
+    "cert": "cert",
+    "cert.subject": "cert",
+    "cert.subject.cn": "cert",
+    "cert.subject.org": "cert",
+    "icon_hash": "favicon",
+    "icp": "icp",
+    "base_protocol": "transport",
+}
+
+
+def _strip_domain_dot(v: str) -> str:
+    """FOFA domain=\".edu.cn\" 的前导点在部分引擎要去掉。"""
+    v = (v or "").strip()
+    while v.startswith("."):
+        v = v[1:]
+    return v
+
+
+def fofa_to_quake(query: str) -> str:
+    tokens, joins = parse_fofa_query(query)
+    if not tokens:
+        return query
+
+    parts: list[str] = []
+    kept_joins: list[str] = []
+    for i, t in enumerate(tokens):
+        f = _FOFA_TO_QUAKE.get(t["field"])
+        if f is None:
+            # 未知字段：尽量透传字段名（Quake 也可能认识）
+            f = t["field"]
+        if f == "":
+            continue
+        op, v = t["op"], t["value"]
+        if t["field"] in ("domain", "host"):
+            v = _strip_domain_dot(v)
+        if t["field"] == "port":
+            v = (v.lstrip("0") or "0")
+            piece = f"{f}:{v}"
+        elif t["field"] in ("ip",) and "/" not in v:
+            piece = f"{f}:\"{v}\"" if _eq_ops(op) else f"NOT {f}:\"{v}\""
+        elif _eq_ops(op):
+            piece = f'{f}:"{v}"'
+        elif _neq_ops(op):
+            piece = f'NOT {f}:"{v}"'
+        else:
+            continue
+        if parts:
+            kept_joins.append(joins[i - 1] if i - 1 < len(joins) else "&&")
+        parts.append(piece)
+    return _join_parts(parts, kept_joins, "AND", "OR") or query
+
+
+# ── Hunter (鹰图) ─────────────────────────────────────────────
+# 语法接近 FOFA：field="value"，&& / ||；常用 web.title / domain.suffix
+_FOFA_TO_HUNTER = {
+    "title": "web.title",
+    "body": "web.body",
+    "domain": "domain.suffix",
+    "host": "domain",
+    "ip": "ip",
+    "port": "port",
+    "org": "ip.company",
+    "protocol": "protocol",
+    "server": "header.server",
+    "country": "ip.country",
+    "city": "ip.city",
+    "app": "web.app",
+    "header": "header",
+    "os": "os",
+    "cert": "cert",
+    "cert.subject": "cert.subject",
+    "cert.subject.cn": "cert.subject",
+    "cert.subject.org": "cert.subject_org",
+    "icon_hash": "web.icon",
+    "icp": "icp.number",
+    "status_code": "web.status_code",
+}
+
+
+def fofa_to_hunter(query: str) -> str:
+    tokens, joins = parse_fofa_query(query)
+    if not tokens:
+        return query
+
+    parts: list[str] = []
+    kept_joins: list[str] = []
+    for i, t in enumerate(tokens):
+        f = _FOFA_TO_HUNTER.get(t["field"], t["field"])
+        op, v = t["op"], t["value"]
+        if t["field"] in ("domain", "host"):
+            v = _strip_domain_dot(v)
+        # Hunter: = 模糊，== 精确；FOFA =~ 接近模糊 =
+        if t["field"] == "port":
+            piece = f'{f}="{v}"' if _eq_ops(op) else f'{f}!="{v}"'
+        elif op == "==":
+            piece = f'{f}=="{v}"'
+        elif op in ("=", "=~"):
+            piece = f'{f}="{v}"'
+        elif op == "!==":
+            piece = f'{f}!=="{v}"'
+        elif _neq_ops(op):
+            piece = f'{f}!="{v}"'
+        else:
+            continue
+        if parts:
+            kept_joins.append(joins[i - 1] if i - 1 < len(joins) else "&&")
+        parts.append(piece)
+    return _join_parts(parts, kept_joins, "&&", "||") or query
+
+
+# ── ZoomEye（v2 语法已对齐 FOFA：field="value" &&/||）────────
+_FOFA_TO_ZOOMEYE = {
+    "title": "title",
+    "body": "body",
+    "domain": "domain",
+    "host": "hostname",
+    "ip": "ip",
+    "port": "port",
+    "org": "org",
+    "protocol": "service",
+    "server": "server",
+    "country": "country",
+    "city": "city",
+    "app": "app",
+    "header": "header",
+    "os": "os",
+    "cert": "ssl",
+    "icon_hash": "iconhash",
+}
+
+
+def fofa_to_zoomeye(query: str) -> str:
+    tokens, joins = parse_fofa_query(query)
+    if not tokens:
+        return query
+
+    parts: list[str] = []
+    kept_joins: list[str] = []
+    for i, t in enumerate(tokens):
+        f = _FOFA_TO_ZOOMEYE.get(t["field"], t["field"])
+        op, v = t["op"], t["value"]
+        if t["field"] in ("domain", "host"):
+            v = _strip_domain_dot(v)
+        if t["field"] == "port":
+            piece = f'{f}={v}' if _eq_ops(op) else f'{f}!={v}'
+        elif op == "==":
+            piece = f'{f}=="{v}"'
+        elif _eq_ops(op):
+            piece = f'{f}="{v}"'
+        elif _neq_ops(op):
+            piece = f'{f}!="{v}"'
+        else:
+            continue
+        if parts:
+            kept_joins.append(joins[i - 1] if i - 1 < len(joins) else "&&")
+        parts.append(piece)
+    return _join_parts(parts, kept_joins, "&&", "||") or query
+
+
+# ── Shodan ────────────────────────────────────────────────────
+# filter:value，空格连接；否定前缀 -
+_FOFA_TO_SHODAN = {
+    "title": "http.title",
+    "body": "http.html",
+    "domain": "hostname",
+    "host": "hostname",
+    "ip": "net",
+    "port": "port",
+    "org": "org",
+    "protocol": "",  # 无对等 filter；常见 http/https 由其它条件覆盖
+    "server": "product",
+    "country": "country",
+    "city": "city",
+    "app": "product",
+    "os": "os",
+    "header": "http.component",
+    "cert": "ssl",
+    "cert.subject": "ssl.cert.subject.cn",
+    "cert.subject.cn": "ssl.cert.subject.cn",
+    "cert.subject.org": "ssl.cert.subject.cn",
+    "cert.issuer.org": "ssl.cert.issuer.cn",
+    "icon_hash": "http.favicon.hash",
+}
+
+
+def fofa_to_shodan(query: str) -> str:
+    tokens, joins = parse_fofa_query(query)
+    if not tokens:
+        return query
+
+    # Shodan 无 OR 连接 filter 的标准写法；遇到 || 时用 OR 分组尽量保留
+    and_groups: list[list[str]] = [[]]
+    for i, t in enumerate(tokens):
+        if i > 0 and i - 1 < len(joins) and joins[i - 1] == "||":
+            and_groups.append([])
+        f = _FOFA_TO_SHODAN.get(t["field"], t["field"])
+        if f == "":
+            continue
+        op, v = t["op"], t["value"]
+        if t["field"] in ("domain", "host"):
+            v = _strip_domain_dot(v)
+        if t["field"] == "ip" and "/" not in v:
+            v = f"{v}/32"
+        if t["field"] == "port":
+            piece = f"{f}:{v}"
+        elif t["field"] == "country" and len(v) != 2:
+            # Shodan country 要两字母码；非码值降级为全文
+            piece = f'"{v}"'
+        elif _eq_ops(op):
+            if t["field"] in ("domain", "host", "title", "body", "org", "server", "app", "header") or "." in v or " " in v:
+                piece = f'{f}:"{v}"'
+            else:
+                piece = f'{f}:"{v}"' if (" " in v or not v.isalnum()) else f"{f}:{v}"
+        elif _neq_ops(op):
+            piece = f'-{f}:"{v}"'
+        else:
+            continue
+        and_groups[-1].append(piece)
+
+    groups = [" ".join(g) for g in and_groups if g]
+    if not groups:
+        return query
+    if len(groups) == 1:
+        return groups[0]
+    return " OR ".join(f"({g})" for g in groups)
+
+
+# ── Censys Platform（CenQL；host./web./cert. 前缀）─────────────
+_FOFA_TO_CENSYS = {
+    "title": "host.services.http.response.html_title",
+    "body": "host.services.http.response.body",
+    "domain": "host.dns.names",
+    "host": "host.dns.names",
+    "ip": "host.ip",
+    "port": "host.services.port",
+    "org": "host.autonomous_system.organization",
+    "protocol": "host.services.protocol",
+    "server": "host.services.software.product",
+    "country": "host.location.country",
+    "city": "host.location.city",
+    "app": "host.services.software.product",
+    "os": "host.operating_system.product",
+    "header": "host.services.http.response.headers",
+    "cert.subject.org": "host.dns.names",
+    "cert.subject.cn": "host.dns.names",
+    "cert": "host.dns.names",
+    "icon_hash": "host.services.http.response.favicons.md5_hash",
+    "status_code": "host.services.http.response.status_code",
+}
+
+
+def fofa_to_censys(query: str) -> str:
+    tokens, joins = parse_fofa_query(query)
+    if not tokens:
+        return query
+
+    parts: list[str] = []
+    kept_joins: list[str] = []
+    for i, t in enumerate(tokens):
+        f = _FOFA_TO_CENSYS.get(t["field"], t["field"])
+        op, v = t["op"], t["value"]
+        if t["field"] in ("domain", "host"):
+            v = _strip_domain_dot(v)
+        if t["field"] == "port":
+            v = v.lstrip("0") or "0"
+            piece = f"{f}:{v}"
+        elif t["field"] == "protocol":
+            piece = f'{f}:{v.upper()}'
+        elif _eq_ops(op):
+            piece = f'{f}:"{v}"'
+        elif _neq_ops(op):
+            piece = f'not {f}:"{v}"'
+        else:
+            continue
+        if parts:
+            kept_joins.append(joins[i - 1] if i - 1 < len(joins) else "&&")
+        parts.append(piece)
+    return _join_parts(parts, kept_joins, "and", "or") or query
+
+
+_FOFA_TRANSLATORS = {
+    "quake": fofa_to_quake,
+    "hunter": fofa_to_hunter,
+    "zoomeye": fofa_to_zoomeye,
+    "shodan": fofa_to_shodan,
+    "censys": fofa_to_censys,
+}
+
+
+# 冒号字段：只认 token 边界的 field:value，避免把 "http://..." 里的 http: 误判成原生语法
+_COLON_FIELD_RE = re.compile(r"(?:^|[\s(])[a-zA-Z_][\w.]*\s*:\s*(?:\"|[^\s/=])")
+_FOFA_EQ_RE = re.compile(r'(?:^|[\s(])[a-zA-Z_][\w.]*\s*(!=~|!=|=~|==|=)\s*["\']')
+_BOOL_AND_OR_RE = re.compile(r"\b(AND|OR|NOT)\b", re.I)
+
+# 各引擎「一眼能认出」的原生字段/写法；命中则整句原样透传，不做 FOFA 翻译
+_HUNTER_NATIVE_RE = re.compile(
+    r"(?i)\b("
+    r"web\.title|web\.body|web\.app|web\.icon|web\.status_code|web\.similar|web\.tag|"
+    r"domain\.suffix|ip\.country|ip\.province|ip\.city|ip\.isp|ip\.os|ip\.hostname|"
+    r"ip\.company|ip\.tag|header\.status_code|header\.server|header\.content_type|"
+    r"cert\.subject_org|cert\.is_trust|icp\.number|is_web"
+    r")\b"
+)
+_ZOOMEYE_NATIVE_RE = re.compile(
+    r"(?i)(\bhostname\s*=|\biconhash\s*=|\bbanner\s*=|\borganization\.name\b|\bheader\.server\.name\b)"
+)
+_SHODAN_NATIVE_RE = re.compile(
+    r"(?i)\b("
+    r"http\.title|http\.html|http\.favicon|http\.component|ssl\.cert|"
+    r"product:|os:|net:|hostname:|port:|org:|country:|city:"
+    r")"
+)
+_CENSYS_NATIVE_RE = re.compile(
+    r"(?i)\b(host\.|web\.|cert\.|services\.|dns\.names|autonomous_system\.|"
+    r"location\.(country|city)|host\.services\.)"
+)
+_QUAKE_NATIVE_RE = re.compile(
+    r"(?i)(\b(AND|OR|NOT)\b|"
+    r"service\.http\.|service\.name|location\.|favicon:|hostname:|transport:|"
+    r"title:|domain:|app:|body:|org:|port:)"
+)
+
+
+def looks_like_fofa_syntax(query: str) -> bool:
+    """粗判是否像 FOFA 字段条件（field=\"value\" / != / =~）。"""
+    tokens, _ = parse_fofa_query(query)
+    return bool(tokens)
+
+
+def looks_like_native_syntax(engine: str, query: str) -> bool:
+    """判断是否已是目标引擎的原生语法 → 应原样透传。
+
+    Quake/Shodan/Censys 以 token 边界的 field:value 为准；一旦出现冒号字段，
+    即使夹杂少量 FOFA `=`，也视为原生，避免翻译器丢掉冒号条件。
+    """
+    q = (query or "").strip()
+    if not q:
+        return False
+    eng = (engine or "").strip().lower()
+
+    has_colon = bool(_COLON_FIELD_RE.search(q))
+
+    if eng == "quake":
+        if has_colon:
+            return True
+        return bool(_QUAKE_NATIVE_RE.search(q) and _BOOL_AND_OR_RE.search(q))
+
+    if eng == "shodan":
+        if has_colon:
+            return True
+        return bool(_SHODAN_NATIVE_RE.search(q))
+
+    if eng == "censys":
+        if _CENSYS_NATIVE_RE.search(q):
+            return True
+        return has_colon
+
+    if eng == "hunter":
+        # Hunter 也是 field="value"，靠特有字段识别，避免把 web.title 再翻坏
+        return bool(_HUNTER_NATIVE_RE.search(q))
+
+    if eng == "zoomeye":
+        # v2 与 FOFA 很像；出现 hostname=/iconhash= 等视为已按 ZoomEye 书写
+        return bool(_ZOOMEYE_NATIVE_RE.search(q))
+
+    return False
+
+
+def looks_like_query_syntax(engine: str, query: str) -> bool:
+    """collector 用：这句话是查询语法还是自然语言意图？
+
+    同时认 FOFA（field=\"value\" / && / ||）和当前引擎原生（field:value / AND/OR）。
+    选了 Quake 却粘贴官网 `title:\"登录\" AND country:\"China\"` 时必须判成语法，
+    不能再丢给 LLM 当意图改写。
+    """
+    q = (query or "").strip()
+    if not q:
+        return False
+    if looks_like_fofa_syntax(q) or looks_like_native_syntax(engine, q):
+        return True
+    if "&&" in q or "||" in q or _BOOL_AND_OR_RE.search(q):
+        return True
+    if _FOFA_EQ_RE.search(q) or _COLON_FIELD_RE.search(q):
+        return True
+    return False
+
+
+def translate_fofa_query(query: str, target_engine: str) -> str:
+    """运行时不再改写查询。选了哪个引擎就原样发给哪个引擎。"""
+    return query

@@ -1,0 +1,561 @@
+/* ============================================================
+   知蠹 Riddle — 作战终端 / 样式模块
+   模块：responsive.css — 手机端 / 无障碍减弱动效
+   由 style.css 按分区拆分而来，级联顺序与语义不变。
+   ============================================================ */
+
+/* ---------- 手机端：触控优先、信息分层、避免横向溢出 ---------- */
+@media (max-width: 640px) {
+  body {
+    font-size: 14px;
+    background-image:
+      radial-gradient(circle at 20% -8%, var(--accent-bg), transparent 20rem),
+      radial-gradient(circle at 95% 4%, var(--info-bg), transparent 18rem),
+      linear-gradient(180deg, var(--nav), var(--bg) 18rem);
+    background-attachment: fixed, fixed, scroll;
+  }
+  body::before { background-size: 34px 34px; opacity: .7; }
+
+  button { min-height: 42px; padding: 10px 12px; }
+  input, select, textarea { font-size: 16px; }
+
+  .topbar-row { width: 100%; }
+  .topbar-tools { gap: 6px; }
+  .token-switch,
+  .theme-toggle { display: none; }
+  /* 手机端令牌/主题已隐藏，仅留 GitHub 入口：放大到触控友好尺寸、
+     弱化描边使其在顶栏单独出现时轻盈自然，保留点击/悬浮旋转动效。 */
+  .github-link {
+    width: 40px; height: 40px;
+    border-color: var(--border-soft);
+  }
+  .github-link:active { transform: rotate(360deg); }
+  .readonly-badge {
+    padding: 4px 8px; font-size: 10px;
+    max-width: 52px; text-align: center; line-height: 1.2;
+  }
+
+  main { padding: 14px 12px calc(76px + env(safe-area-inset-bottom, 0px)); }
+  .page-head { margin-bottom: 14px; }
+  .page-head.split,
+  .tasks-view .page-head {
+    display: grid;
+    grid-template-columns: 1fr;
+    align-items: start;
+    gap: 10px;
+  }
+  .head-action { width: max-content; max-width: 100%; }
+  .page-head h2 { font-size: 1.25rem; margin-bottom: 4px; }
+  .page-sub { font-size: 12.5px; }
+  .view h2 { margin-bottom: 12px; font-size: 1.25rem; }
+
+  .task-card {
+    display: flex; align-items: stretch; gap: 10px;
+    padding: 14px 12px 14px 14px;
+    border-radius: 14px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  /* 手机端主页任务标题：单行显示，超出省略号，避免长标题溢出屏幕/换行撑高卡片。
+     关键：整条 flex 链(main → tc-title → b)都要 min-width:0 才能真正收缩截断。 */
+  .task-card { min-width: 0; }
+  .task-card-main { min-width: 0; flex: 1 1 auto; overflow: hidden; }
+  .task-card .tc-title { min-width: 0; max-width: 100%; }
+  .task-card .tc-title b {
+    min-width: 0; flex: 1 1 auto;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  /* 右侧栏限宽，避免时间戳/按钮把左侧标题挤到溢出屏幕 */
+  .task-card-side { max-width: 42%; }
+  /* 手机端「全局情报库」按钮不显示左侧脉冲蓝点 */
+  .intel-entry .ie-dot { display: none; }
+  .task-card:active { transform: scale(0.985); background: var(--surface-2); }
+  .task-card-side { padding-top: 2px; justify-content: flex-start; }
+  .mini-action {
+    min-height: 34px;
+    padding: 6px 10px;
+  }
+  .task-chevron { font-size: 20px; color: var(--muted); }
+
+  .form { max-width: none; gap: 14px; }
+  .form details { padding: 12px; }
+  .form button.primary { width: 100%; }
+
+  .hard-toolbar {
+    grid-template-columns: 1fr;
+  }
+  .hard-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .hard-status { width: max-content; }
+  .hard-meta { justify-items: start; min-width: 0; }
+  .hard-main b { white-space: normal; overflow-wrap: anywhere; }
+  .settings-view .page-head {
+    display: grid;
+    gap: 6px;
+  }
+  .settings-layout {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .settings-nav {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 6px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+  .settings-nav button {
+    width: auto;
+    flex: none;
+    white-space: nowrap;
+  }
+  .settings-nav small { display: none; }
+  .appearance-row { grid-template-columns: 1fr; }
+  .settings-summary {
+    position: static;
+    padding: 13px;
+    border-radius: 14px;
+  }
+  .settings-summary-head {
+    grid-template-columns: 1fr auto;
+    align-items: end;
+  }
+  .settings-summary-head b {
+    grid-column: 1 / -1;
+  }
+  .settings-health {
+    padding: 9px 10px;
+  }
+  .settings-facts {
+    grid-template-columns: 1fr 1fr;
+    gap: 9px 12px;
+  }
+  .settings-facts div:last-child {
+    grid-column: 1 / -1;
+  }
+  .settings-form {
+    gap: 12px;
+  }
+  .settings-block {
+    padding: 14px;
+    border-radius: 14px;
+  }
+  .settings-block legend {
+    padding-bottom: 12px;
+    margin-bottom: 12px;
+  }
+  .settings-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .llm-mode-switch {
+    width: 100%;
+    margin-bottom: 12px;
+  }
+  .llm-pool-toolbar,
+  .provider-detail-head {
+    align-items: stretch;
+  }
+  .provider-selector,
+  .provider-fields-grid {
+    grid-template-columns: 1fr;
+  }
+  .provider-fields-grid .wide {
+    grid-column: auto;
+  }
+  .provider-detail-head {
+    display: grid;
+  }
+  .provider-head-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+  .provider-head-actions > button {
+    min-height: 38px;
+  }
+  .provider-enabled {
+    min-height: 38px;
+  }
+  .model-picker {
+    align-items: stretch;
+  }
+  .settings-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    padding: 12px;
+  }
+  .settings-actions .primary {
+    width: 100%;
+    min-height: 44px;
+  }
+  .settings-toast {
+    left: 12px;
+    right: 12px;
+    transform: none;
+  }
+
+  /* 指挥横幅：窄屏收紧进度环与按钮 */
+  .eyebrow { font-size: 9.5px; margin-bottom: 6px; letter-spacing: .12em; }
+  .progress-ring {
+    width: 76px; height: 76px; border-radius: 50%;
+  }
+  .progress-ring b { font-size: 19px; }
+  .progress-ring span { font-size: 10px; }
+  .mission-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .mission-actions button { font-size: 13px; padding: 10px 6px; }
+
+  /* 单站协作态势：手机端收紧 padding、标题与汇总分行、流水线纵向紧凑 */
+  .collab-panel {
+    padding: 13px 13px 14px;
+    border-radius: 16px;
+    margin-bottom: 12px;
+  }
+  .collab-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    margin-bottom: 13px;
+  }
+  .collab-title { gap: 7px 8px; }
+  .collab-title small { flex: 1 1 100%; font-size: 11.5px; line-height: 1.45; }
+  /* 汇总数字独占一行，等分成条，扫一眼即可 */
+  .collab-summary {
+    gap: 8px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border-soft);
+  }
+  .collab-summary span {
+    flex: 1;
+    justify-content: center;
+    gap: 6px;
+    padding: 7px 4px;
+    border-radius: 10px;
+    background: var(--bg);
+    border: 1px solid var(--border-soft);
+    font-size: 11px;
+  }
+  .collab-summary i { font-size: 16px; }
+  /* 阶段：纵向堆叠，用竖直 rail 串起来（连接线延伸到下一阶段） */
+  .collab-flow { gap: 4px; }
+  .collab-phase { padding-right: 0; padding-bottom: 4px; }
+  .collab-phase:last-child { padding-bottom: 0; }
+  .phase-body { padding-bottom: 8px; }
+  .phase-desc { font-size: 11px; margin-bottom: 8px; }
+  .phase-n { margin-left: 0; }
+  .phase-routes { gap: 5px; max-height: min(200px, 32vh); }
+  .route-chip { padding: 8px 10px; font-size: 12px; min-height: 38px; }
+  .route-status-dot { width: 8px; height: 8px; }
+
+  /* 全宽工作区：手机端纵向堆叠 */
+  .board-body { flex-direction: column; gap: 10px; }
+  .v-topnav { gap: 6px; padding: 5px; }
+  .v-topnav button { padding: 9px 6px; font-size: 12px; gap: 6px; }
+  .v-subtabs { gap: 6px; padding: 5px; }
+  .v-subtabs button { padding: 8px 6px; font-size: 12px; gap: 6px; }
+
+  .v-search {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 8px;
+    padding: 10px;
+    border-radius: 14px;
+  }
+  .v-search .search-box { grid-column: 1 / -1; min-height: 44px; }
+  .v-search .search-stat { min-width: 0; text-align: left; font-size: 11.5px; }
+  .v-search .search-page-btn,
+  .v-search .search-sort { min-height: 38px; font-size: 12px; }
+  .v-search .search-sort { justify-self: end; }
+
+  /* 看板：单面板切换 */
+  .board-mobile-switch {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    margin-bottom: 10px;
+    padding: 4px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+  }
+  .board-mobile-switch button {
+    min-height: 40px;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--muted);
+    background: transparent;
+    border: 1px solid transparent;
+  }
+  .board-mobile-switch button.active {
+    color: var(--ink);
+    background: color-mix(in oklch, var(--accent-bg) 55%, var(--surface));
+    border-color: var(--select-border);
+    box-shadow: var(--select-ring);
+  }
+  .board-mobile-switch button i {
+    font-style: normal;
+    margin-left: 5px;
+    font-size: 11px;
+    background: var(--surface-2);
+    padding: 1px 6px;
+    border-radius: 5px;
+    font-variant-numeric: tabular-nums;
+  }
+  .board-mobile-switch button.active i {
+    background: color-mix(in oklch, var(--accent) 20%, var(--surface));
+  }
+  .board-grid { gap: 0; }
+  .board-panel-hidden { display: none; }
+
+  .board-panel, .list-panel {
+    padding: 12px;
+    border-radius: 14px;
+  }
+  .col-head, .list-head { margin-bottom: 10px; flex-wrap: wrap; gap: 6px; }
+  .board-grid .event-log { max-height: min(52vh, 420px); }
+  .event-log { max-height: min(52vh, 420px); }
+  .worker-card { padding: 12px; margin-bottom: 8px; }
+  .wc-top { display: grid; grid-template-columns: 1fr; gap: 4px; }
+  .wc-meta { white-space: normal; }
+  .wc-action {
+    white-space: normal; overflow-wrap: anywhere;
+    font-size: 11px; line-height: 1.45;
+  }
+
+  .ev {
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    gap: 2px 8px;
+    padding: 8px 6px;
+  }
+  .ev-icon { grid-row: 1 / 3; align-self: start; padding-top: 2px; }
+  .ev-agent { grid-column: 2; font-size: 11px; min-width: 0; }
+  .ev-msg { grid-column: 2; font-size: 12px; line-height: 1.45; }
+  .ev-time {
+    grid-column: 2;
+    font-size: 10px;
+    justify-self: start;
+    margin-top: 2px;
+  }
+
+  .result-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 8px 10px;
+    padding: 12px;
+    border-radius: 12px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .result-row:active { background: var(--surface-2); transform: none; }
+  .rr-title { white-space: normal; line-height: 1.35; font-size: 13.5px; }
+  .rr-main .meta { overflow-wrap: anywhere; font-size: 12px; }
+  .score { min-width: 36px; padding: 6px 8px; font-size: 13px; }
+
+  .submit-toolbar {
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .submit-toolbar .grow { display: none; }
+  .submit-toolbar button { flex: 1 1 calc(50% - 4px); min-width: 0; }
+
+  .killsweep-card { border-radius: 13px; }
+  .ks-top .ks-check-row { padding: 0 2px 0 8px; }
+  .ks-summary {
+    grid-template-columns: 20px minmax(0, 1fr);
+    gap: 8px 10px; padding: 11px 12px;
+  }
+  .ks-summary-metrics {
+    grid-column: 2; justify-content: flex-start;
+  }
+  .ks-badges {
+    grid-column: 2; justify-content: flex-start;
+  }
+  .ks-badges { flex-wrap: wrap; }
+  .ks-progress { padding: 0 10px 12px 38px; }
+  .ks-detail { padding: 0 10px 12px 38px; }
+  .ks-compact { grid-template-columns: 1fr; gap: 8px; }
+  .ks-affected-head { display: grid; grid-template-columns: 1fr; gap: 3px; }
+  .ks-actions { display: grid; grid-template-columns: 1fr; justify-items: stretch; }
+  .ks-actions span { order: -1; }
+  .ks-enqueue { margin-right: 0; }
+  .ks-derived-row { flex-wrap: wrap; }
+  .ks-derived-title { flex-basis: 100%; }
+
+  .drawer {
+    width: 100vw;
+    max-width: 100%;
+    border-left: 0;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .md-toolbar {
+    flex-wrap: wrap;
+    padding: 10px 12px;
+    padding-top: max(10px, env(safe-area-inset-top, 0px));
+    gap: 8px;
+  }
+  .md-toolbar .grow { flex-basis: 0; }
+  .report-scroll { padding: 12px 10px; }
+  .report-brief {
+    padding: 14px;
+    border-radius: 14px;
+  }
+  .report-brief h1 {
+    font-size: 17px;
+    overflow-wrap: anywhere;
+    text-wrap: balance;
+  }
+  .report-target {
+    display: block;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    border-radius: 10px;
+    font-size: 12px;
+  }
+  .markdown-body {
+    padding: 14px 12px;
+    border-radius: 14px;
+  }
+  .markdown-body table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+  .markdown-body th, .markdown-body td { padding: 8px 10px; }
+  .markdown-body pre { max-height: 240px; }
+
+  .view-switch button { padding: 5px 10px; }
+  .report-brief-side { min-width: 0; }
+  .score-ring { width: 64px; height: 64px; }
+  .score-ring b { font-size: 18px; }
+  .report-sec { padding: 13px 14px; border-radius: 14px; }
+  .chain-node { width: 190px; min-width: 190px; }
+  .chain-arrow { margin: 0 5px; }
+  .code-block { max-height: 260px; font-size: 11.5px; }
+  .step-list li { padding: 9px 10px; }
+  .evid summary { padding: 9px 12px; }
+
+  .report-assistant {
+    padding: 12px;
+    border-radius: 14px;
+  }
+  .ra-msg {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .ra-msg span { padding-top: 0; }
+  .ra-log { max-height: 200px; }
+
+  .review-bar {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+    padding: 12px;
+  }
+  .review-bar .rb-btns {
+    margin-left: 0;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .rb-sev { display: grid; gap: 6px; }
+  .deepen-box { padding: 12px; }
+  .deepen-actions { display: grid; grid-template-columns: 1fr; }
+
+  .task-edit-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .task-edit-modal {
+    width: 100%;
+    max-height: 88svh;
+    border-radius: 18px 18px 0 0;
+    padding: 18px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+    border-bottom: none;
+  }
+  .task-edit-modal footer {
+    display: grid;
+    grid-template-columns: 1fr 1.2fr;
+  }
+  .task-edit-modal footer button {
+    min-height: 44px;
+  }
+
+  .toast, .app-toast {
+    left: 12px;
+    right: 12px;
+    bottom: calc(68px + env(safe-area-inset-bottom, 0px));
+    transform: none;
+    justify-content: center;
+    max-width: none;
+  }
+  @keyframes toast-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+}
+
+/* ---------- 全屏报告作战台：窄屏折叠为单列 ---------- */
+@media (max-width: 1024px) {
+  .rc-body { grid-template-columns: 190px minmax(0, 1fr) 300px; }
+  .rc-facts { grid-template-columns: repeat(4, 1fr); }
+  .rc-breakdown-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 820px) {
+  .rc-body { grid-template-columns: 1fr; }
+  .rc-topbar { grid-template-columns: 1fr; grid-template-areas: "main" "right" "facts"; }
+  .rc-top-right { justify-content: space-between; flex-wrap: wrap; }
+  .rc-nav {
+    border-right: 0; border-bottom: 1px solid var(--border);
+    flex-direction: row; align-items: center; gap: 10px;
+    overflow-x: auto; padding: 10px 12px;
+  }
+  .rc-nav-head, .rc-nav-score { display: none; }
+  .rc-nav-list { flex-direction: row; gap: 6px; }
+  .rc-nav-item { width: auto; white-space: nowrap; padding: 7px 12px; }
+  .rc-nav-item.active { box-shadow: inset 0 -2px 0 var(--accent); }
+  .rc-side { border-left: 0; border-top: 1px solid var(--border); }
+  .rc-main { padding: 18px 16px 48px; }
+}
+@media (max-width: 640px) {
+  .rc-topbar { padding: 12px 14px 10px; gap: 10px; }
+  .rc-title { font-size: 17px; }
+  .rc-facts { grid-template-columns: repeat(2, 1fr); }
+  .rc-facts > div { padding: 6px 9px; }
+  .rc-actions { gap: 6px; }
+  .rc-score { width: 60px; height: 60px; }
+  .rc-score b { font-size: 16px; }
+  .rc-breakdown-grid { grid-template-columns: 1fr 1fr; }
+  .rc-version-top { flex-wrap: wrap; }
+  .rc-version-time { margin-left: 0; width: 100%; }
+}
+
+@media (max-width: 420px) {
+  .brand-copy b { font-size: 14px; }
+  .metric-card { flex-basis: 100px; }
+  .ks-summary-metrics span { min-width: 0; padding-inline: 7px; }
+  .ks-detail { padding-left: 10px; }
+  .ks-affected table { min-width: 680px; }
+  .result-row {
+    grid-template-columns: 1fr auto;
+  }
+  .result-row .sev-pill {
+    grid-column: 1;
+    width: max-content;
+  }
+  .result-row .rr-main { grid-column: 1 / -1; }
+  .result-row .score {
+    grid-row: 1;
+    grid-column: 2;
+  }
+  .submit-toolbar button { flex: 1 1 100%; }
+}
+
+/* ---------- 无障碍：减弱动效 ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+}
