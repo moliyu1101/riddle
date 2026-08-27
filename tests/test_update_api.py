@@ -40,13 +40,13 @@ def test_commits_behind_uses_range(monkeypatch):
             return (0, "", "")
         if key == "rev-parse HEAD":
             return (0, "aaaa1111", "")
-        if key == "rev-parse origin/main":
+        if key == "rev-parse origin/master":
             return (0, "bbbb2222", "")
         if key.startswith("diff"):
             return (0, "app/x.py\napp/y.py", "")
         if key.startswith("log"):
             return (0, "msg", "")
-        if key.startswith("rev-list --count HEAD..origin/main"):
+        if key.startswith("rev-list --count HEAD..origin/master"):
             return (0, "3", "")
         return (0, "999", "")  # 若误用旧并集写法会拿到 999
 
@@ -54,7 +54,7 @@ def test_commits_behind_uses_range(monkeypatch):
     r = upd.check_update()
     assert r["update_available"] is True
     assert r["commits_behind"] == 3
-    assert any(k.startswith("rev-list --count HEAD..origin/main") for k in seen)
+    assert any(k.startswith("rev-list --count HEAD..origin/master") for k in seen)
     assert r["hot_updateable"] is True  # 仅 app/ 变更可热更
 
 
@@ -67,7 +67,7 @@ def test_run_needs_rebuild_blocks(monkeypatch):
             return (0, "", "")
         if key == "rev-parse HEAD":
             return (0, "aaaa", "")
-        if key == "rev-parse origin/main":
+        if key == "rev-parse origin/master":
             return (0, "bbbb", "")
         if key.startswith("diff"):
             return (0, "frontend/App.vue", "")  # 前端变更需重建
