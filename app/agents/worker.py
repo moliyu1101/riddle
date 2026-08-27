@@ -1603,13 +1603,31 @@ class Worker:
             if match:
                 items = [x for x in re.split(r"\s+", match.group(1).strip()) if x]
                 if len(items) > 10 and rnd >= 8:
+                    # 同一接口的方法/参数变体枚举（如 docfileinfo/download、getFile、readFile…
+                    # 共享相同路径前缀）是对已发现功能接口的针对性验证，不算泛目录扫描，豁免；
+                    # 只有前缀各异的泛路径猜测才拦。
+                    stripped = [re.sub(r"[?#].*$", "", it) for it in items]
+                    if len(stripped) >= 2 and len(os.path.commonprefix(stripped)) >= 8:
+                        return ""
                     return "禁止中后期大列表路径/子域枚举：请聚焦已确认入口，或无洞收尾。"
 
         url_hosts = re.findall(r"https?://([^/\\s\"']+)", lower)
-        if rnd >= 6 and target_host and any(h.endswith(".edu.cn") and h != target_host for h in url_hosts):
-            return "禁止中后期偏离当前目标请求姊妹域：本 worker 只负责当前 target。"
+        if rnd >= 6 and target_host:
+            # 目标常带端口（如 admin-api.hzcu.edu.cn:8082），netloc 直接比会把同域误判成姊妹域；
+            # 归一化去掉端口，且当前域及其子域都不算偏离，仅拦真正无关的 .edu.cn 请求。
+            target_domain = target_host.split(":")[0]
+            for h in url_hosts:
+                host_domain = h.split(":")[0]
+                if (
+                    host_domain.endswith(".edu.cn")
+                    and host_domain != target_domain
+                    and not host_domain.endswith("." + target_domain)
+                ):
+                    return "禁止中后期偏离当前目标请求姊妹域：本 worker 只负责当前 target。"
 
-        sibling_markers = (".edu.cn", "for sub in", "for host in")
+        # 只拦明确的多子域批量枚举（for sub in / for host in / for d in…），
+        # 不拦普通小循环（如密码/参数列表），避免把对当前目标的登录爆破误判成姊妹域扫描。
+        sibling_markers = ("for sub in", "for host in", "for domain in", "for d in")
         if rnd >= 10 and any(marker in lower for marker in sibling_markers) and "curl" in lower and "for " in lower:
             return "禁止偏离当前目标批量探测姊妹域：本 worker 只负责当前目标。"
 
