@@ -45,13 +45,14 @@ class EscalateHunter:
         src_type: str = "edusrc",
         cancel_event: Optional[threading.Event] = None,
         src_rules: str = "",
+        guard_ops: Optional[list[str]] = None,
     ):
         self.finding = finding
         self.llm = llm or LLMClient()
         self.cancel_event = cancel_event or threading.Event()
         self.executor = ToolExecutor(
             f"escalate_{finding.get('target_url', 'x')}", cancel_event=self.cancel_event,
-            src_rules=src_rules or "",
+            src_rules=src_rules or "", guard_ops=guard_ops,
         )
         self.on_event = on_event or (lambda kind, data: None)
         self._result: Optional[dict] = None

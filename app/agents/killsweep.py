@@ -118,6 +118,7 @@ class KillsweepHunter:
         fofa_base_url: str = "",
         engine: str = "fofa",
         src_rules: str = "",
+        guard_ops: Optional[list[str]] = None,
     ):
         self.finding = finding
         # 测绘引擎：通杀圈定/统计走任务选定引擎（FOFA / Quake / Hunter / …），
@@ -129,7 +130,7 @@ class KillsweepHunter:
         self.cancel_event = cancel_event or threading.Event()
         self.executor = ToolExecutor(
             f"killsweep_{finding.get('target_url','x')}", cancel_event=self.cancel_event,
-            src_rules=src_rules or "",
+            src_rules=src_rules or "", guard_ops=guard_ops,
         )
         self.on_event = on_event or (lambda kind, data: None)
         self._result: Optional[dict] = None

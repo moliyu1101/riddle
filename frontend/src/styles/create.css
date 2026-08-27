@@ -1278,29 +1278,12 @@
   gap: 6px;
   min-width: 0;
 }
-/* 禁止操作组：danger 色调，突出执行层硬约束语义 */
-.rule-group.rg-forbid .rg-label { color: var(--danger); }
-.rule-group.rg-forbid .rule-chip {
-  color: color-mix(in oklch, var(--danger) 82%, var(--ink));
-  border-color: color-mix(in oklch, var(--danger) 30%, var(--border-soft));
-  background: color-mix(in oklch, var(--danger) 7%, var(--nav));
-}
-.rule-group.rg-forbid .rule-chip:hover {
-  color: var(--danger);
-  border-color: color-mix(in oklch, var(--danger) 55%, var(--border));
-}
-.rule-group.rg-forbid .rule-chip.on {
-  color: var(--on-accent);
-  background: var(--danger);
-  border-color: var(--danger);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--danger) 18%, transparent);
-}
 .rule-chip {
   padding: 5px 11px;
   font-size: 12px;
   font-weight: 600;
   color: var(--muted);
-  background: var(--nav);
+  background: var(--surface);
   border: 1px solid var(--border-soft);
   border-radius: 999px;
   cursor: pointer;
@@ -1321,7 +1304,7 @@
   gap: 8px;
   padding: 10px 12px;
   border-radius: 9px;
-  background: var(--nav);
+  background: var(--surface);
   border: 1px dashed var(--border-strong);
 }
 .fb-head {
@@ -1362,6 +1345,94 @@
   color: var(--danger);
   background: var(--danger-bg);
   border: 1px solid color-mix(in oklch, var(--danger) 30%, transparent);
+}
+
+/* 任务级八大类硬拦截勾选区：红色警示面板，卡片式多选，勾选后才拦截 */
+.guard-block,
+.extra-rules {
+  padding: 12px 12px 4px;
+  border-radius: 10px;
+}
+.guard-block {
+  margin-bottom: 12px;
+  background: color-mix(in oklch, var(--danger) 6%, var(--surface-2));
+  border: 1px solid color-mix(in oklch, var(--danger) 26%, transparent);
+}
+.extra-rules {
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+}
+.guard-block-head,
+.extra-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-bottom: 10px;
+}
+.guard-block-head b,
+.extra-head b {
+  font-size: 12.5px;
+  font-weight: 700;
+}
+.guard-block-head b { color: var(--danger); }
+.extra-head b { color: var(--ink); }
+.guard-block-head small,
+.extra-head small {
+  font-size: 10.5px;
+  color: var(--faint);
+}
+.guard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.guard-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 11px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid color-mix(in oklch, var(--danger) 16%, var(--border-soft));
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
+  transition: color .12s, background .12s, border-color .12s, box-shadow .12s;
+}
+.guard-opt:hover { color: var(--ink); border-color: color-mix(in oklch, var(--danger) 40%, var(--border-soft)); }
+.guard-opt.on {
+  color: var(--danger);
+  background: color-mix(in oklch, var(--danger) 12%, var(--surface));
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--danger) 16%, transparent);
+}
+.guard-opt input {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--danger);
+  cursor: pointer;
+  margin: 0;
+}
+.guard-name { min-width: 0; line-height: 1.35; }
+.guard-empty {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--faint);
+}
+.guard-summary {
+  margin: 2px 0 8px;
+  font-size: 11px;
+  color: var(--faint);
+}
+.guard-summary b {
+  color: var(--danger);
+  font-weight: 700;
 }
 
 /* 跟随系统模式：展示系统模型信息 */

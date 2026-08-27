@@ -14,10 +14,11 @@ import unittest
 from app.agents.prompts import append_task_src_rules
 from app.api.dto import ParseForbiddenOpsRequest
 from app.api.tasks import parse_forbidden_ops_endpoint
-from app.tools.executor import ToolExecutor
+from app.tools.executor import ToolExecutor, _merge_forbidden_ops
 from app.tools.guard import (
     CommandBlocked,
     check_task_forbidden,
+    normalize_guard_ops,
     parse_forbidden_ops,
 )
 
@@ -209,6 +210,94 @@ class ParseForbiddenOpsEndpointTest(unittest.TestCase):
     def test_labels_join(self):
         res = self._call("禁止脱库，禁止爆破")
         self.assertEqual(res.labels, "脱库/拖库/删库、爆破/暴力破解")
+
+    def test_all_field_returns_eight(self):
+        # 前端勾选区数据源：all 字段应固定返回八大类 id + label
+        res = self._call("")
+        self.assertEqual(res.count, 0)
+        self.assertEqual(len(res.all), 8)
+        ids = [c["id"] for c in res.all]
+        self.assertEqual(
+            ids,
+            ["db_dump", "db_delete", "db_write", "cache_clear",
+             "cred_change", "brute_force", "dos", "webshell"],
+        )
+
+
+class NormalizeGuardOpsTest(unittest.TestCase):
+    def test_none_or_empty(self):
+        self.assertEqual(normalize_guard_ops(None), [])
+        self.assertEqual(normalize_guard_ops([]), [])
+        self.assertEqual(normalize_guard_ops(""), [])
+
+    def test_list_filtered_and_deduped(self):
+        self.assertEqual(
+            normalize_guard_ops(["db_dump", "db_delete", "db_dump", "not_real"]),
+            ["db_dump", "db_delete"],
+        )
+
+    def test_string_comma_split(self):
+        self.assertEqual(
+            normalize_guard_ops("db_dump，db_delete"),
+            ["db_dump", "db_delete"],
+        )
+
+    def test_order_preserved(self):
+        self.assertEqual(
+            normalize_guard_ops(["webshell", "db_dump"]),
+            ["webshell", "db_dump"],
+        )
+
+
+class MergeForbiddenOpsTest(unittest.TestCase):
+    def test_empty(self):
+        self.assertEqual(_merge_forbidden_ops("", None), [])
+
+    def test_text_rules_only(self):
+        merged = _merge_forbidden_ops("禁止脱库、删除", None)
+        self.assertEqual(merged, ["db_dump", "db_delete"])
+
+    def test_checked_only(self):
+        merged = _merge_forbidden_ops("", ["db_dump", "brute_force"])
+        self.assertEqual(merged, ["db_dump", "brute_force"])
+
+    def test_merge_order_text_first_then_checked_dedup(self):
+        merged = _merge_forbidden_ops("禁止脱库", ["db_dump", "brute_force"])
+        # 文本解析在前，勾选在后，重复的 db_dump 只保留一次
+        self.assertEqual(merged, ["db_dump", "brute_force"])
+
+    def test_checked_category_not_in_text_still_blocks(self):
+        # 只勾选不写规则文本：勾了也拦（用户要求：勾选即拦截）
+        ex = ToolExecutor(
+            "example.edu.cn",
+            work_dir=tempfile.mkdtemp(),
+            guard_ops=["db_delete"],
+        )
+        res = ex.run_shell("mysql -e 'DELETE FROM users'")
+        self.assertTrue(res.get("blocked"))
+        self.assertIn("任务规则禁止", res.get("error", ""))
+
+    def test_unchecked_category_passes(self):
+        # 只勾选脱库，未勾选删除 → DELETE 放行（不再被全局硬拦）
+        ex = ToolExecutor(
+            "example.edu.cn",
+            work_dir=tempfile.mkdtemp(),
+            guard_ops=["db_dump"],
+        )
+        res = ex.run_shell("mysql -e 'DELETE FROM users'")
+        self.assertFalse(res.get("blocked"))
+
+    def test_merge_text_and_checked_both_block(self):
+        ex = ToolExecutor(
+            "example.edu.cn",
+            work_dir=tempfile.mkdtemp(),
+            src_rules="禁止清缓存",
+            guard_ops=["brute_force"],
+        )
+        res1 = ex.run_shell("redis-cli FLUSHALL")
+        self.assertTrue(res1.get("blocked"))
+        res2 = ex.run_shell("hydra -l admin -P rockyou.txt ssh")
+        self.assertTrue(res2.get("blocked"))
 
 
 if __name__ == "__main__":

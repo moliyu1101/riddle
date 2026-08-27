@@ -2006,6 +2006,7 @@ class TaskRunner:
         duplicate_history: list[dict] = []
         src_type = "edusrc"
         src_rules = ""
+        guard_ops: list[str] = []
         fofa_key = ""
         fofa_base_url = ""
         engine_name = "fofa"
@@ -2016,6 +2017,7 @@ class TaskRunner:
             if task_obj:
                 src_type = task_obj.src_type or "edusrc"
                 src_rules = task_obj.src_rules or ""
+                guard_ops = task_obj.guard_ops or []
                 engine_cfg = resolve_engine_config(task_obj)
                 engine_name = engine_cfg["engine"]
                 fofa_key = engine_cfg["key"]
@@ -2161,6 +2163,7 @@ class TaskRunner:
                             engine=engine_name,
                             prompt_version=prompt_version,
                             src_rules=src_rules,
+                            guard_ops=guard_ops,
                             pop_directive=lambda: self._pop_directive(target_id),
                             blackboard=blackboard, worker_id=target_id)
             worker_holder["worker"] = worker
@@ -3128,6 +3131,7 @@ class TaskRunner:
             task_obj = await session.get(Task, task_id)
             src_type = (task_obj.src_type if task_obj else "edusrc") or "edusrc"
             src_rules = (task_obj.src_rules if task_obj else "") or ""
+            guard_ops = (task_obj.guard_ops if task_obj else []) or []
             finding_schema = FindingSchema(
                 vuln_type=f.vuln_type, title=f.title, severity_claimed=f.severity_claimed,
                 target_url=f.target_url, description=f.description, steps=f.steps,
@@ -3151,7 +3155,8 @@ class TaskRunner:
             )
 
         def do_review() -> dict:
-            reviewer = Reviewer(llm=llm, on_event=emit, src_type=src_type, src_rules=src_rules)
+            reviewer = Reviewer(llm=llm, on_event=emit, src_type=src_type, src_rules=src_rules,
+                                guard_ops=guard_ops)
             return reviewer.review(finding_schema).model_dump(mode="json")
 
         review_sem = agent_semaphore("review")
@@ -3479,6 +3484,7 @@ class TaskRunner:
                 src_type=src_type, cancel_event=cancel_event,
                 fofa_base_url=fofa_base_url, engine=engine_name,
                 src_rules=(task.src_rules if task else "") or "",
+                guard_ops=(task.guard_ops if task else []) or [],
             )
             try:
                 return hunter.run().model_dump(mode="json")
@@ -3848,6 +3854,7 @@ class TaskRunner:
                 finding_dict, llm=llm, on_event=emit,
                 src_type=src_type, cancel_event=cancel_event,
                 src_rules=(task.src_rules if task else "") or "",
+                guard_ops=(task.guard_ops if task else []) or [],
             )
             try:
                 return hunter.run().model_dump(mode="json")

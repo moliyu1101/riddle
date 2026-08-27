@@ -439,6 +439,7 @@ class Reviewer:
         enable_reproduce: bool = True,
         src_type: str = "edusrc",
         src_rules: str = "",
+        guard_ops: Optional[list[str]] = None,
         cancel_event: Optional["threading.Event"] = None,
     ):
         self.llm = llm or LLMClient()
@@ -446,6 +447,7 @@ class Reviewer:
         self.enable_reproduce = enable_reproduce
         self.src_type = normalize_src_type(src_type)
         self.src_rules = src_rules or ""
+        self.guard_ops = guard_ops
         self._last_llm_error = ""
         # 复现验证子进程的协作取消（超时/停止时传导杀进程组）
         self.cancel_event = cancel_event or threading.Event()
@@ -622,7 +624,7 @@ class Reviewer:
         self._emit("reproduce_start", title=finding.title)
         executor = ToolExecutor(f"review_{finding.target_url}", cancel_event=self.cancel_event,
                                 enterprise=(self.src_type == "enterprise"),
-                                src_rules=self.src_rules)
+                                src_rules=self.src_rules, guard_ops=self.guard_ops)
         # 用 PoC 重新发包（PoC 通常是 curl 命令）
         poc = finding.poc.strip()
         if not poc:
