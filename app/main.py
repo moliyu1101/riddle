@@ -261,6 +261,16 @@ async def favicon_ico():
     return Response(content=FAVICON_SVG, media_type="image/svg+xml")
 
 
+@app.get("/logo.png")
+async def logo_png():
+    # 顶栏/登录页品牌 logo：vite 构建时 public/logo.png 会复制到 web/dist/logo.png
+    logo_file = WEB_DIR / "logo.png"
+    if logo_file.exists():
+        return FileResponse(str(logo_file), media_type="image/png",
+                            headers={"Cache-Control": "public, max-age=86400"})
+    return Response(status_code=404)
+
+
 # Vite 资源目录（/assets/*.js|css）
 if (WEB_DIR / "assets").exists():
     app.mount("/assets", StaticFiles(directory=str(WEB_DIR / "assets")), name="assets")
