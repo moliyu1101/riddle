@@ -1538,6 +1538,41 @@
 .tc-yes { color: var(--ok); background: color-mix(in oklch, var(--ok) 14%, transparent); }
 .tc-no { color: var(--danger); background: color-mix(in oklch, var(--danger) 14%, transparent); }
 
+/* 测试连接失败时自动探测到的可用模型提示（点模型名一键填入） */
+.model-avail {
+  display: block;
+  margin-top: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  line-height: 1.7;
+}
+.model-avail .avail-chip {
+  display: inline-block;
+  font-style: normal;
+  font-weight: 700;
+  font-size: 11px;
+  margin: 2px 4px 2px 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+  color: var(--accent);
+  background: color-mix(in oklch, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in oklch, var(--accent) 35%, transparent);
+  transition: background 0.15s, color 0.15s;
+}
+.model-avail .avail-chip:hover {
+  background: var(--accent);
+  color: #fff;
+}
+.model-avail small {
+  display: block;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--muted);
+  opacity: 0.8;
+}
+
 /* 模型商连接向导：预设卡片 + 步骤导航 + 温度推荐 */
 .model-wizard-steps {
   margin: 10px 0 0;

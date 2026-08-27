@@ -272,6 +272,26 @@ def _llm_test_error_copy(result: dict) -> str:
     return "\n".join(lines)
 
 
+_MODEL_NOT_FOUND_HINTS = (
+    "model_not_found",
+    "model not found",
+    "no available channel",
+    "model does not exist",
+    "model not exist",
+    "no such model",
+    "unknown model",
+    "模型不存在",
+    "找不到模型",
+    "无可用模型",
+)
+
+
+def _is_model_not_found(text: str) -> bool:
+    """判断测试连接错误是否为「模型不存在/无可用渠道」，用于触发可用模型自动探测。"""
+    lowered = (text or "").lower()
+    return any(h in lowered for h in _MODEL_NOT_FOUND_HINTS)
+
+
 def _test_configs(body: LLMTestRequest) -> list[tuple[str, LLMConfig]]:
     eff = effective_settings()["llm"]
     old_providers = _clean_llm_providers(eff.get("providers") or [])
@@ -451,6 +471,16 @@ async def _test_llm_one(name: str, provider: LLMConfig) -> dict:
             )
             result["error"] = raw[:500]
             result["error_copy"] = _llm_test_error_copy({**result, "error": raw})
+            # 模型不存在/无可用渠道时，自动拉取网关可用模型列表，前端据此提示或一键回填。
+            if _is_model_not_found(raw):
+                probe = await list_available_models(
+                    base_url=provider.base_url,
+                    api_key=provider.api_key,
+                    protocol=provider.protocol,
+                    model=provider.model,
+                )
+                if probe.get("ok") and probe.get("models"):
+                    result["available_models"] = probe["models"]
             # 连接测试是管理员手动探测，只返回结果、不写生产熔断器（避免污染在跑 worker 的端点健康）。
             return result
         data = response.json()

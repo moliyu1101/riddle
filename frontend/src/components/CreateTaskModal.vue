@@ -319,6 +319,7 @@ async function testSingleModel() {
       latency_ms: r?.latency_ms || 0,
       tool_calling: r?.tool_calling || "",
       error: r?.error || res?.error || "",
+      available_models: r?.available_models || [],
     };
   } catch (e) {
     singleTest.value = { loading: false, ok: false, latency_ms: 0, tool_calling: "", error: String(e.message || e).replace(/^\d+\s*/, "") };
@@ -1821,7 +1822,14 @@ async function submit() {
                                   <em v-if="singleTest.tool_calling === 'yes'" class="tc-yes">工具调用 ✓</em>
                                   <em v-else-if="singleTest.tool_calling === 'no'" class="tc-no">工具调用 ✗</em>
                                 </template>
-                                <template v-else>{{ singleTest.error }}</template>
+                                <template v-else>
+                                  {{ singleTest.error }}
+                                  <span v-if="singleTest.available_models?.length" class="model-avail">
+                                    可用模型：
+                                    <em v-for="m in singleTest.available_models" :key="m" class="avail-chip" @click="form.model = m">{{ m }}</em>
+                                    <small>点模型名填入</small>
+                                  </span>
+                                </template>
                               </span>
                             </div>
                             <p class="create-mini">测试连接会真实发一次小请求验证 base_url / Key / 协议，并探测模型是否支持工具调用（全流程依赖）。</p>
