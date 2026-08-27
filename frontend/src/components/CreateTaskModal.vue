@@ -32,6 +32,7 @@ const form = reactive({
   intent_mode: "",
   manual_targets: "",
   src_rules: "",
+  guard_ops: [],   // 任务级八大类拦截勾选（空=全不拦，勾什么拦什么）
   // inherit | single | pool
   model_mode: "inherit",
   base_url: "", api_key: "", key_ref: "", model: "", models: [], protocol: "auto", temperature: 0.3, prompt_version: "legacy",
@@ -231,21 +232,6 @@ const RULE_PRESET_GROUPS = [
       { id: "no_sms", label: "短信轰炸", text: "不收短信轰炸" },
     ],
   },
-  {
-    id: "forbid",
-    label: "禁止操作",
-    hint: "执行层硬拦截，命中即报错",
-    items: [
-      { id: "fb_dump", label: "脱库/删库", text: "禁止脱库、拖库、删库" },
-      { id: "fb_delete", label: "删除数据", text: "禁止删除数据" },
-      { id: "fb_write", label: "写入篡改", text: "禁止写入、篡改数据" },
-      { id: "fb_cache", label: "清缓存", text: "禁止清缓存" },
-      { id: "fb_cred", label: "改密重置", text: "禁止改密、重置凭证" },
-      { id: "fb_brute", label: "爆破", text: "禁止爆破、暴力破解" },
-      { id: "fb_dos", label: "压测/轰炸", text: "禁止压测、DoS、轰炸" },
-      { id: "fb_webshell", label: "落后门", text: "禁止落 webshell、后门" },
-    ],
-  },
 ];
 const RULE_PRESETS = RULE_PRESET_GROUPS.flatMap((g) => g.items);
 const ruleCharCount = computed(() => String(form.src_rules || "").length);
@@ -263,8 +249,25 @@ function toggleRulePreset(p) {
 const forbiddenPreview = ref(null);
 const forbiddenLoading = ref(false);
 const forbiddenError = ref("");
+// 八大类拦截勾选区：id + label，来自 parse-forbidden-ops 的 all 字段
+const guardCats = ref([]);
+const guardCatsLoaded = ref(false);
 let forbiddenTimer = null;
 let forbiddenSeq = 0;
+async function loadGuardCats() {
+  if (guardCatsLoaded.value) return;
+  try {
+    const res = await api.parseForbiddenOps("");
+    if (Array.isArray(res?.all) && res.all.length) {
+      guardCats.value = res.all;
+      guardCatsLoaded.value = true;
+    }
+  } catch { /* 拉取失败静默，勾选区隐藏 */ }
+}
+function toggleGuardOp(id) {
+  const list = form.guard_ops || [];
+  form.guard_ops = list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
+}
 async function runForbiddenPreview() {
   const text = form.src_rules;
   if (!text.trim()) { forbiddenPreview.value = null; forbiddenError.value = ""; return; }
@@ -274,6 +277,7 @@ async function runForbiddenPreview() {
     const res = await api.parseForbiddenOps(text);
     if (seq !== forbiddenSeq) return;   // 过期响应丢弃
     forbiddenPreview.value = res;
+    if (Array.isArray(res?.all) && res.all.length) guardCats.value = res.all;
     forbiddenError.value = "";
   } catch (e) {
     if (seq !== forbiddenSeq) return;
@@ -877,6 +881,7 @@ async function resetForm() {
     intent_mode: "",
     manual_targets: "",
     src_rules: "",
+    guard_ops: [],
     model_mode: "inherit",
     base_url: "", api_key: "", key_ref: "", model: "", protocol: "auto", temperature: 0.3, prompt_version: "legacy",
     fofa_key: "", fofa_base_url: "", max_pages: 20, page_size: 100, concurrency: 3, deepen_cap: 2,
@@ -921,6 +926,7 @@ function fill(task) {
   form.intent_mode = fofaCfg.intent_mode || "";
   form.manual_targets = (task.manual_targets || []).join("\n");
   form.src_rules = task.src_rules || "";
+  form.guard_ops = Array.isArray(task.guard_ops) ? task.guard_ops.filter((g) => g) : [];
   form.base_url = modelCfg.base_url || "";
   form.api_key = "";
   form.key_ref = modelCfg.key_ref || "";
@@ -1010,6 +1016,7 @@ function saveDraft() {
     intent_mode: form.intent_mode,
     manual_targets: form.manual_targets,
     src_rules: form.src_rules,
+    guard_ops: form.guard_ops || [],
     model_mode: form.model_mode,
     base_url: form.base_url,
     key_ref: form.key_ref,
@@ -1072,6 +1079,7 @@ function validateStep(n) {
 onMounted(async () => {
   window.addEventListener("keydown", onKeydown);
   await initForm();
+  loadGuardCats();
   const draft = loadDraft();
   if (draft) {
     srcApplySuppressed = true;
@@ -1199,6 +1207,7 @@ async function submit() {
     manual_targets: form.manual_targets.split("\n").map((s) => s.trim()).filter(Boolean),
     auth_bindings: showAuthBindings.value ? exportAuthBindings() : [],
     src_rules: form.src_rules,
+    guard_ops: form.guard_ops || [],
     concurrency: parseInt(form.concurrency) || 3,
     deepen_cap: Math.max(0, Math.min(parseInt(form.deepen_cap) || 0, 10)),
     model_config_data: modelConfig,
@@ -1641,44 +1650,81 @@ async function submit() {
                   <div v-else key="s3" class="wizard-pane">
                     <section class="create-block">
                       <header class="create-block-head">
-                        <b>本任务额外规则</b>
-                        <small>叠在内置 {{ form.src_type === "enterprise" ? "企业 SRC" : "EduSRC" }} 标准上，不能放宽红线</small>
+                        <b>本任务规则</b>
+                        <small>叠加在内置 {{ form.src_type === "enterprise" ? "企业 SRC" : "EduSRC" }} 标准之上，内置红线始终生效，这里仅额外收紧</small>
                         <span class="rule-count" :class="{ on: ruleCharCount > 0 }">{{ ruleCharCount }} 字</span>
                       </header>
-                      <div class="rule-groups">
-                        <div v-for="g in RULE_PRESET_GROUPS" :key="g.id" class="rule-group" :class="`rg-${g.id}`">
-                          <span class="rg-label" :title="g.hint">{{ g.label }}</span>
-                          <div class="rg-chips">
-                            <button
-                              v-for="p in g.items"
-                              :key="p.id"
-                              type="button"
-                              class="rule-chip"
-                              :class="{ on: rulePresetActive(p) }"
-                              @click="toggleRulePreset(p)"
-                            >{{ p.label }}</button>
+
+                      <div class="guard-block">
+                        <div class="guard-block-head">
+                          <b>八大类硬拦截</b>
+                          <small>勾选后才拦截，未勾选一律放行</small>
+                        </div>
+                        <div class="guard-grid">
+                          <label
+                            v-for="c in guardCats"
+                            :key="c.id"
+                            class="guard-opt"
+                            :class="{ on: (form.guard_ops || []).includes(c.id) }"
+                          >
+                            <input
+                              type="checkbox"
+                              :checked="(form.guard_ops || []).includes(c.id)"
+                              @change="toggleGuardOp(c.id)"
+                            />
+                            <span class="guard-name">{{ c.label }}</span>
+                          </label>
+                          <p v-if="!guardCats.length" class="guard-empty">拦截类别加载失败，请在规则文本框写「禁止…」也能生效。</p>
+                        </div>
+                        <p class="guard-summary">
+                          <template v-if="(form.guard_ops || []).length">
+                            已勾选 <b>{{ form.guard_ops.length }}</b> 类，命中即报错，worker 不会执行
+                          </template>
+                          <template v-else>未勾选任务级拦截，内置红线（自毁/破坏性/企业）仍生效</template>
+                        </p>
+                      </div>
+
+                      <div class="extra-rules">
+                        <div class="guard-block-head extra-head">
+                          <b>额外规则</b>
+                          <small>审核语义：重点收 / 不收；禁止类请在上方勾选</small>
+                        </div>
+                        <div class="rule-groups">
+                          <div v-for="g in RULE_PRESET_GROUPS" :key="g.id" class="rule-group" :class="`rg-${g.id}`">
+                            <span class="rg-label" :title="g.hint">{{ g.label }}</span>
+                            <div class="rg-chips">
+                              <button
+                                v-for="p in g.items"
+                                :key="p.id"
+                                type="button"
+                                class="rule-chip"
+                                :class="{ on: rulePresetActive(p) }"
+                                @click="toggleRulePreset(p)"
+                              >{{ p.label }}</button>
+                            </div>
                           </div>
                         </div>
+                        <textarea v-model="form.src_rules" rows="3" placeholder="例：本校不收弱口令；重点收越权与未授权。&#10;点上方快捷规则可一键插入/移除，多条规则每行一条。"></textarea>
+                        <div v-if="forbiddenLoading" class="fb-preview">
+                          <span class="fb-loading">解析禁止操作中…</span>
+                        </div>
+                        <div v-else-if="forbiddenError" class="fb-preview fb-error">{{ forbiddenError }}</div>
+                        <div v-else-if="forbiddenPreview && forbiddenPreview.count > 0" class="fb-preview fb-active">
+                          <span class="fb-head">
+                            <b>额外禁止操作 {{ forbiddenPreview.count }} 类</b>
+                            <em>文本规则命中即报错，与上方勾选合并生效</em>
+                          </span>
+                          <span class="fb-chips">
+                            <em v-for="f in forbiddenPreview.forbidden" :key="f.id" class="fb-chip">{{ f.label }}</em>
+                          </span>
+                        </div>
+                        <div v-else-if="forbiddenPreview" class="fb-preview fb-idle">
+                          <span class="fb-head"><b>未检测到额外禁止操作</b></span>
+                          <span class="fb-note">文本规则仅审核语义（如"不收弱口令"）；禁止类请在上方八大类勾选</span>
+                        </div>
                       </div>
-                      <textarea v-model="form.src_rules" rows="3" placeholder="例：本校不收弱口令；重点收越权与未授权。&#10;点上方快捷规则可一键插入/移除，多条规则每行一条。"></textarea>
-                      <div v-if="forbiddenLoading" class="fb-preview">
-                        <span class="fb-loading">解析禁止操作中…</span>
-                      </div>
-                      <div v-else-if="forbiddenError" class="fb-preview fb-error">{{ forbiddenError }}</div>
-                      <div v-else-if="forbiddenPreview && forbiddenPreview.count > 0" class="fb-preview fb-active">
-                        <span class="fb-head">
-                          <b>执行层将硬拦截 {{ forbiddenPreview.count }} 类操作</b>
-                          <em>命中即报错，worker 无法执行</em>
-                        </span>
-                        <span class="fb-chips">
-                          <em v-for="f in forbiddenPreview.forbidden" :key="f.id" class="fb-chip">{{ f.label }}</em>
-                        </span>
-                      </div>
-                      <div v-else-if="forbiddenPreview" class="fb-preview fb-idle">
-                        <span class="fb-head"><b>未检测到禁止操作</b></span>
-                        <span class="fb-note">当前规则仅审核语义（如"不收弱口令"），不触发执行层拦截</span>
-                      </div>
-                      <p class="create-mini">快捷规则是常见口径，点一下即插入；再点一下移除。自定义规则请直接写在文本框。</p>
+
+                      <p class="create-mini">快捷规则是常见口径，点一下即插入；再点一下移除。自定义规则请直接写在文本框；勾选八大类后命中即报错，worker 不会执行，也不会弹确认。</p>
                     </section>
 
                     <section class="create-block">

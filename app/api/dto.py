@@ -52,6 +52,7 @@ class CreateTaskRequest(BaseModel):
     src_type: str = "edusrc"
     vuln_types: list[str] = Field(default_factory=list)
     src_rules: str = ""
+    guard_ops: list[str] = Field(default_factory=list)   # 任务级八大类拦截勾选（空=全不拦）
     target_source: str = "fofa"
     engine: str = ""                                           # 搜索引擎：fofa/quake/hunter/...
     fofa_query: str = ""
@@ -132,6 +133,8 @@ class ParseForbiddenOpsResponse(BaseModel):
     forbidden: list[dict[str, str]] = Field(default_factory=list)
     count: int = 0
     labels: str = ""
+    # 全部八大类拦截定义（id + label），供前端勾选区渲染
+    all: list[dict[str, str]] = Field(default_factory=list)
 
 
 class TaskModelsProbeRequest(BaseModel):
@@ -160,6 +163,7 @@ class UpdateTaskRequest(BaseModel):
     src_type: Optional[str] = None
     vuln_types: Optional[list[str]] = None
     src_rules: Optional[str] = None
+    guard_ops: Optional[list[str]] = None                  # 八大类拦截勾选，null=不改
     target_source: Optional[str] = None
     engine: Optional[str] = None                                 # 切换引擎
     fofa_query: Optional[str] = None
@@ -208,6 +212,7 @@ class TaskResponse(BaseModel):
     concurrency: int
     deepen_cap: int = 2
     src_rules: str = ""
+    guard_ops: list[str] = Field(default_factory=list)   # 任务级八大类拦截勾选
     manual_targets: list[str] = Field(default_factory=list)
     auth_bindings: list[dict] = Field(default_factory=list)
     model_config_data: dict = Field(default_factory=dict)

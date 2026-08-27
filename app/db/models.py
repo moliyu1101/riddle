@@ -57,6 +57,7 @@ class Task(Base):
     src_type: Mapped[str] = mapped_column(String(20), default="edusrc")
     vuln_types: Mapped[list] = mapped_column(JSON, default=list)        # 选定漏洞类型
     src_rules: Mapped[str] = mapped_column(Text, default="")            # 任务附加 SRC 规则（叠加内置标准，不替换）
+    guard_ops: Mapped[list] = mapped_column(JSON, default=list)         # 任务级八大类拦截勾选（空=全不拦，勾什么拦什么）
     target_source: Mapped[str] = mapped_column(String(20), default="fofa")  # fofa / manual / both / site
     fofa_query: Mapped[str] = mapped_column(Text, default="")
     manual_targets: Mapped[list] = mapped_column(JSON, default=list)

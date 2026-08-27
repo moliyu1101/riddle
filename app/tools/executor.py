@@ -31,6 +31,7 @@ from app.tools.guard import (
     check_command,
     check_http_request,
     check_task_forbidden,
+    normalize_guard_ops,
     parse_forbidden_ops,
 )
 from app.tools.js_analyzer import analyze_javascript as analyze_js_text
@@ -170,6 +171,18 @@ def _normalize_headers(headers: Any) -> dict[str, str]:
     return out
 
 
+def _merge_forbidden_ops(src_rules: str, guard_ops: Optional[list[str]]) -> list[str]:
+    """合并任务级拦截：额外规则文本解析出的禁止操作 + 界面勾选的八大类，保序去重。
+
+    勾了什么拦什么；未勾选的类别一律放行，避免全局硬拦导致合法漏洞验证被挡、洞被忽略。
+    """
+    merged: list[str] = []
+    for op in [*parse_forbidden_ops(src_rules), *normalize_guard_ops(guard_ops)]:
+        if op not in merged:
+            merged.append(op)
+    return merged
+
+
 class ToolExecutor:
     def __init__(
         self,
@@ -181,13 +194,15 @@ class ToolExecutor:
         fofa_base_url: str = "",
         engine: str = "fofa",
         src_rules: str = "",
+        guard_ops: Optional[list[str]] = None,
     ):
         self.target = target
         self.cancel_event = cancel_event or threading.Event()
         # 企业模式：对目标生产环境的破坏性命令做额外硬拦截。
         self.enterprise = enterprise
-        # 任务级禁止操作：从用户附加规则解析，命中即硬拦（不弹确认）。
-        self._forbidden_ops = parse_forbidden_ops(src_rules)
+        # 任务级禁止操作：任务界面勾选的八大类拦截 + 额外规则文本解析的禁止操作，合并生效（保序去重）。
+        # 勾了什么拦什么；未勾选的类别一律放行，避免全局硬拦导致合法漏洞验证被挡、洞被忽略。
+        self._forbidden_ops = _merge_forbidden_ops(src_rules, guard_ops)
         # 资产测绘引擎：fofa_lookup 走任务选定的引擎（FOFA / Quake / Hunter / …），
         # key/base_url 由编排层按 resolve_engine_config 注入；base_url 空则用引擎默认端点。
         self.engine = engine or "fofa"

@@ -104,6 +104,7 @@ class Worker:
         engine: str = "fofa",
         prompt_version: str | None = None,
         src_rules: str = "",
+        guard_ops: Optional[list[str]] = None,
         pop_directive: Optional[Callable[[], Optional[str]]] = None,
         blackboard: Optional[Any] = None,
         worker_id: str = "",
@@ -122,7 +123,7 @@ class Worker:
         self.executor = ToolExecutor(
             target, cancel_event=self.cancel_event,
             enterprise=self._enterprise, fofa_key=fofa_key, fofa_base_url=fofa_base_url,
-            engine=engine, src_rules=self.src_rules,
+            engine=engine, src_rules=self.src_rules, guard_ops=guard_ops,
         )
         self.findings: list[Finding] = []
         self.on_event = on_event or (lambda kind, data: None)

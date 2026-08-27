@@ -308,6 +308,38 @@ def forbidden_ops_labels(forbidden_ops: list[str]) -> str:
     return "、".join(_FORBIDDEN_LABEL.get(op, op) for op in forbidden_ops)
 
 
+def forbidden_op_ids() -> list[str]:
+    """八大类拦截类别 id 列表（供前端勾选区渲染，顺序即展示顺序）。"""
+    return [op["id"] for op in _FORBIDDEN_OP_DEFS]
+
+
+def forbidden_op_defs() -> list[dict[str, Any]]:
+    """八大类拦截类别定义（id + label），供前端展示中文名。"""
+    return [{"id": op["id"], "label": op["label"]} for op in _FORBIDDEN_OP_DEFS]
+
+
+def normalize_guard_ops(ops: Any) -> list[str]:
+    """任务级八大类拦截勾选：规范化并只保留合法类别 id（默认空=全不拦）。
+
+    用户通过任务界面勾选要拦截的类别；勾了什么拦什么，
+    未勾选的类别一律放行，避免全局硬拦导致合法漏洞验证被挡、洞被忽略。
+    """
+    if not ops:
+        return []
+    if isinstance(ops, str):
+        raw = [x.strip() for x in ops.replace("，", ",").split(",")]
+    elif isinstance(ops, (list, tuple, set)):
+        raw = list(ops)
+    else:
+        raw = []
+    seen: list[str] = []
+    for op in raw:
+        op = str(op or "").strip()
+        if op in _FORBIDDEN_LABEL and op not in seen:
+            seen.append(op)
+    return seen
+
+
 def check_task_forbidden(text: str, forbidden_ops: list[str]) -> None:
     """任务级禁止操作硬拦截：命中抛 CommandBlocked（用户已明确禁止，不弹确认）。"""
     if not forbidden_ops:

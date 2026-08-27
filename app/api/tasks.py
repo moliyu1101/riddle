@@ -27,7 +27,7 @@ from app.agents.auth_bootstrap import preview_auth_batch
 from app.agents.manual_targets import clean_manual_target_lines, preview_manual_targets
 from app.agents.query_analyzer import analyze_query
 from app.agents.prompts import normalize_src_type
-from app.tools.guard import _FORBIDDEN_OP_DEFS, forbidden_ops_labels, parse_forbidden_ops
+from app.tools.guard import _FORBIDDEN_OP_DEFS, forbidden_ops_labels, normalize_guard_ops, parse_forbidden_ops
 from app.db.models import Finding, Killsweep, ReportVersion, Review, Target, Task, TaskEvent, to_cst, to_cst_iso
 from app.db.session import get_session
 from app.llm.usage import usage_snapshot
@@ -446,6 +446,7 @@ def _task_to_dto(t: Task, stats: TaskStats | None = None,
         engine=t.engine or "", fofa_query="" if observer else t.fofa_query, concurrency=t.concurrency,
         deepen_cap=clamp_deepen_cap(getattr(t, "deepen_cap", None)),
         src_rules="" if observer else (t.src_rules or ""),
+        guard_ops=[] if observer else (t.guard_ops or []),
         manual_targets=[] if observer else (t.manual_targets or []),
         auth_bindings=_public_auth_bindings(t, observer=observer),
         model_config_data=model_config,
@@ -591,7 +592,7 @@ async def create_task(req: CreateTaskRequest, session: AsyncSession = Depends(ge
         model_config["inherit_global"] = False
     task = Task(
         name=req.name, src_type=normalize_src_type(req.src_type), vuln_types=req.vuln_types,
-        src_rules=req.src_rules, target_source=req.target_source,
+        src_rules=req.src_rules, guard_ops=normalize_guard_ops(req.guard_ops), target_source=req.target_source,
         engine=engine_name, fofa_query=req.fofa_query,
         manual_targets=clean_manual_target_lines(req.manual_targets or []),
         auth_bindings=_dump_auth_bindings(req.auth_bindings),
@@ -634,6 +635,7 @@ async def parse_forbidden_ops_endpoint(req: ParseForbiddenOpsRequest):
         forbidden=[{"id": op, "label": label_map.get(op, op)} for op in ops],
         count=len(ops),
         labels=forbidden_ops_labels(ops),
+        all=[{"id": op["id"], "label": op["label"]} for op in _FORBIDDEN_OP_DEFS],
     )
 
 
@@ -862,6 +864,8 @@ async def update_task(task_id: str, req: UpdateTaskRequest, session: AsyncSessio
         task.vuln_types = [v.strip() for v in req.vuln_types if str(v).strip()]
     if req.src_rules is not None:
         task.src_rules = req.src_rules
+    if req.guard_ops is not None:
+        task.guard_ops = normalize_guard_ops(req.guard_ops)
     if req.target_source is not None:
         if req.target_source not in {"fofa", "manual", "both", "site"}:
             raise HTTPException(400, "target_source 必须是 fofa/manual/both/site")
