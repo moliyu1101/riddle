@@ -949,7 +949,19 @@ REPORT_ASSISTANT_TOOLS = [
                     "title": {"type": "string"},
                     "description": {"type": "string"},
                     "affected_scope": {"type": "string"},
-                    "steps": {"type": "array", "items": {"type": "string"}},
+                    "steps": {
+                        "type": "array",
+                        "items": {
+                            "oneOf": [
+                                {"type": "string"},
+                                {"type": "object", "properties": {
+                                    "desc": {"type": "string", "description": "这一步的操作说明"},
+                                    "poc": {"type": "string", "description": "这一步对应的验证命令/请求包"},
+                                }, "required": ["desc"]},
+                            ]
+                        },
+                        "description": "复现步骤：每步可写字符串或 {desc, poc} 对象（每步带对应验证命令）",
+                    },
                     "poc": {"type": "string"},
                     "severity": {"type": "string", "enum": ["严重", "高危", "中危", "低危"]},
                     "rationale": {"type": "string", "description": "改了什么、为什么这样改（给审核员看的短说明）"},
@@ -1027,7 +1039,9 @@ _ASSISTANT_SYSTEM_PROMPT = (
     "2. 结论先行：过审判断（能交 / 补证据再交 / 像误报）+ 一句理由，再写证据缺口和改稿建议。\n"
     "3. 口径跟任务 SRC 类型走：edusrc 写清学校/系统/接口与可验证危害；enterprise 写清业务影响与利用门槛。\n"
     "4. 用户要润色、改稿、重写标题/描述/复现/PoC 时，必须调用 propose_report_edits 给出可落地字段；"
-    "正文用中文说明改了什么。不要只口头说「建议改成…」却不调工具。\n"
+    "正文用中文说明改了什么。不要只口头说「建议改成…」却不调工具。"
+    "复现步骤(steps) 逐条给对象 {desc, poc}——desc 写做什么+预期结果，poc 写该步对应的 curl/请求包/payload，"
+    "每步都必须能独立复现，操作类步骤（访问、登录、构造请求、取证）每步都要给出可执行命令，不要留空。\n"
     "5. 仅当用户明确要求复测、看还在不在、或现有证据对不上时，才用 http_request/run_shell 做少量定向验证。"
     "禁止扫描、爆破、改密、改数据、破坏现场。\n"
     "6. 工具结果必须解读：状态码、关键响应片段、对结论的影响。禁止只说「已完成」。\n"
@@ -1147,9 +1161,17 @@ def _normalize_proposed_edits(args: dict) -> dict:
     if isinstance(raw_steps, str):
         raw_steps = [line.strip() for line in raw_steps.splitlines()]
     if isinstance(raw_steps, list):
-        steps = [str(s).strip() for s in raw_steps if str(s).strip()]
+        steps: list = []
+        for s in raw_steps[:40]:
+            if isinstance(s, dict):
+                desc = str(s.get("desc") or s.get("text") or "").strip()
+                poc = str(s.get("poc") or "").strip()
+                if desc:
+                    steps.append({"desc": desc, "poc": poc})
+            elif str(s).strip():
+                steps.append(str(s).strip())
         if steps:
-            edits["steps"] = steps[:40]
+            edits["steps"] = steps
     severity = str(args.get("severity") or "").strip()
     if severity in _ASSISTANT_SEVERITIES:
         edits["severity"] = severity

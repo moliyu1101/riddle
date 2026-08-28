@@ -28,6 +28,20 @@ function eff(f, key) {
   return e[key] !== undefined && e[key] !== null && e[key] !== "" ? e[key] : f[key];
 }
 
+// 复现步骤统一成 [{desc, poc}]：兼容旧版纯字符串列表。
+export function normalizeSteps(steps) {
+  return (steps || [])
+    .map((s) => {
+      if (s && typeof s === "object") {
+        const desc = String(s.desc ?? s.text ?? s.description ?? s.step ?? "").trim();
+        const poc = String(s.poc ?? s.curl ?? s.command ?? "").trim();
+        return { desc, poc };
+      }
+      return { desc: String(s ?? "").trim(), poc: "" };
+    })
+    .filter((s) => s.desc);
+}
+
 export function effectiveSeverity(f) {
   return f.review?.user_severity || f.review?.severity_final || "-";
 }
@@ -89,7 +103,7 @@ export function buildReportCoreMd(f) {
   const title = eff(f, "title");
   const desc = eff(f, "description");
   const scope = eff(f, "affected_scope");
-  const steps = eff(f, "steps") || [];
+  const steps = normalizeSteps(eff(f, "steps"));
   const poc = eff(f, "poc");
   // 归属单位：优先教育网离线库反查到的学校名
   const owner = (f.edu_school || "").trim() || f.owner || "-";
@@ -133,7 +147,11 @@ ${scope || "-"}
 
 ## 复现步骤
 
-${steps.map((s, i) => `${i + 1}. ${s}`).join("\n") || "-"}
+${steps.map((st, i) => {
+  let block = `${i + 1}. **${st.desc}**`;
+  if (st.poc) block += `\n\n   \`\`\`bash\n   ${st.poc}\n   \`\`\``;
+  return block;
+}).join("\n") || "-"}
 
 ## 验证 PoC
 

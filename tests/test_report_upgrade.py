@@ -79,8 +79,45 @@ class ReportSectionsTemplateTest(unittest.TestCase):
         self.assertIn("evidence", keys)
         self.assertIn("chain", keys)
         self.assertEqual(sec["data"]["overview"]["title"], "登录接口 SQL 注入")
-        self.assertEqual(sec["data"]["steps"], ["注入万能口令", "绕过认证"])
+        self.assertEqual(sec["data"]["steps"], [
+            {"desc": "注入万能口令", "poc": ""},
+            {"desc": "绕过认证", "poc": ""},
+        ])
         self.assertEqual(len(sec["data"]["chain"]), 1)
+
+    def test_object_steps_keep_per_step_poc(self):
+        f = _finding(steps=[
+            {"desc": "访问登录接口", "poc": "curl -s 'https://example.edu.cn/api/login'"},
+            {"desc": "注入万能口令", "poc": "curl -s 'https://example.edu.cn/api/login' -d 'username=admin'"},
+            "纯说明步骤",
+        ])
+        r = _review()
+        sec = build_report_sections(f, r, "edusrc")
+        self.assertEqual(sec["data"]["steps"][0], {
+            "desc": "访问登录接口", "poc": "curl -s 'https://example.edu.cn/api/login'",
+        })
+        self.assertEqual(sec["data"]["steps"][1]["poc"], "curl -s 'https://example.edu.cn/api/login' -d 'username=admin'")
+        self.assertEqual(sec["data"]["steps"][2], {"desc": "纯说明步骤", "poc": ""})
+        self.assertEqual(sec["data"]["overview"]["steps_count"], 3)
+        md = build_report_markdown(f, r, "edusrc")
+        self.assertIn("1. **访问登录接口**", md)
+        self.assertIn("curl -s 'https://example.edu.cn/api/login' -d 'username=admin'", md)
+
+    def test_object_steps_export_docx_and_html(self):
+        f = _finding(steps=[
+            {"desc": "访问登录接口", "poc": "curl -s 'https://example.edu.cn/api/login'"},
+            "纯说明步骤",
+        ])
+        r = _review()
+        doc = build_docx_bytes(f, r, "edusrc")
+        zf = zipfile.ZipFile(io.BytesIO(doc))
+        xml = zf.read("word/document.xml").decode("utf-8")
+        self.assertIn("1. 访问登录接口", xml)
+        self.assertIn("curl -s 'https://example.edu.cn/api/login'", xml)
+        self.assertIn("2. 纯说明步骤", xml)
+        html = build_report_html(f, r, "edusrc")
+        self.assertIn("<li>访问登录接口<pre>curl -s &#x27;https://example.edu.cn/api/login&#x27;</pre></li>", html)
+        self.assertIn("<li>纯说明步骤</li>", html)
 
     def test_overview_embeds_score_breakdown(self):
         f = _finding()

@@ -2203,6 +2203,17 @@
   box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent) 10%, transparent) inset;
 }
 .step-txt { color: var(--ink-2); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.step-body { min-width: 0; display: grid; gap: 8px; }
+.step-poc { margin: 2px 0 0; }
+.step-poc summary {
+  cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 600;
+  color: var(--accent-ink); background: var(--accent-bg);
+  border: 1px solid color-mix(in oklch, var(--accent) 30%, transparent);
+  border-radius: 8px; padding: 3px 10px; width: max-content;
+}
+.step-poc summary:hover { filter: brightness(1.06); }
+.step-poc .code-block { margin-top: 8px; max-height: 300px; font-size: 12px; }
 
 /* 代码块 + 小复制按钮 */
 .code-block {

@@ -424,7 +424,10 @@ def _review_finding_payload(finding: Finding) -> dict[str, Any]:
     for key, limit in _REVIEW_TEXT_LIMITS.items():
         if key in data:
             data[key] = _clip_text(data.get(key) or "", limit)
-    data["steps"] = [_clip_text(str(s), 500) for s in (data.get("steps") or [])[:10]]
+    data["steps"] = [
+        _clip_text(str(s.get("desc") or s.get("text") or s) if isinstance(s, dict) else str(s), 500)
+        for s in (data.get("steps") or [])[:10]
+    ]
     data["kill_chain"] = _clip_jsonish(data.get("kill_chain") or [], 700)
     data["evidence"] = _clip_jsonish(data.get("evidence") or {}, 900)
     data["self_check"] = data.get("self_check") or {}

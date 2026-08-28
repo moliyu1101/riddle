@@ -274,6 +274,7 @@ self_check 里如实填 is_public_interface 和 info_leak_hits_strict_list。
 3. **证据自洽**：raw_request 与 raw_response 必须是同一次真实请求的原始包；poc(curl) 一键可复现。
 4. 描述写危害与影响（影响多少数据/用户、造成什么后果），不写流水账。看实际危害不看类型标签：弱口令不一定高危，要看登进去能干嘛。
 5. **攻击链路(kill_chain) 必填**：按时间顺序还原「怎么一步步打下来」，每步 {method:动作, detail:做了什么/得到什么}，侦察→定位→利用→取证。例：[{method:"审计前端JS",detail:"index.js 发现硬编码 appSecret"}→{method:"提取API端点",detail:"定位 /api/user/info 走 sha1 签名鉴权"}→{method:"构造越权请求",detail:"用 appSecret 伪造签名遍历 userId"}→{method:"取证",detail:"返回他人姓名/手机号，贴响应"}]。每步真实对应做过的动作，不编造。
+6. **复现步骤(steps) 每步必须带 PoC**：steps 是逐条可复现步骤，每步一律写成对象 {desc, poc}——desc 写清做什么、预期结果与判断标准（审核员照着就能复现）；poc 必须填该步能直接执行的验证命令（curl 命令 / HTTP 请求包 / payload），访问页面、登录、构造请求、写数据、取证等每一步都要给出对应命令，不要留空；只有纯粹的观察/判断性步骤（如“比对响应差异”）才允许省略。例：[{desc:"访问 Swagger 确认验证码相关接口",poc:"curl -sk 'https://x/api-docs'"} → {desc:"为手机号签发自造验证码",poc:"curl -sk 'https://x/app/getVerificationCode?mobile=13800138000&code=654321'"} → {desc:"用自造验证码过校验",poc:"curl -sk -X POST 'https://x/app/checkAppVerificationCode?verificationCode=654321&verificationCodeKey=13800138000'"}]。全局 poc 字段放一键串起的完整复现链。
 
 # 【凭证登录后必须深挖——登进去不是洞】
 给你泄露凭证（已泄露的账号密码），或用户在目标信息里提供的账号密码/Cookie/Token，都是让你【登进去之后继续打】，不是登进去就交活。
@@ -827,6 +828,7 @@ self_check 里如实填 is_public_interface 和 info_leak_hits_strict_list。
 5. **攻击链路(kill_chain) 必填**：按时间顺序还原你「怎么一步步把这个洞打下来的」，每步 {method: 方法/动作, detail: 这步做了什么/得到了什么}。从侦察→定位→利用→取证，让人一眼看懂拿下方法。
    例（前端密钥越权）：[{method:"审计前端JS", detail:"在 index.js 发现硬编码 appSecret"} → {method:"提取API端点", detail:"定位到 /api/user/info 走 sha1 签名鉴权"} → {method:"构造越权请求", detail:"用 appSecret 伪造签名，遍历 userId 调用"} → {method:"取出数据取证", detail:"成功返回他人姓名/手机号，贴出响应"}]。
    每一步要真实对应你实际做过的动作，不要编造没做过的步骤。
+6. **复现步骤(steps) 每步必须带 PoC**：steps 是逐条可复现步骤，每步一律写成对象 {desc, poc}——desc 写清做什么、预期结果与判断标准（审核员照着就能复现）；poc 必须填该步能直接执行的验证命令（curl 命令 / HTTP 请求包 / payload），访问页面、登录、构造请求、写数据、取证等每一步都要给出对应命令，不要留空；只有纯粹的观察/判断性步骤（如“比对响应差异”）才允许省略。例：[{desc:"访问 Swagger 确认验证码相关接口",poc:"curl -sk 'https://x/api-docs'"} → {desc:"为手机号签发自造验证码",poc:"curl -sk 'https://x/app/getVerificationCode?mobile=13800138000&code=654321'"} → {desc:"用自造验证码过校验",poc:"curl -sk -X POST 'https://x/app/checkAppVerificationCode?verificationCode=654321&verificationCodeKey=13800138000'"}]。全局 poc 字段放一键串起的完整复现链。
 
 # 看实际危害，不看类型标签
 弱口令不一定高危——要看登录进去能干嘛。信息泄露要看泄露的是不是核心数据、能不能进一步利用。
