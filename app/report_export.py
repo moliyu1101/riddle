@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.db.models import Finding, Review, to_cst_iso
+from app.schemas import Step
 from app.tools.evidence_capture import render_snapshot_markdown
 
 # 章节类型：overview 概览 / text 文本 / steps 复现 / code 代码 / evidence 证据 / chain 攻击链路 / quote 引用
@@ -46,6 +47,27 @@ _REPORT_TEMPLATES: dict[str, dict[str, Any]] = {
 }
 
 
+def normalize_steps(steps: Any) -> list[dict]:
+    """把复现步骤统一成 [{desc, poc}]：兼容旧版纯字符串列表与 Step 对象。
+
+    新版每步可以是 {desc, poc} 对象（poc=该步验证命令）；旧版是字符串，poc 归入全局 poc。
+    """
+    out: list[dict] = []
+    for s in steps or []:
+        if isinstance(s, dict):
+            desc = str(s.get("desc") or s.get("text") or s.get("description") or s.get("step") or "").strip()
+            poc = str(s.get("poc") or s.get("curl") or s.get("command") or "").strip()
+        elif isinstance(s, Step):
+            desc = str(s.desc or "").strip()
+            poc = str(s.poc or "").strip()
+        else:
+            desc = str(s or "").strip()
+            poc = ""
+        if desc:
+            out.append({"desc": desc, "poc": poc})
+    return out
+
+
 def _eff(f: Finding, r: Review | None, key: str):
     e = (r.user_edits if r else None) or {}
     v = e.get(key)
@@ -69,6 +91,8 @@ def _owner(f: Finding) -> str:
 
 def _evidence_items(f: Finding) -> list[dict]:
     ev = f.evidence or {}
+    if not isinstance(ev, dict):
+        ev = ev.model_dump() if hasattr(ev, "model_dump") else {}
     items = []
     if f.raw_request:
         items.append({"label": "原始请求", "kind": "code", "content": f.raw_request})
@@ -160,12 +184,12 @@ def build_report_sections(f: Finding, r: Review | None, src_type: str = "edusrc"
             "score_breakdown": score_breakdown(f, r),
             "created_at": to_cst_iso(f.created_at),
             "llm_model": getattr(f, "llm_model", "") or "",
-            "steps_count": len(_eff(f, r, "steps") or []),
+            "steps_count": len(normalize_steps(_eff(f, r, "steps"))),
             "chain_count": len(_chain(f)),
         },
         "description": _eff(f, r, "description") or "",
         "scope": _eff(f, r, "affected_scope") or "",
-        "steps": [s for s in (_eff(f, r, "steps") or []) if s],
+        "steps": normalize_steps(_eff(f, r, "steps")),
         "poc": _eff(f, r, "poc") or "",
         "evidence": _evidence_items(f),
         "chain": _chain(f),
@@ -219,8 +243,18 @@ def build_report_markdown(f: Finding, r: Review | None, src_type: str = "edusrc"
         "",
     ]
     steps = d["steps"]
-    lines.extend(f"{i + 1}. {s}" for i, s in enumerate(steps)) if steps else lines.append("-")
-    lines += ["", "## 验证 PoC", "", "```bash", d["poc"] or "-", "```", "", "## 证据链", ""]
+    if steps:
+        for i, st in enumerate(steps, 1):
+            lines.append(f"{i}. **{st['desc']}**")
+            if st["poc"]:
+                lines.append("")
+                lines.append("   ```bash")
+                lines.append("   " + st["poc"])
+                lines.append("   ```")
+            lines.append("")
+    else:
+        lines.append("-")
+    lines += ["## 验证 PoC", "", "```bash", d["poc"] or "-", "```", "", "## 证据链", ""]
     for item in d["evidence"]:
         lines.append(f"**{item['label']}**")
         lines.append("")
@@ -293,8 +327,10 @@ def build_docx_bytes(f: Finding, r: Review | None, src_type: str = "edusrc") -> 
     body.append(heading("影响范围", 2))
     body.append(para(d["scope"] or "-"))
     body.append(heading("复现步骤", 2))
-    for i, s in enumerate(d["steps"], 1):
-        body.append(para(f"{i}. {s}"))
+    for i, st in enumerate(d["steps"], 1):
+        body.append(para(f"{i}. {st['desc']}"))
+        if st["poc"]:
+            body.append(code(st["poc"]))
     if not d["steps"]:
         body.append(para("-"))
     body.append(heading("验证 PoC", 2))
@@ -368,7 +404,10 @@ def build_report_html(f: Finding, r: Review | None, src_type: str = "edusrc") ->
         parts.append(f"<h2>风险评分分解</h2><table class='meta'>{rows}</table>")
     parts.append(f"<h2>漏洞描述</h2><p>{esc(d['description'] or '-')}</p>")
     parts.append(f"<h2>影响范围</h2><p>{esc(d['scope'] or '-')}</p>")
-    parts.append("<h2>复现步骤</h2><ol>" + "".join(f"<li>{esc(s)}</li>" for s in d["steps"]) + "</ol>")
+    parts.append("<h2>复现步骤</h2><ol>")
+    for i, st in enumerate(d["steps"], 1):
+        parts.append(f"<li>{esc(st['desc'])}" + (f"<pre>{esc(st['poc'])}</pre>" if st["poc"] else "") + "</li>")
+    parts.append("</ol>")
     parts.append(f"<h2>验证 PoC</h2><pre>{esc(d['poc'] or '-')}</pre>")
     if d["evidence"]:
         parts.append("<h2>证据链</h2>")

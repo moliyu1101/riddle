@@ -6,7 +6,7 @@ SelfCheck 强制 worker 先对照当前 SRC 模式的忽略清单做一遍自检
 from __future__ import annotations
 
 from enum import Enum
-from typing import Optional
+from typing import Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -49,6 +49,12 @@ class ChainStep(BaseModel):
     detail: str = Field("", description="这步具体做了什么、发现/得到了什么")
 
 
+class Step(BaseModel):
+    """复现步骤中的一步：操作说明 + 该步对应的可执行 PoC。"""
+    desc: str = Field(..., description="这一步的操作说明：做什么、预期结果、判断依据")
+    poc: str = Field("", description="这一步对应的可执行 PoC：curl 命令 / HTTP 请求包 / payload；纯说明性步骤可留空")
+
+
 class Finding(BaseModel):
     """worker 标准漏洞输出。缺关键字段审核会直接打回。"""
     vuln_type: str = Field(..., description="漏洞类型，如 sql_injection / rce / captcha_bypass / idor / unauthorized_access")
@@ -57,7 +63,7 @@ class Finding(BaseModel):
     target_url: str = Field(..., description="漏洞所在 URL")
     owner: str = Field("", description="归属单位/业务系统 + 确认依据。EduSRC 写学校；企业模式写企业/集团/系统")
     description: str = Field(..., description="漏洞类型、触发条件、影响范围")
-    steps: list[str] = Field(..., description="复现步骤，逐条")
+    steps: list[Union[str, Step]] = Field(..., description="复现步骤，逐条。每步可以是纯字符串，或 {desc, poc} 对象（desc=操作说明，poc=该步对应的验证命令/请求包）")
     poc: str = Field(..., description="可执行的 PoC，curl 命令 / payload")
     raw_request: str = Field("", description="原始请求包")
     raw_response: str = Field("", description="原始响应包（含证明漏洞的关键差异）")

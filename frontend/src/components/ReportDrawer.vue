@@ -4,7 +4,7 @@ import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { api, canWrite, isReadonly } from "../api.js";
 import { copyText } from "../clipboard.js";
-import { CONF, buildReportMd, effectiveSeverity, severityToCn } from "../report.js";
+import { CONF, buildReportMd, effectiveSeverity, severityToCn, normalizeSteps } from "../report.js";
 import { fmtLocalTime } from "../format.js";
 
 const props = defineProps({ findingId: String, mode: String, srcType: String }); // mode: view | review | submit | rejected | archived
@@ -16,6 +16,7 @@ const viewMode = ref("structured");  // structured | markdown
 const mdCopied = ref(false);
 const editing = ref(false);
 const edit = ref({});
+const origSteps = ref([]);          // 编辑打开时的原始 steps（保留每步 POC）
 const userSeverity = ref("");
 const userNotes = ref("");
 const deepenOpen = ref(false);
@@ -61,11 +62,13 @@ async function loadFinding() {
   f.value = await api.finding(props.findingId);
   const rv = f.value.review || {};
   const e = rv.user_edits || {};
+  const rawSteps = e.steps ?? f.value.steps ?? [];
+  origSteps.value = rawSteps;
   edit.value = {
     title: e.title ?? f.value.title,
     description: e.description ?? f.value.description,
     affected_scope: e.affected_scope ?? f.value.affected_scope,
-    steps: (e.steps ?? f.value.steps ?? []).join("\n"),
+    steps: stepsToEditText(rawSteps),
     poc: e.poc ?? f.value.poc,
   };
   userSeverity.value = rv.user_severity || rv.severity_final || "";
@@ -145,7 +148,7 @@ function effVal(key) {
 }
 const descText = computed(() => String(effVal("description") || "").trim());
 const scopeText = computed(() => String(effVal("affected_scope") || "").trim());
-const stepList = computed(() => (effVal("steps") || []).filter(Boolean));
+const stepList = computed(() => normalizeSteps(effVal("steps")));
 const pocText = computed(() => String(effVal("poc") || "").trim());
 
 // 验证 PoC 请求包：优先用原始请求包 raw_request；否则把 curl 转成标准 HTTP 请求包。
@@ -264,12 +267,23 @@ function snapStatusClass(status) {
   return "warn";
 }
 
+// 复现步骤 → 编辑框文本（每行一步说明；纯字符串步骤原样、对象步骤取 desc）。
+function stepsToEditText(steps) {
+  return normalizeSteps(steps).map((s) => s.desc).join("\n");
+}
+
 async function saveEdits() {
   try {
+    const newDescs = edit.value.steps.split("\n").map((s) => s.trim()).filter(Boolean);
+    const origDescs = normalizeSteps(origSteps.value).map((s) => s.desc);
+    // 描述行未变时保留原步骤结构（含每步 POC），避免打开编辑框不修改反而丢失 POC。
+    const steps = JSON.stringify(newDescs) === JSON.stringify(origDescs)
+      ? origSteps.value
+      : newDescs;
     const user_edits = {
       title: edit.value.title, description: edit.value.description,
       affected_scope: edit.value.affected_scope,
-      steps: edit.value.steps.split("\n").map((s) => s.trim()).filter(Boolean),
+      steps,
       poc: edit.value.poc,
     };
     await api.userReview(f.value.id, { user_edits, user_severity: userSeverity.value, user_notes: userNotes.value });
@@ -701,11 +715,17 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
 
                 <!-- 复现步骤 -->
                 <template v-else-if="s.type === 'steps'">
-                  <div class="rc-sec-head"><span>{{ s.label }}</span><small>{{ stepList.length }} 步</small></div>
+                  <div class="rc-sec-head"><span>{{ s.label }}</span><small>{{ stepList.length }} 步 · 每步含对应 PoC</small></div>
                   <ol v-if="stepList.length" class="step-list">
-                    <li v-for="(st, i) in stepList" :key="i">
+                    <li v-for="(st, i) in stepList" :key="i" class="step-item">
                       <span class="step-idx">{{ i + 1 }}</span>
-                      <span class="step-txt">{{ st }}</span>
+                      <div class="step-body">
+                        <div class="step-txt">{{ st.desc }}</div>
+                        <details v-if="st.poc" class="step-poc">
+                          <summary>对应 PoC</summary>
+                          <pre class="code-block"><code>{{ st.poc }}</code></pre>
+                        </details>
+                      </div>
                     </li>
                   </ol>
                   <div v-else class="sec-body text">-</div>
