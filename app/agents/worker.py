@@ -29,7 +29,6 @@ from app import dedup
 from app.tools.evidence_capture import capture_snapshot, load_snapshot, save_snapshot
 from app.llm.client import LLMClient, LLMError, llm_error_event_fields
 from app.schemas import Finding, Verdict, WorkerResult
-from app.tools.evidence_trail import build_finding_from_trail as _build_finding_from_trail
 from app.tools.evidence_trail import latest_trail as _latest_evidence_trail
 from app.tools.executor import ToolExecutor
 from app.tools.schemas import (
@@ -875,41 +874,6 @@ class Worker:
             rounds_done=int(ctx.get("rounds_done") or 0),
         )
 
-    def _recover_finding_from_trail(self) -> bool:
-        """LLM 提交失败时，从本地证据链确定性重建一个保存壳 Finding。
-
-        真正的请求/响应早已落盘，不依赖 LLM 的再次生成。重建后追加到
-        self.findings，随正常收尾路径（_persist_worker_result）落库，避免
-        数据随 LLM 超时一起丢失。返回是否成功重建。
-        """
-        try:
-            if self.findings:
-                return False  # 已有明文提交的洞，无需重建
-            data = _build_finding_from_trail(self.executor.work_dir, self.target)
-            if not data:
-                return False
-            finding = Finding(**data)
-            # 查重：与 _submit_finding 一致，命中的重建洞放弃（避免伪造重复洞）
-            dup, matches = self._dup_matches(finding.model_dump(mode="json"))
-            if dup:
-                self._emit("finding_duplicate", title=finding.title, matches=len(matches))
-                return False
-            if self.findings:
-                return False
-            self.findings.append(finding)
-            self._emit(
-                "finding_submitted",
-                title=finding.title,
-                severity=finding.severity_claimed.value,
-                vuln_type=finding.vuln_type,
-                finding=finding.model_dump(mode="json"),
-                rebuilt=True,
-            )
-            self._emit("evidence_rebuilt_finding", title=finding.title, url=finding.target_url)
-            return True
-        except Exception:
-            return False
-
     def _llm_interrupt_result(
         self,
         *,
@@ -919,25 +883,21 @@ class Worker:
         retry_after: int,
     ) -> WorkerResult:
         resume = self._build_resume_context(rounds)
-        # LLM 提交失败兜底：若本轮已产生真实取证但来不及 submit_finding，
-        # 从证据链确定性重建一个保存壳 Finding，避免数据随超时丢失。
-        rebuilt = not self.findings and bool(resume) and self._recover_finding_from_trail()
         self._emit(
             "llm_interrupt",
             round=rounds,
             failure_kind=failure_kind or "unknown",
             has_resume=bool(resume),
             findings=len(self.findings),
-            rebuilt=rebuilt,
             error=error[:240],
         )
         return WorkerResult(
             target=self.target,
             verdict=Verdict.found if self.findings else Verdict.error,
             findings=self.findings,
-            summary="LLM 调用失败，已从证据链重建保存一个漏洞，其余进度保存供回队续挖。" if rebuilt else (
-                "LLM 调用失败，已保存进度供回队续挖。" if resume else ""
-            ),
+            summary=(
+                "LLM 调用失败，已保存进度供回队续挖，此前发现的漏洞保留待提交。"
+            ) if resume else "",
             rounds=rounds,
             error=error,
             failure_kind=failure_kind,

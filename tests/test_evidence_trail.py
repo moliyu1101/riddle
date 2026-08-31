@@ -1,9 +1,11 @@
-"""证据链四层机制回归测试：LLM 提交失败时的数据保全。
+"""证据链收集与回填回归测试。
 
-1. 证据增量落库：http_request/run_shell 每次调用后真实请求/响应落盘
-2. 确定性重建：LLM 提交失败时从证据链重建最小 Finding
-3. 大字段回填：_backfill_finding_fields 从证据链补全 raw_request/poc_http/raw_response
-4. 切端点软重试复用现有 LLM 重试机制（见 test_worker_llm_soft_retry / client 重试）
+1. 证据增量落库：http_request/run_shell 每次调用后真实请求/响应落盘（与 LLM 解耦）
+2. 大字段回填：_backfill_finding_fields 从证据链补全 raw_request/poc_http/raw_response
+3. 切端点软重试复用现有 LLM 重试机制（见 test_worker_llm_soft_retry / client 重试）
+
+注意：不在此处重建漏洞。LLM 超时不自动判定漏洞，仅保留断点续挖进度，
+由下次续挖的 LLM 自行判断并正式提交，从机制上杜绝 LLM 超时导致误报假洞。
 """
 from __future__ import annotations
 
@@ -18,7 +20,7 @@ import pytest
 from app.agents.worker import Worker
 from app.schemas import Finding, Severity
 from app.tools import evidence_trail as et
-from app.tools.evidence_trail import build_finding_from_trail, load_trail
+from app.tools.evidence_trail import load_trail
 
 
 # ---------- 第1层：证据增量落库 ----------
@@ -50,41 +52,7 @@ class TestEvidenceTrailAppend:
         et.append_trail(Path("Z:/no/such/dir"), kind="http_request")  # 不应抛
 
 
-# ---------- 第2层：确定性重建 ----------
-
-class TestBuildFindingFromTrail:
-    def _seed(self, wd: str):
-        et.append_trail(
-            wd, kind="http_request", target="t",
-            url="http://x.com/admin/User/index?offset=0&limit=20", method="GET",
-            request="GET /admin/User/index?offset=0&limit=20 HTTP/1.1\nHost: x.com\nCookie: a=1",
-            status=200,
-            body='{"total":449,"data":[{"name":"z","password_hash":"abc"}]}',
-            response_headers={"content-type": "application/json"},
-        )
-
-    def test_build_from_trail(self):
-        wd = tempfile.mkdtemp()
-        self._seed(wd)
-        f = build_finding_from_trail(wd, "http://x.com")
-        assert f is not None
-        assert f["severity_claimed"] == "高危"
-        assert f["target_url"]
-        assert f["raw_request"] and f["raw_response"]
-        assert f["_rebuilt"] is True
-        # 无凭证据返回 None
-        assert build_finding_from_trail(tempfile.mkdtemp(), "x") is None
-
-    def test_reconstructed_finding_passes_pydantic(self):
-        wd = tempfile.mkdtemp()
-        self._seed(wd)
-        f = build_finding_from_trail(wd, "http://x.com")
-        finding = Finding(**f)  # 不应抛 ValidationError
-        assert finding.severity_claimed.value == "高危"
-        assert len(finding.steps) >= 1
-
-
-# ---------- 第2层接入：worker 中断时重建兜底 ----------
+# ---------- LLM 中断不再自动重建漏洞，仅保留断点续挖 ----------
 
 class FakeExec:
     def __init__(self, work_dir: str):
@@ -114,8 +82,9 @@ def _make_worker(ex, findings=None):
     return w
 
 
-class TestWorkerRebuildRecovery:
-    def test_llm_interrupt_rebuilds_from_trail(self):
+class TestWorkerNoRebuildOnInterrupt:
+    def test_llm_interrupt_does_not_rebuild_finding(self):
+        # 即使盘上已有证据，LLM 中断后也绝不自动生成漏洞（防止把非漏洞硬判成高危）
         wd = tempfile.mkdtemp()
         et.append_trail(
             wd, kind="http_request", url="http://x.com/a", method="GET",
@@ -127,14 +96,14 @@ class TestWorkerRebuildRecovery:
         result = w._llm_interrupt_result(
             rounds=12, error="LLM 请求超时", failure_kind="timeout", retry_after=0,
         )
-        assert result.findings, "LLM 失败应重建一个 finding"
-        assert result.verdict.value == "found"
-        assert result.findings[0].raw_request
-        kinds = [c.args[0] for c in w._emit.call_args_list]
-        assert "finding_submitted" in kinds  # 走标准落库事件，编排层据此落库
-        assert "evidence_rebuilt_finding" in kinds
+        assert result.findings == [], "LLM 中断绝不能自动重建漏洞（避免误报假洞）"
+        assert result.verdict.value == "error"
+        assert result.resume_context, "断点续挖进度必须保留"
+        emitted = [c.args[0] for c in w._emit.call_args_list]
+        assert "finding_submitted" not in emitted, "不应发出落库事件"
+        assert "evidence_rebuilt_finding" not in emitted
 
-    def test_no_rebuild_when_already_have_findings(self):
+    def test_existing_findings_preserved_on_interrupt(self):
         wd = tempfile.mkdtemp()
         et.append_trail(
             wd, kind="http_request", url="http://x.com/a", method="GET",
@@ -150,13 +119,13 @@ class TestWorkerRebuildRecovery:
         result = w._llm_interrupt_result(
             rounds=12, error="timeout", failure_kind="timeout", retry_after=0,
         )
-        assert len(result.findings) == 1  # 已是同一洞，不重复重建
+        assert len(result.findings) == 1  # 既有明文发现的洞保留，不删
 
-    def test_no_rebuild_when_no_evidence(self):
+    def test_no_resume_when_nothing(self):
         ex = FakeExec(tempfile.mkdtemp())
         w = _make_worker(ex)
-        w._llm_interrupt_result(rounds=1, error="e", failure_kind="timeout", retry_after=0)
-        assert w.findings == []
+        result = w._llm_interrupt_result(rounds=1, error="e", failure_kind="timeout", retry_after=0)
+        assert result.findings == []
 
 
 # ---------- 第3层：大字段确定性回填 ----------
