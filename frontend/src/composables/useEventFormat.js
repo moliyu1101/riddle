@@ -19,7 +19,7 @@ export const IMPORTANT_KINDS = new Set([
 export const NOISE_KINDS = new Set([
   "ping",
   "tool_http", "tool_shell", "tool_shell_blocked", "tool_arg_error",
-  "tool_js_analyze", "tool_decode", "tool_waf_advice", "tool_fofa_lookup", "tool_session_set",
+  "tool_js_analyze", "tool_decode", "tool_waf_advice", "tool_waf_auto", "tool_fofa_lookup", "tool_session_set",
   "tool_asset_discovery", "tool_fingerprint",
   "tool_credential_brute", "tool_login_session", "tool_login_form_scan",
   "tool_http_batch", "tool_diff_response", "tool_timing_probe", "tool_crawl_links",
@@ -51,7 +51,7 @@ export const TRACE_KINDS = new Set([
 ]);
 export const DETAIL_KINDS = new Set([
   "tool_http", "tool_shell", "tool_shell_blocked", "tool_arg_error",
-  "tool_js_analyze", "tool_decode", "tool_waf_advice", "tool_fofa_lookup", "tool_session_set",
+  "tool_js_analyze", "tool_decode", "tool_waf_advice", "tool_waf_auto", "tool_fofa_lookup", "tool_session_set",
   "tool_asset_discovery", "tool_fingerprint",
   "tool_credential_brute", "tool_login_session", "tool_login_form_scan",
   "tool_http_batch", "tool_diff_response", "tool_timing_probe", "tool_crawl_links",
@@ -281,6 +281,10 @@ export function useEventFormat(engineRef) {
       case "tool_js_analyze": return `JS 分析：${cap(d.url, 120)}`;
       case "tool_decode": return `解码：${_DECODE_MODE_CN[d.mode] || d.mode || "自动"}`;
       case "tool_waf_advice": return `WAF 建议：${_WAF_CTX_CN[d.context] || d.context || "通用"}`;
+      case "tool_waf_auto": {
+        if (d.bypassed) return `WAF 自动绕过：${cap(d.url, 90)}（${d.waf_type || "未知"}，用 ${d.technique || "变体"}，原 HTTP ${d.original_status ?? ""}）`;
+        return `WAF 拦截未绕过：${cap(d.url, 90)}（${d.waf_type || "未知"}，HTTP ${d.original_status ?? ""}）`;
+      }
       case "tool_fofa_lookup": {
         const eng = ({
           fofa: "FOFA", quake: "360 Quake", hunter: "Hunter",
@@ -444,7 +448,7 @@ const _KIND_LABEL = {
   escalate_shell: "扩大命令", escalate_session: "扩大会话",
   tool_exception: "工具异常", tool_arg_error: "参数错误", tool_compat_switch: "兼容切换",
   tool_http: "HTTP", tool_shell: "Shell", tool_shell_blocked: "Shell 拦截",
-  tool_js_analyze: "JS 分析", tool_decode: "解码", tool_waf_advice: "WAF 建议", tool_fofa_lookup: "测绘查询",
+  tool_js_analyze: "JS 分析", tool_decode: "解码", tool_waf_advice: "WAF 建议", tool_waf_auto: "WAF 绕过", tool_fofa_lookup: "测绘查询",
   tool_session_set: "会话", tool_asset_discovery: "资产发现", tool_fingerprint: "指纹",
   tool_credential_brute: "弱口令", tool_login_session: "登录态", tool_login_form_scan: "登录侦察",
   tool_http_batch: "批量请求", tool_diff_response: "差异对比", tool_timing_probe: "耗时测量",

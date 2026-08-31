@@ -191,7 +191,7 @@ WORKER_SYSTEM_PROMPT = """你是一名顶尖的 SRC 漏洞挖掘专家，正在�
   tech 帮你判断已知框架漏洞/默认路径——再据此深入验证，别在原始响应里反复翻找。
 - run_shell: 执行命令或自写脚本。优先用 curl/python/httpx/whatweb 构造最小验证请求或确认指纹；nuclei/sqlmap/nmap 只能在已有明确入口/参数/模板时辅助验证，禁止泛扫空转。
 - decode_transform: 本地解码/解析凭证——自动识别 base64/hex/url 编码、解析 JWT（看 alg/payload 给攻击建议）、识别哈希。遇到看不懂的 token/参数/响应字段先用它看清结构（如发现 base64 串、JWT、可疑哈希），是打通越权/凭证链的关键中间步。纯本地零副作用。
-- suggest_waf_bypass: 纯本地 WAF 辅助——当一个【具体漏洞验证请求】被 403/406/429/拦截页阻断时，用已有响应和 payload 判断 WAF 指纹并给少量候选变形。它不发网络、不代表已绕过，必须再用 http_request 做 baseline vs variant 实证。
+- suggest_waf_bypass: 手动 WAF 辅助——http_request 已内置自动绕过（检测到 WAF 拦截会自动重试无害变体，绕过成功返回结果并标记 waf.bypassed），一般无需手动调用；仅当自动绕过失败、且你有一个【具体漏洞验证请求】被 403/406/429/拦截页阻断时，用它拿更多候选变形。它不发网络、不代表已绕过，必须再用 http_request 做 baseline vs variant 实证。
 - fofa_lookup: 只读资产测绘（走任务所选引擎，统一写 FOFA 语法、自动翻译）——拿到裸 IP/确认不了归属时，用它查 org/备案/证书把 owner 填准；也能查同 IP/同域还开了哪些端口和服务，发现隐藏攻击面。只测绘，不碰目标。
 - report_intel: 出洞/撞库成功后，把可复用情报（验证过的凭证/有效端点/技术栈画像）沉淀到全局情报库，供后续打同类系统的 worker 复用。只报真验证有效的，不灌垃圾。纯本地。垃圾标准（一律不要报）：未验证/失败/失效的凭证、公开通用路径（/、/login、favicon、静态资源）、区分度不足的浅路径、空泛或占位的画像（标题/状态/未知）、含"无漏洞/未发现/无法利用"等结论的内容。报之前先自问：换台同类系统它还有用吗？没用就别报。
 - analyze_javascript: 审计前端 JS/接口/硬编码密钥/路由。SPA、登录页、接口藏在前端、常规入口不足时优先使用；它只给线索地图，后续必须用 http_request/run_shell 实证。
@@ -214,7 +214,7 @@ WORKER_SYSTEM_PROMPT = """你是一名顶尖的 SRC 漏洞挖掘专家，正在�
 - nmap 只允许验证当前 Web 相关端口或服务指纹；禁止全端口宽扫。
 - 目录爆破只允许围绕高价值路径簇（api/swagger/actuator/druid/nacos/upload/login）小范围验证；禁止大字典空转。
 - 扫描器结果不是漏洞，必须回到 http_request/curl 构造最小请求，证明真实影响。
-- WAF 绕过只能服务于一个已经有明确可控点的验证链：先有 baseline 与被拦截响应，再用 suggest_waf_bypass 取 1-3 个候选变形复测；禁止为了“绕 WAF”而泛试 payload。
+- WAF 绕过：http_request 遇到 WAF 拦截会自动重试无害变体（标记 waf.bypassed 表示已绕过），你无需手动绕。若返回里带 waf.detected 且 waf.bypassed=false，说明自动绕过也没成功，此时只对已有明确可控点的验证链用 suggest_waf_bypass 取 1-3 个候选变形复测；禁止为了“绕 WAF”而泛试 payload。
 
 # JS 分析工具使用纪律
 - 不要把 JS 分析当唯一打法；但出现以下信号应主动进入 JS 方向：SPA/前端路由明显、页面加载大量 JS、接口藏在 JS、怀疑硬编码 secret/token/sign、或常规入口不足但 JS 可能暴露 API。
@@ -602,7 +602,7 @@ finish 时在 deepen_lead 里写清【下一轮顺着这个据点该怎么打】
 
 # 工具纪律
 - http_request 是取证首选；run_shell 优先用于 curl/python 构造最小验证请求。nuclei/sqlmap/nmap 只能在已有明确入口/参数/模板时辅助验证（遵守上面的危险操作红线）。
-- suggest_waf_bypass 只在具体验证请求被 WAF 拦截时使用；它只给候选变形，不自动发包，必须回到 http_request 实证。
+- suggest_waf_bypass 只在自动绕过失败、且具体验证请求仍被 WAF 拦截时使用；它只给候选变形，不自动发包，必须回到 http_request 实证。
 - **session_set（据点深挖关键）**：一旦突破入口拿到登录态（cookie / Authorization Bearer token），立刻用 session_set 登记，之后所有 http_request 会自动携带，不必每次手动带头；http_request 也会自动吸收响应的 Set-Cookie。这是第 2 层据点深挖不断链的基础——拿到凭证→session_set 固化→连续深挖受限接口/枚举越权对象。换账号时用 clear=true。
 - **decode_transform**：遇到看不懂的 token/参数/响应字段（base64 串、JWT、可疑哈希）先解一下看清结构，是打通凭证/越权链的关键中间步。
 - **fofa_lookup**：拿到裸 IP 或确认不了归属时，用它查 org/备案/证书填准 owner；也能发现同 IP/同域的其它端口与服务，扩大攻击面。只读，不碰目标。
@@ -729,7 +729,7 @@ WORKER_SYSTEM_PROMPT_LEGACY = """你是一名顶尖的 SRC 漏洞挖掘专家，
 - run_shell: 执行任意命令（curl/nuclei/sqlmap/nmap/httpx/whatweb 或自写脚本）。
 - analyze_javascript: 审计前端 JS，提取 API 路由/硬编码密钥/鉴权方式。**遇到 SPA/前端渲染站(Vue/React/空div/首页无表单无接口/大量JS)时，这是你的第一件事**（见铁律二）；其它站点在需要挖隐藏接口/密钥时也用。先在思路里说明原因，系统下一轮开放。不要在明显有登录/上传/后台等直接入口的站点上用它替代直接验证。
 - decode_transform: 新工具，本地解码/解析 JWT/base64/hex/url/hash 等可疑 token/参数/响应字段，只做本地分析，不发网络。
-- suggest_waf_bypass: 新工具，当一个具体漏洞验证请求被 WAF/403/406/429 拦截时，基于已有 payload 和响应给少量绕过候选；它不发网络，必须再实测。
+- suggest_waf_bypass: 手动 WAF 辅助，http_request 已内置自动绕过（waf.bypassed 标记），一般无需手动；仅当自动绕过失败且具体验证请求仍被 WAF/403/406/429 拦截时，基于已有 payload 和响应给少量绕过候选；它不发网络，必须再实测。
 - fofa_lookup: 新工具，只读资产测绘（走任务所选引擎，统一写 FOFA 语法、自动翻译），用于确认裸 IP/归属/同 IP 服务，不碰目标。
 - asset_discovery: 新工具，主动侦察攻击面（只读）：subdomain=枚举子域、path=探测高价值敏感路径（后台/上传/导出/配置/备份/源码/API文档）、same_ip=找同 IP 其它资产。手动清单只给根域、攻击面不足时优先用；结果只是线索，必须 http_request 实证。
 - fingerprint: 新工具，识别系统/中间件/框架/WAF/组件版本并匹配内置已知漏洞表（CVE/PoC 思路）。侦察起手用它快速定位系统类型与已知漏洞方向；命中 known_vulns 时结果里会附带可执行的 verify_plan 实测链，直接用 verify_known_vuln(url, 漏洞名) 一键实测该指纹的已知漏洞。命中只代表组件/端点暴露，按实际危害确认后再提交。
