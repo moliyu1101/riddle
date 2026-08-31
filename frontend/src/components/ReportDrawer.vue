@@ -70,6 +70,7 @@ async function loadFinding() {
     affected_scope: e.affected_scope ?? f.value.affected_scope,
     steps: stepsToEditText(rawSteps),
     poc: e.poc ?? f.value.poc,
+    poc_http: e.poc_http ?? f.value.poc_http,
   };
   userSeverity.value = rv.user_severity || rv.severity_final || "";
   userNotes.value = rv.user_notes || "";
@@ -150,6 +151,7 @@ const descText = computed(() => String(effVal("description") || "").trim());
 const scopeText = computed(() => String(effVal("affected_scope") || "").trim());
 const stepList = computed(() => normalizeSteps(effVal("steps")));
 const pocText = computed(() => String(effVal("poc") || "").trim());
+const pocHttpText = computed(() => String(effVal("poc_http") || "").trim());
 
 // 验证 PoC 请求包：优先用原始请求包 raw_request；否则把 curl 转成标准 HTTP 请求包。
 // 便于直接粘进 yakit / Burp 等抓包复测工具。
@@ -285,6 +287,7 @@ async function saveEdits() {
       affected_scope: edit.value.affected_scope,
       steps,
       poc: edit.value.poc,
+      poc_http: edit.value.poc_http,
     };
     await api.userReview(f.value.id, { user_edits, user_severity: userSeverity.value, user_notes: userNotes.value });
     await loadFinding();
@@ -417,7 +420,7 @@ function stepLabel(ev) {
 
 function editFields(edits) {
   if (!edits) return [];
-  return ["title", "description", "affected_scope", "steps", "poc", "severity"].filter((k) => edits[k]);
+  return ["title", "description", "affected_scope", "steps", "poc", "poc_http", "severity"].filter((k) => edits[k]);
 }
 
 async function scrollAssistant() {
@@ -443,6 +446,7 @@ function applySuggestedEdits(edits) {
   if (edits.affected_scope) edit.value.affected_scope = edits.affected_scope;
   if (Array.isArray(edits.steps)) edit.value.steps = edits.steps.join("\n");
   if (edits.poc) edit.value.poc = edits.poc;
+  if (edits.poc_http) edit.value.poc_http = edits.poc_http;
   if (edits.severity) userSeverity.value = edits.severity;
   editing.value = true;
   emit("toast", "已填入编辑器，确认后点保存修改");
@@ -661,7 +665,8 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
               <label>描述 <textarea v-model="edit.description" rows="3" /></label>
               <label>影响范围 <textarea v-model="edit.affected_scope" rows="2" /></label>
               <label>复现步骤（每行一步） <textarea v-model="edit.steps" rows="4" /></label>
-              <label>PoC <textarea v-model="edit.poc" rows="3" /></label>
+              <label>PoC（curl） <textarea v-model="edit.poc" rows="3" /></label>
+              <label>原始请求包（yakit / Burp） <textarea v-model="edit.poc_http" rows="4" placeholder="请求行 + Host + 头 + 空行 + 请求体，可直接粘贴到 yakit / Burp 请求编辑器" /></label>
               <label>复审备注 <textarea v-model="userNotes" rows="2" placeholder="人工复审意见…" /></label>
               <div class="edit-actions">
                 <button class="ghost" @click="editing = false">取消</button>
@@ -715,15 +720,19 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
 
                 <!-- 复现步骤 -->
                 <template v-else-if="s.type === 'steps'">
-                  <div class="rc-sec-head"><span>{{ s.label }}</span><small>{{ stepList.length }} 步 · 每步含对应 PoC</small></div>
+                  <div class="rc-sec-head"><span>{{ s.label }}</span><small>{{ stepList.length }} 步 · 每步含 curl + yakit/Burp 请求包</small></div>
                   <ol v-if="stepList.length" class="step-list">
                     <li v-for="(st, i) in stepList" :key="i" class="step-item">
                       <span class="step-idx">{{ i + 1 }}</span>
                       <div class="step-body">
                         <div class="step-txt">{{ st.desc }}</div>
                         <details v-if="st.poc" class="step-poc">
-                          <summary>对应 PoC</summary>
+                          <summary>对应 PoC（curl）</summary>
                           <pre class="code-block"><code>{{ st.poc }}</code></pre>
+                        </details>
+                        <details v-if="st.poc_http" class="step-poc http">
+                          <summary>请求包（yakit / Burp）</summary>
+                          <pre class="code-block"><code>{{ st.poc_http }}</code></pre>
                         </details>
                       </div>
                     </li>
@@ -746,6 +755,13 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
                     <summary>查看原始 PoC / 说明</summary>
                     <pre class="code-block"><code>{{ pocText || "-" }}</code></pre>
                   </details>
+                  <div v-if="pocHttpText" class="rc-poc-http">
+                    <div class="rc-code-meta">
+                      <span class="rc-code-tag http">全局请求包 · 可直接导入 yakit / Burp</span>
+                      <button class="mini-copy" type="button" @click="copyText(pocHttpText)">复制请求包</button>
+                    </div>
+                    <pre class="code-block"><code>{{ pocHttpText }}</code></pre>
+                  </div>
                 </template>
 
                 <!-- 证据链 -->

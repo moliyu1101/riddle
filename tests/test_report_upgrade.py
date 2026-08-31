@@ -80,8 +80,8 @@ class ReportSectionsTemplateTest(unittest.TestCase):
         self.assertIn("chain", keys)
         self.assertEqual(sec["data"]["overview"]["title"], "登录接口 SQL 注入")
         self.assertEqual(sec["data"]["steps"], [
-            {"desc": "注入万能口令", "poc": ""},
-            {"desc": "绕过认证", "poc": ""},
+            {"desc": "注入万能口令", "poc": "", "poc_http": ""},
+            {"desc": "绕过认证", "poc": "", "poc_http": ""},
         ])
         self.assertEqual(len(sec["data"]["chain"]), 1)
 
@@ -94,10 +94,10 @@ class ReportSectionsTemplateTest(unittest.TestCase):
         r = _review()
         sec = build_report_sections(f, r, "edusrc")
         self.assertEqual(sec["data"]["steps"][0], {
-            "desc": "访问登录接口", "poc": "curl -s 'https://example.edu.cn/api/login'",
+            "desc": "访问登录接口", "poc": "curl -s 'https://example.edu.cn/api/login'", "poc_http": "",
         })
         self.assertEqual(sec["data"]["steps"][1]["poc"], "curl -s 'https://example.edu.cn/api/login' -d 'username=admin'")
-        self.assertEqual(sec["data"]["steps"][2], {"desc": "纯说明步骤", "poc": ""})
+        self.assertEqual(sec["data"]["steps"][2], {"desc": "纯说明步骤", "poc": "", "poc_http": ""})
         self.assertEqual(sec["data"]["overview"]["steps_count"], 3)
         md = build_report_markdown(f, r, "edusrc")
         self.assertIn("1. **访问登录接口**", md)
@@ -258,6 +258,78 @@ class SnapshotVersionTest(unittest.TestCase):
         self.assertEqual(added[0].version, 1)
         self.assertEqual(added[0].snapshot["title"], "登录接口 SQL 注入")
         self.assertEqual(added[0].snapshot["severity"], "高危")
+
+
+class ReportPocHttpTest(unittest.TestCase):
+    """每步与全局的 curl + yakit/Burp 原始请求包双格式 PoC。"""
+
+    def _poc_finding(self):
+        return _finding(
+            steps=[
+                {"desc": "访问登录接口", "poc": "curl -s 'https://example.edu.cn/api/login'",
+                 "poc_http": "GET /api/login HTTP/1.1\nHost: example.edu.cn\n\n"},
+                {"desc": "注入万能口令", "poc": "curl -s 'https://example.edu.cn/api/login' -d 'username=admin'",
+                 "poc_http": "POST /api/login HTTP/1.1\nHost: example.edu.cn\nContent-Type: application/x-www-form-urlencoded\n\nusername=admin"},
+            ],
+            poc="curl -s 'https://example.edu.cn/api/login' -d 'username=admin'",
+            poc_http="POST /api/login HTTP/1.1\nHost: example.edu.cn\nContent-Type: application/x-www-form-urlencoded\n\nusername=admin",
+        )
+
+    def test_sections_keep_per_step_and_global_poc_http(self):
+        f = self._poc_finding()
+        sec = build_report_sections(f, _review(), "edusrc")
+        self.assertEqual(sec["data"]["steps"][0]["poc_http"], "GET /api/login HTTP/1.1\nHost: example.edu.cn")
+        self.assertEqual(sec["data"]["poc_http"], "POST /api/login HTTP/1.1\nHost: example.edu.cn\nContent-Type: application/x-www-form-urlencoded\n\nusername=admin")
+
+    def test_markdown_renders_both_formats(self):
+        f = self._poc_finding()
+        md = build_report_markdown(f, _review(), "edusrc")
+        self.assertIn("1. **访问登录接口**", md)
+        self.assertIn("curl -s 'https://example.edu.cn/api/login'", md)
+        self.assertIn("**请求包（yakit / Burp）**", md)
+        self.assertIn("GET /api/login HTTP/1.1", md)
+        self.assertIn("**原始请求包（yakit / Burp 可直接导入）**", md)
+        self.assertIn("POST /api/login HTTP/1.1", md)
+
+    def test_docx_renders_both_formats(self):
+        f = self._poc_finding()
+        data = build_docx_bytes(f, _review(), "edusrc")
+        zf = zipfile.ZipFile(io.BytesIO(data))
+        doc = zf.read("word/document.xml").decode("utf-8")
+        self.assertIn("1. 访问登录接口", doc)
+        self.assertIn("GET /api/login HTTP/1.1", doc)
+        self.assertIn("原始请求包（yakit / Burp 可直接导入）", doc)
+        self.assertIn("POST /api/login HTTP/1.1", doc)
+
+    def test_html_renders_both_formats(self):
+        f = self._poc_finding()
+        html = build_report_html(f, _review(), "edusrc")
+        self.assertIn("请求包（yakit / Burp）", html)
+        self.assertIn("GET /api/login HTTP/1.1", html)
+        self.assertIn("原始请求包（yakit / Burp 可直接导入）", html)
+        self.assertIn("POST /api/login HTTP/1.1", html)
+
+    def test_normalize_proposed_edits_keeps_poc_http(self):
+        args = {
+            "steps": [
+                {"desc": "访问登录接口", "poc": "curl -s 'https://x/login'",
+                 "poc_http": "GET /login HTTP/1.1\nHost: x\n\n"},
+            ],
+            "poc": "curl -s 'https://x/login'",
+            "poc_http": "GET /login HTTP/1.1\nHost: x\n\n",
+        }
+        res = findings._normalize_proposed_edits(args)
+        self.assertTrue(res["ok"])
+        self.assertEqual(res["edits"]["steps"][0]["poc_http"], "GET /login HTTP/1.1\nHost: x")
+        self.assertEqual(res["edits"]["poc_http"], "GET /login HTTP/1.1\nHost: x")
+
+    def test_old_string_steps_still_normalize(self):
+        f = _finding(steps=["注入万能口令", "绕过认证"])
+        sec = build_report_sections(f, _review(), "edusrc")
+        self.assertEqual(sec["data"]["steps"], [
+            {"desc": "注入万能口令", "poc": "", "poc_http": ""},
+            {"desc": "绕过认证", "poc": "", "poc_http": ""},
+        ])
 
 
 if __name__ == "__main__":

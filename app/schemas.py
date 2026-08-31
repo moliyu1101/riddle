@@ -50,9 +50,10 @@ class ChainStep(BaseModel):
 
 
 class Step(BaseModel):
-    """复现步骤中的一步：操作说明 + 该步对应的可执行 PoC。"""
+    """复现步骤中的一步：操作说明 + 该步对应的可执行 PoC（curl + 原始请求包）。"""
     desc: str = Field(..., description="这一步的操作说明：做什么、预期结果、判断依据")
-    poc: str = Field("", description="这一步对应的可执行 PoC：curl 命令 / HTTP 请求包 / payload；纯说明性步骤可留空")
+    poc: str = Field("", description="这一步对应的可执行 curl 命令 / payload；纯说明性步骤可留空")
+    poc_http: str = Field("", description="这一步对应的原始 HTTP 请求包（请求行+Host+头+空行+请求体），可直接粘贴到 yakit / Burp 请求编辑器手动复现；纯说明性步骤可留空")
 
 
 class Finding(BaseModel):
@@ -63,8 +64,9 @@ class Finding(BaseModel):
     target_url: str = Field(..., description="漏洞所在 URL")
     owner: str = Field("", description="归属单位/业务系统 + 确认依据。EduSRC 写学校；企业模式写企业/集团/系统")
     description: str = Field(..., description="漏洞类型、触发条件、影响范围")
-    steps: list[Union[str, Step]] = Field(..., description="复现步骤，逐条。每步可以是纯字符串，或 {desc, poc} 对象（desc=操作说明，poc=该步对应的验证命令/请求包）")
+    steps: list[Union[str, Step]] = Field(..., description="复现步骤，逐条。每步可以是纯字符串，或 {desc, poc, poc_http} 对象（desc=操作说明，poc=该步 curl 验证命令，poc_http=该步原始 HTTP 请求包供 yakit/Burp 手动复现）")
     poc: str = Field(..., description="可执行的 PoC，curl 命令 / payload")
+    poc_http: str = Field("", description="全局原始 HTTP 请求包（yakit / Burp 手动请求包），与 poc(curl) 对应")
     raw_request: str = Field("", description="原始请求包")
     raw_response: str = Field("", description="原始响应包（含证明漏洞的关键差异）")
     evidence: Evidence = Field(default_factory=Evidence)

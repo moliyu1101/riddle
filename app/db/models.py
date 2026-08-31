@@ -148,6 +148,7 @@ class Finding(Base):
     description: Mapped[str] = mapped_column(Text, default="")
     steps: Mapped[list] = mapped_column(JSON, default=list)
     poc: Mapped[str] = mapped_column(Text, default="")
+    poc_http: Mapped[str] = mapped_column(Text, default="")  # 全局原始 HTTP 请求包（yakit/Burp 手动请求包）
     raw_request: Mapped[str] = mapped_column(Text, default="")
     raw_response: Mapped[str] = mapped_column(Text, default="")
     evidence: Mapped[dict] = mapped_column(JSON, default=dict)
