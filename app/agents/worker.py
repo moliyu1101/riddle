@@ -29,6 +29,8 @@ from app import dedup
 from app.tools.evidence_capture import capture_snapshot, load_snapshot, save_snapshot
 from app.llm.client import LLMClient, LLMError, llm_error_event_fields
 from app.schemas import Finding, Verdict, WorkerResult
+from app.tools.evidence_trail import build_finding_from_trail as _build_finding_from_trail
+from app.tools.evidence_trail import latest_trail as _latest_evidence_trail
 from app.tools.executor import ToolExecutor
 from app.tools.schemas import (
     JS_ANALYZER_TOOL_SCHEMAS,
@@ -873,6 +875,41 @@ class Worker:
             rounds_done=int(ctx.get("rounds_done") or 0),
         )
 
+    def _recover_finding_from_trail(self) -> bool:
+        """LLM 提交失败时，从本地证据链确定性重建一个保存壳 Finding。
+
+        真正的请求/响应早已落盘，不依赖 LLM 的再次生成。重建后追加到
+        self.findings，随正常收尾路径（_persist_worker_result）落库，避免
+        数据随 LLM 超时一起丢失。返回是否成功重建。
+        """
+        try:
+            if self.findings:
+                return False  # 已有明文提交的洞，无需重建
+            data = _build_finding_from_trail(self.executor.work_dir, self.target)
+            if not data:
+                return False
+            finding = Finding(**data)
+            # 查重：与 _submit_finding 一致，命中的重建洞放弃（避免伪造重复洞）
+            dup, matches = self._dup_matches(finding.model_dump(mode="json"))
+            if dup:
+                self._emit("finding_duplicate", title=finding.title, matches=len(matches))
+                return False
+            if self.findings:
+                return False
+            self.findings.append(finding)
+            self._emit(
+                "finding_submitted",
+                title=finding.title,
+                severity=finding.severity_claimed.value,
+                vuln_type=finding.vuln_type,
+                finding=finding.model_dump(mode="json"),
+                rebuilt=True,
+            )
+            self._emit("evidence_rebuilt_finding", title=finding.title, url=finding.target_url)
+            return True
+        except Exception:
+            return False
+
     def _llm_interrupt_result(
         self,
         *,
@@ -882,19 +919,25 @@ class Worker:
         retry_after: int,
     ) -> WorkerResult:
         resume = self._build_resume_context(rounds)
+        # LLM 提交失败兜底：若本轮已产生真实取证但来不及 submit_finding，
+        # 从证据链确定性重建一个保存壳 Finding，避免数据随超时丢失。
+        rebuilt = not self.findings and bool(resume) and self._recover_finding_from_trail()
         self._emit(
             "llm_interrupt",
             round=rounds,
             failure_kind=failure_kind or "unknown",
             has_resume=bool(resume),
             findings=len(self.findings),
+            rebuilt=rebuilt,
             error=error[:240],
         )
         return WorkerResult(
             target=self.target,
-            verdict=Verdict.error,
+            verdict=Verdict.found if self.findings else Verdict.error,
             findings=self.findings,
-            summary="LLM 调用失败，已保存进度供回队续挖。" if resume else "",
+            summary="LLM 调用失败，已从证据链重建保存一个漏洞，其余进度保存供回队续挖。" if rebuilt else (
+                "LLM 调用失败，已保存进度供回队续挖。" if resume else ""
+            ),
             rounds=rounds,
             error=error,
             failure_kind=failure_kind,
@@ -1889,6 +1932,7 @@ class Worker:
                 "error": "该漏洞命中统一查重库（历史提交/已驳回/通杀明细），已拦截。不要再次提交同一漏洞，继续挖其它点或 finish。",
             }
 
+        self._backfill_finding_fields(finding)
         self._auto_capture_evidence(finding)
         self.findings.append(finding)
         # 携带完整 finding 供 orchestrator 实时落库（进程被打断时不丢洞）。
@@ -1900,6 +1944,38 @@ class Worker:
             finding=finding.model_dump(mode="json"),
         )
         return {"ok": True, "message": f"已收录漏洞「{finding.title}」（{finding.severity_claimed.value}）。可继续挖其它漏洞或调用 finish。"}
+
+    def _backfill_finding_fields(self, finding: Finding) -> None:
+        """从本地证据链确定性补齐 LLM 可能漏写的大字段（raw_request/raw_response/poc_http）。
+
+        目的：submit_finding 是单次 LLM 调用，若要求它把完整请求包/响应包都塞进一个大 JSON，
+        在慢中转上极易超时（后端 120s 硬截断）。真实请求/响应早已随每次工具调用落盘
+        （evidence_trail），此处优先让 LLM 只提交判词+小字段，大字段由确定性命中目标 URL
+        的证据链回填——提交载荷更小、不依赖 LLM 复制大文本，超时概率显著下降。
+        纯增强：补齐失败不阻塞提交。
+        """
+        try:
+            if not finding.target_url:
+                return
+            url = (finding.target_url or "").strip()
+            rec = _latest_evidence_trail(self.executor.work_dir)
+            if not rec or rec.get("kind") != "http_request":
+                return
+            # 只回填与目标 URL 同源/同路径的证据（避免串到别的目标）
+            rec_url = (rec.get("url") or "").strip()
+            if not rec_url or rec_url.split("://")[-1] != url.split("://")[-1]:
+                return
+            if not finding.raw_request:
+                finding.raw_request = rec.get("request") or ""
+            if not finding.poc_http:
+                finding.poc_http = rec.get("request") or ""
+            if not finding.raw_response:
+                status = rec.get("status") or ""
+                headers = rec.get("response_headers") or ""
+                body = rec.get("body") or ""
+                finding.raw_response = f"HTTP/1.1 {status}\n{headers}\n\n{body[:8000]}"
+        except Exception:
+            pass
 
     def _auto_capture_evidence(self, finding: Finding) -> None:
         """自动存证快照：提交时抓取目标页面 HTTP 快照写入 evidence.snapshot。

@@ -17,6 +17,7 @@ services:
     environment:
       - DB_PATH=/app/data/riddle.db
       - WORKER_WORK_ROOT=/work
+      - LLM_REQUEST_TIMEOUT=300
     volumes:
       - ah_data:/app/data        # SQLite + 证据持久化（重启恢复依赖，勿删）
       - ah_work:/work            # worker 临时工作区

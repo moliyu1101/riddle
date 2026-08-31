@@ -44,6 +44,7 @@ from app.tools.attack_tools import diff_response as _diff_response
 from app.tools.attack_tools import http_batch as _http_batch
 from app.tools.attack_tools import timing_probe as _timing_probe
 from app.tools.evidence_capture import capture_evidence as _capture_evidence_tool
+from app.tools.evidence_trail import append_trail as _append_evidence_trail
 from app.tools.probe_tools import access_boundary as _access_boundary
 from app.tools.probe_tools import injection_probe as _injection_probe
 from app.tools.probe_tools import sqli_probe as _sqli_probe
@@ -462,6 +463,16 @@ class ToolExecutor:
                     "路径用 C:\\xxx 或 C:/xxx，别用 /tmp/xxx。"
                 )
 
+        # 命令输出证据落盘：与 LLM 解耦，提交失败时仍可从盘上重建（见 evidence_trail）。
+        _append_evidence_trail(
+            self.work_dir,
+            kind="run_shell",
+            target=self.target,
+            tool="run_shell",
+            output=full_out,
+            status=rc,
+            notes=f"$ {command}",
+        )
         return {
             "ok": rc == 0 and not timed_out and not cancelled,
             "return_code": rc,
@@ -584,6 +595,21 @@ class ToolExecutor:
         # 自动 WAF 绕过：仅当本次响应确实被 WAF/拦截页阻断时，用无害变体自动重试有限次。
         if result.get("ok") and _AUTO_WAF_BYPASS:
             result = self._maybe_auto_waf_bypass(result, url, method, headers, data, json_body, follow_redirects, timeout)
+        # 真实请求/响应证据落盘：与 LLM 解耦，即使后续 submit_finding 被慢中转超时丢弃，
+        # 已发生的攻击与取证仍在盘上，可确定性重建 Finding（见 worker 的证据恢复逻辑）。
+        _append_evidence_trail(
+            self.work_dir,
+            kind="http_request",
+            target=self.target,
+            tool="http_request",
+            url=result.get("url") or url,
+            method=result.get("final_method") or method,
+            request=result.get("request") or (result.get("raw_request") or ""),
+            status=result.get("status_code"),
+            body=result.get("body") or "",
+            response_headers=result.get("response_headers") or {},
+            notes=result.get("error") if not result.get("ok") else "",
+        )
         return result
 
     def _http_request_once(
