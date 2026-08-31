@@ -93,7 +93,7 @@ _STREAM_TRACE_KINDS = frozenset({
     "worker_start", "worker_finish", "worker_cancelled", "worker_auto_finish",
     "worker_thought", "worker_directive", "worker_resume",
     "tool_http", "tool_shell", "tool_shell_blocked", "tool_arg_error",
-    "tool_exception", "tool_js_analyze", "tool_decode", "tool_waf_advice",
+    "tool_exception", "tool_js_analyze", "tool_decode", "tool_waf_advice", "tool_waf_auto",
     "tool_fofa_lookup", "tool_asset_discovery", "tool_fingerprint", "tool_session_set",
     "tool_credential_brute", "tool_login_session", "tool_login_form_scan",
     "tool_http_batch", "tool_diff_response", "tool_timing_probe", "tool_crawl_links",

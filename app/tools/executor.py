@@ -58,7 +58,12 @@ from app.tools.verify_chain import (
     mark_action_result as _mark_action_result,
     summarize_evidence as _summarize_evidence,
 )
-from app.tools.waf_advisor import suggest_waf_bypass as _suggest_waf_bypass
+from app.tools.waf_advisor import (
+    _detect_waf as _waf_detect,
+    _header_variants as _waf_header_variants,
+    _normalize_headers as _waf_norm_headers,
+    suggest_waf_bypass as _suggest_waf_bypass,
+)
 
 # 只读测绘查询硬上限：worker 用它确认归属/探攻击面，不是全量测绘，给小额度即可。
 _FOFA_LOOKUP_MAX_SIZE = 30
@@ -75,6 +80,11 @@ _WORKDIR_RESCAN_EVERY = 32
 _SHELL_CAPTURE_MAX_BYTES = int(os.environ.get("WORKER_SHELL_CAPTURE_MAX_BYTES", str(512 * 1024)))
 # HTTP 响应体读取上限（字节）：超限截断并标注，保护内存。与 _SHELL_CAPTURE_MAX_BYTES 同思路。
 _HTTP_MAX_BYTES = int(os.environ.get("WORKER_HTTP_MAX_BYTES", str(2 * 1024 * 1024)))
+# http_request 自动 WAF 绕过：检测到 WAF 拦截时自动重试无害变体（头/URL 编码/body 编码），
+# 最多 3 次；绕过成功返回结果并标记 waf.bypassed。默认开启，可设 RIDDLE_AUTO_WAF_BYPASS=0 关闭。
+_AUTO_WAF_BYPASS = os.environ.get("RIDDLE_AUTO_WAF_BYPASS", "1").strip().lower() not in ("0", "false", "no", "off")
+# 自动绕过单次最多尝试的变体数，控制请求量。
+_AUTO_WAF_MAX_TRIES = int(os.environ.get("RIDDLE_AUTO_WAF_MAX_TRIES", "3"))
 
 # path_probe 内置字典：常见管理/接口路径 + 备份/源码泄露路径（SRC 高频）。
 _PATH_DICT = [
@@ -570,6 +580,23 @@ class ToolExecutor:
             return {**_confirm_pause(e), "url": url}
         except CommandBlocked as e:
             return {"ok": False, "blocked": True, "error": str(e), "url": url}
+        result = self._http_request_once(url, method, headers, data, json_body, follow_redirects, timeout)
+        # 自动 WAF 绕过：仅当本次响应确实被 WAF/拦截页阻断时，用无害变体自动重试有限次。
+        if result.get("ok") and _AUTO_WAF_BYPASS:
+            result = self._maybe_auto_waf_bypass(result, url, method, headers, data, json_body, follow_redirects, timeout)
+        return result
+
+    def _http_request_once(
+        self,
+        url: str,
+        method: str,
+        headers: Optional[dict[str, str]],
+        data: Optional[str],
+        json_body: Optional[Any],
+        follow_redirects: bool,
+        timeout: int,
+    ) -> dict[str, Any]:
+        """发送一次 HTTP 请求并构造完整结果（不含自动 WAF 绕过）。"""
         # 会话保持：把已维持的 cookie/header 合并进本次请求（用户传的同名键优先）。
         merged_headers, session_applied = self._apply_session(headers)
 
@@ -650,6 +677,131 @@ class ToolExecutor:
                     result["business"] = biz
         except Exception:
             pass
+        return result
+
+    @staticmethod
+    def _is_waf_blocked(status: int, headers: dict[str, Any], body: str) -> bool:
+        """判断响应是否被 WAF/拦截页阻断。
+
+        具体 WAF 指纹（cloudflare/modsecurity 等）直接判定；generic 需要响应体命中
+        至少 2 个拦截关键词才算，避免把普通 403（如仅含 "Forbidden"）误判成 WAF 而自动重试。
+        """
+        sig, _ = _waf_detect(int(status or 0), _waf_norm_headers(headers or {}), body or "")
+        if sig.name == "none":
+            return False
+        if sig.name == "generic":
+            low = (body or "").lower()
+            hits = [k for k in sig.body_keywords if k in low]
+            return len(hits) >= 2
+        return True
+
+    def _waf_bypass_variants(
+        self,
+        url: str,
+        method: str,
+        headers: Optional[dict[str, str]],
+        data: Optional[str],
+        json_body: Optional[Any],
+    ) -> list[dict[str, Any]]:
+        """生成无害的 WAF 绕过候选：头变体（UA/客户端 IP）+ URL query 编码 + form body 编码。
+
+        只做编码/头层面的无害变形，不做任何破坏性操作。
+        """
+        variants: list[dict[str, Any]] = []
+        base_headers = dict(headers or {})
+        for hv in _waf_header_variants(("header", "ua")):
+            merged = dict(base_headers)
+            merged.update(hv)
+            variants.append({"headers": merged, "technique": f"header:{next(iter(hv))}"})
+        if "?" in url:
+            encoded = self._url_encode_query(url)
+            if encoded and encoded != url:
+                variants.append({"url": encoded, "technique": "url_encode_query"})
+        if isinstance(data, str) and "=" in data:
+            encoded = self._url_encode_form(data)
+            if encoded and encoded != data:
+                variants.append({"data": encoded, "technique": "body_url_encode"})
+        return variants
+
+    @staticmethod
+    def _url_encode_query(url: str) -> str:
+        """对 URL query 参数值做 URL 编码（保留键名与分隔符），失败原样返回。"""
+        try:
+            parts = urllib.parse.urlsplit(url)
+            if not parts.query:
+                return url
+            params = urllib.parse.parse_qsl(parts.query, keep_blank_values=True)
+            encoded = urllib.parse.urlencode(params, doseq=True)
+            return urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path, encoded, parts.fragment))
+        except Exception:
+            return url
+
+    @staticmethod
+    def _url_encode_form(data: str) -> str:
+        """对 application/x-www-form-urlencoded 的键值做 URL 编码，失败原样返回。"""
+        try:
+            params = urllib.parse.parse_qsl(data, keep_blank_values=True)
+            return urllib.parse.urlencode(params, doseq=True)
+        except Exception:
+            return data
+
+    def _maybe_auto_waf_bypass(
+        self,
+        result: dict[str, Any],
+        url: str,
+        method: str,
+        headers: Optional[dict[str, str]],
+        data: Optional[str],
+        json_body: Optional[Any],
+        follow_redirects: bool,
+        timeout: int,
+    ) -> dict[str, Any]:
+        """检测到 WAF 拦截时自动重试无害变体；绕过成功返回绕过结果并标记 waf.bypassed。"""
+        status = result.get("status_code", 0)
+        resp_headers = result.get("response_headers") or {}
+        body = result.get("body") or ""
+        if not self._is_waf_blocked(status, resp_headers, body):
+            return result
+        sig, evidence = _waf_detect(int(status or 0), _waf_norm_headers(resp_headers), body)
+        waf_info: dict[str, Any] = {
+            "detected": True,
+            "type": sig.name,
+            "evidence": evidence,
+            "bypassed": False,
+        }
+        variants = self._waf_bypass_variants(url, method, headers, data, json_body)
+        if variants:
+            original_status = status
+            original_body = body
+            tried: list[str] = []
+            for v in variants[:_AUTO_WAF_MAX_TRIES]:
+                tried.append(v.get("technique", ""))
+                v_result = self._http_request_once(
+                    v.get("url", url),
+                    method,
+                    v.get("headers", headers),
+                    v.get("data", data),
+                    v.get("json_body", json_body),
+                    follow_redirects,
+                    timeout,
+                )
+                if not v_result.get("ok"):
+                    continue
+                v_status = v_result.get("status_code", 0)
+                v_headers = v_result.get("response_headers") or {}
+                v_body = v_result.get("body") or ""
+                if self._is_waf_blocked(v_status, v_headers, v_body):
+                    continue
+                # 状态码或响应体有明显差异才算真正绕过（不是同一拦截页换皮）。
+                if v_status != original_status or abs(len(v_body) - len(original_body)) > 50:
+                    waf_info["bypassed"] = True
+                    waf_info["technique"] = v.get("technique", "")
+                    waf_info["original_status"] = original_status
+                    waf_info["original_body"] = _truncate(original_body, 500)
+                    v_result["waf"] = waf_info
+                    return v_result
+            waf_info["tried"] = tried
+        result["waf"] = waf_info
         return result
 
     # ---- 会话状态管理（全模式）----

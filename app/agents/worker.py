@@ -997,6 +997,38 @@ class Worker:
                     + f" 页面识别为疑似业务系统：{biz.get('label')}（conf={biz.get('confidence')}）。"
                     "按业务逻辑测：越权/状态机跳变/并发竞态/参数篡改，别停在通用漏洞扫描。"
                 ).strip()
+            # WAF 自动绕过感知：http_request 内置自动绕过，命中时输出事件流并给引导。
+            if isinstance(result, dict) and result.get("waf"):
+                waf = result["waf"]
+                if waf.get("bypassed"):
+                    self._emit(
+                        "tool_waf_auto",
+                        round=rnd,
+                        url=url,
+                        waf_type=waf.get("type", ""),
+                        technique=waf.get("technique", ""),
+                        original_status=waf.get("original_status"),
+                        bypassed=True,
+                    )
+                    result["guidance"] = (
+                        (result.get("guidance") or "")
+                        + f" 已自动绕过 WAF（{waf.get('type')}，用 {waf.get('technique')}），"
+                        f"原响应 HTTP {waf.get('original_status')} 被拦截；这是绕过后的真实响应，继续按业务逻辑验证危害。"
+                    ).strip()
+                else:
+                    self._emit(
+                        "tool_waf_auto",
+                        round=rnd,
+                        url=url,
+                        waf_type=waf.get("type", ""),
+                        original_status=result.get("status_code"),
+                        bypassed=False,
+                    )
+                    result["guidance"] = (
+                        (result.get("guidance") or "")
+                        + f" 检测到 WAF（{waf.get('type')}）拦截，自动绕过未成功（已试 {len(waf.get('tried') or [])} 种变体）。"
+                        "仅对已有明确可控点的验证链用 suggest_waf_bypass 取候选变形复测；别泛试 payload。"
+                    ).strip()
             return result
 
         if name == "analyze_javascript":
