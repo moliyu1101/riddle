@@ -91,6 +91,7 @@ class ReportAssistantTest(unittest.TestCase):
                 affected_scope="",
                 steps=[],
                 poc="",
+                poc_http="",
                 raw_request="",
                 raw_response="",
                 evidence={},

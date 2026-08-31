@@ -76,6 +76,7 @@ _MIGRATIONS = [
     ("findings", "assistant_messages", "JSON DEFAULT '[]'"),
     ("findings", "llm_model", "VARCHAR(200) DEFAULT ''"),
     ("findings", "llm_base_url", "VARCHAR(300) DEFAULT ''"),
+    ("findings", "poc_http", "TEXT DEFAULT ''"),
     ("killsweeps", "affected_table", "JSON DEFAULT '[]'"),
     ("killsweeps", "derived_findings", "JSON DEFAULT '[]'"),
     ("killsweeps", "progress", "JSON DEFAULT '{}'"),

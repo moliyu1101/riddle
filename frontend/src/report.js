@@ -28,16 +28,17 @@ function eff(f, key) {
   return e[key] !== undefined && e[key] !== null && e[key] !== "" ? e[key] : f[key];
 }
 
-// 复现步骤统一成 [{desc, poc}]：兼容旧版纯字符串列表。
+// 复现步骤统一成 [{desc, poc, poc_http}]：兼容旧版纯字符串列表。
 export function normalizeSteps(steps) {
   return (steps || [])
     .map((s) => {
       if (s && typeof s === "object") {
         const desc = String(s.desc ?? s.text ?? s.description ?? s.step ?? "").trim();
         const poc = String(s.poc ?? s.curl ?? s.command ?? "").trim();
-        return { desc, poc };
+        const pocHttp = String(s.poc_http ?? s.http ?? s.request ?? "").trim();
+        return { desc, poc, poc_http: pocHttp };
       }
-      return { desc: String(s ?? "").trim(), poc: "" };
+      return { desc: String(s ?? "").trim(), poc: "", poc_http: "" };
     })
     .filter((s) => s.desc);
 }
@@ -105,6 +106,7 @@ export function buildReportCoreMd(f) {
   const scope = eff(f, "affected_scope");
   const steps = normalizeSteps(eff(f, "steps"));
   const poc = eff(f, "poc");
+  const pocHttp = eff(f, "poc_http");
   // 归属单位：优先教育网离线库反查到的学校名
   const owner = (f.edu_school || "").trim() || f.owner || "-";
 
@@ -150,6 +152,7 @@ ${scope || "-"}
 ${steps.map((st, i) => {
   let block = `${i + 1}. **${st.desc}**`;
   if (st.poc) block += `\n\n   \`\`\`bash\n   ${st.poc}\n   \`\`\``;
+  if (st.poc_http) block += `\n\n   **请求包（yakit / Burp）**\n\n   \`\`\`http\n   ${st.poc_http}\n   \`\`\``;
   return block;
 }).join("\n") || "-"}
 
@@ -158,6 +161,7 @@ ${steps.map((st, i) => {
 \`\`\`bash
 ${poc || "-"}
 \`\`\`
+${pocHttp ? `\n**原始请求包（yakit / Burp 可直接导入）**\n\n\`\`\`http\n${pocHttp}\n\`\`\`\n` : ""}
 
 ## 证据链
 

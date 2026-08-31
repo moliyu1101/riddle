@@ -48,23 +48,27 @@ _REPORT_TEMPLATES: dict[str, dict[str, Any]] = {
 
 
 def normalize_steps(steps: Any) -> list[dict]:
-    """把复现步骤统一成 [{desc, poc}]：兼容旧版纯字符串列表与 Step 对象。
+    """把复现步骤统一成 [{desc, poc, poc_http}]：兼容旧版纯字符串列表与 Step 对象。
 
-    新版每步可以是 {desc, poc} 对象（poc=该步验证命令）；旧版是字符串，poc 归入全局 poc。
+    新版每步可以是 {desc, poc, poc_http} 对象（poc=curl 验证命令，poc_http=原始 HTTP 请求包）；
+    旧版是字符串，poc 归入全局 poc。
     """
     out: list[dict] = []
     for s in steps or []:
         if isinstance(s, dict):
             desc = str(s.get("desc") or s.get("text") or s.get("description") or s.get("step") or "").strip()
             poc = str(s.get("poc") or s.get("curl") or s.get("command") or "").strip()
+            poc_http = str(s.get("poc_http") or s.get("http") or s.get("request") or "").strip()
         elif isinstance(s, Step):
             desc = str(s.desc or "").strip()
             poc = str(s.poc or "").strip()
+            poc_http = str(s.poc_http or "").strip()
         else:
             desc = str(s or "").strip()
             poc = ""
+            poc_http = ""
         if desc:
-            out.append({"desc": desc, "poc": poc})
+            out.append({"desc": desc, "poc": poc, "poc_http": poc_http})
     return out
 
 
@@ -191,6 +195,7 @@ def build_report_sections(f: Finding, r: Review | None, src_type: str = "edusrc"
         "scope": _eff(f, r, "affected_scope") or "",
         "steps": normalize_steps(_eff(f, r, "steps")),
         "poc": _eff(f, r, "poc") or "",
+        "poc_http": _eff(f, r, "poc_http") or "",
         "evidence": _evidence_items(f),
         "chain": _chain(f),
         "review": (r.reviewer_notes if r else "") or "",
@@ -251,10 +256,20 @@ def build_report_markdown(f: Finding, r: Review | None, src_type: str = "edusrc"
                 lines.append("   ```bash")
                 lines.append("   " + st["poc"])
                 lines.append("   ```")
+            if st["poc_http"]:
+                lines.append("")
+                lines.append("   **请求包（yakit / Burp）**")
+                lines.append("")
+                lines.append("   ```http")
+                lines.append("   " + st["poc_http"])
+                lines.append("   ```")
             lines.append("")
     else:
         lines.append("-")
-    lines += ["## 验证 PoC", "", "```bash", d["poc"] or "-", "```", "", "## 证据链", ""]
+    lines += ["## 验证 PoC", "", "**curl 命令**", "", "```bash", d["poc"] or "-", "```"]
+    if d["poc_http"]:
+        lines += ["", "**原始请求包（yakit / Burp 可直接导入）**", "", "```http", d["poc_http"], "```"]
+    lines += ["", "## 证据链", ""]
     for item in d["evidence"]:
         lines.append(f"**{item['label']}**")
         lines.append("")
@@ -331,10 +346,16 @@ def build_docx_bytes(f: Finding, r: Review | None, src_type: str = "edusrc") -> 
         body.append(para(f"{i}. {st['desc']}"))
         if st["poc"]:
             body.append(code(st["poc"]))
+        if st["poc_http"]:
+            body.append(code(st["poc_http"]))
     if not d["steps"]:
         body.append(para("-"))
     body.append(heading("验证 PoC", 2))
+    body.append(para("curl 命令", bold=True))
     body.append(code(d["poc"] or "-"))
+    if d["poc_http"]:
+        body.append(para("原始请求包（yakit / Burp 可直接导入）", bold=True))
+        body.append(code(d["poc_http"]))
     body.append(heading("证据链", 2))
     for item in d["evidence"]:
         body.append(para(item["label"], bold=True))
@@ -406,9 +427,17 @@ def build_report_html(f: Finding, r: Review | None, src_type: str = "edusrc") ->
     parts.append(f"<h2>影响范围</h2><p>{esc(d['scope'] or '-')}</p>")
     parts.append("<h2>复现步骤</h2><ol>")
     for i, st in enumerate(d["steps"], 1):
-        parts.append(f"<li>{esc(st['desc'])}" + (f"<pre>{esc(st['poc'])}</pre>" if st["poc"] else "") + "</li>")
+        item = f"<li>{esc(st['desc'])}"
+        if st["poc"]:
+            item += f"<pre>{esc(st['poc'])}</pre>"
+        if st["poc_http"]:
+            item += f"<p class='poc-tag'>请求包（yakit / Burp）</p><pre>{esc(st['poc_http'])}</pre>"
+        parts.append(item + "</li>")
     parts.append("</ol>")
     parts.append(f"<h2>验证 PoC</h2><pre>{esc(d['poc'] or '-')}</pre>")
+    if d["poc_http"]:
+        parts.append("<p class='poc-tag'>原始请求包（yakit / Burp 可直接导入）</p>")
+        parts.append(f"<pre>{esc(d['poc_http'])}</pre>")
     if d["evidence"]:
         parts.append("<h2>证据链</h2>")
         for item in d["evidence"]:
@@ -432,6 +461,7 @@ def build_report_html(f: Finding, r: Review | None, src_type: str = "edusrc") ->
         "table.meta th{{background:#f3f4f6;width:90px}}"
         "pre{{background:#0f172a;color:#e2e8f0;padding:14px;border-radius:8px;overflow-x:auto;font-size:12.5px;white-space:pre-wrap;word-break:break-all}}"
         "blockquote{{border-left:4px solid #f59e0b;background:#fffbeb;padding:10px 14px;margin:12px 0;color:#78350f}}"
+        "p.poc-tag{{font-size:12px;color:#3b9eff;margin:10px 0 2px;font-weight:600}}"
         "ol{{padding-left:22px}}li{{margin:4px 0}}"
         "@media print{{body{{margin:0}}pre{{white-space:pre-wrap}}}}</style></head><body>{}</body></html>"
     ).format(esc(ov["title"]), "".join(parts))
