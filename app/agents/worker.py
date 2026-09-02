@@ -726,9 +726,22 @@ class Worker:
                     )
                 messages.append({"role": "user", "content": nudge})
 
+            # 周期落盘断点：硬杀/崩溃/重启也能从最近一次快照续挖，不丢已取证的进度。
+            # 每轮都写（文件小、开销低），保证最坏情况下只损失一轮。
+            self._write_resume_checkpoint(rounds)
+
         verdict = Verdict(self._finished["verdict"]) if self._finished else Verdict.error
         if self.findings and verdict == Verdict.no_vuln:
             verdict = Verdict.found  # 有漏洞却说 no_vuln，以实际为准
+        # 正常结束（finish/自动收尾）时清掉检查点文件，避免下次从一个已跑完的目标
+        # 误恢复旧进度；异常/被打断（error/cancelled）则保留，供硬杀后续挖兜底。
+        if verdict in (Verdict.found.value, Verdict.no_vuln.value):
+            try:
+                path = self._resume_checkpoint_path()
+                if path is not None and path.exists():
+                    path.unlink(missing_ok=True)
+            except Exception:
+                pass
         return WorkerResult(
             target=self.target,
             verdict=verdict,
@@ -782,6 +795,68 @@ class Worker:
         # 非 LLMError 的瞬时异常也给一次机会
         text = str(exc).lower()
         return any(k in text for k in ("timeout", "timed out", "connection", "network", "429", "rate"))
+
+    def _resume_checkpoint_path(self):
+        try:
+            return self.executor.work_dir / "resume_checkpoint.json"
+        except Exception:
+            return None
+
+    def _write_resume_checkpoint(self, rounds: int) -> None:
+        """把断点快照周期落盘到目标专属文件，硬杀/崩溃/重启也能恢复。
+
+        断点原本只在 worker「优雅返回」(llm_interrupt/cooldown/transient) 时才由
+        orchestrator 写回 targets.deepen_context；容器重启或崩溃硬杀时这条路径可能
+        走不完，目标只能拿老的 deepen_context 从 0 重扫（已发生的取证全部丢失）。
+        这里每轮末尾主动把 resume 快照写盘，作为确定性兜底。任何失败静默忽略。
+        """
+        path = self._resume_checkpoint_path()
+        if path is None:
+            return
+        resume = self._build_resume_context(rounds)
+        if not resume:
+            return
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix(".json.tmp")
+            tmp.write_text(
+                json.dumps(
+                    {
+                        "ts": time.time(),
+                        "round": rounds,
+                        "findings": len(self.findings),
+                        "resume": resume,
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            os.replace(tmp, path)
+        except Exception:
+            pass
+
+    def _load_resume_checkpoint(self) -> dict:
+        """读取最近一次落盘的断点快照；不存在/损坏返回空 dict。"""
+        path = self._resume_checkpoint_path()
+        if path is None or not path.exists():
+            return {}
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            resume = data.get("resume")
+            if isinstance(resume, dict) and resume:
+                self._emit(
+                    "worker_resume",
+                    source="checkpoint",
+                    notes_len=len(str(resume.get("worker_notes") or "")),
+                    cookies=sorted((resume.get("session_cookies") or {}).keys())[:20],
+                    headers=sorted((resume.get("session_headers") or {}).keys())[:20],
+                    probed_urls=len(resume.get("probed_urls") or []),
+                    rounds_done=int(data.get("round") or 0),
+                )
+                return resume
+        except Exception:
+            return {}
+        return {}
 
     def _recent_evidence_brief(self, max_items: int = 10) -> str:
         """从本地证据链取最近若干条工具动作，压缩成断点续挖可读的进度摘要。
@@ -876,11 +951,38 @@ class Worker:
         }
 
     def _restore_interrupt_progress(self) -> None:
-        ctx = self.deepen_context or {}
-        if ctx.get("source") != "llm_interrupt" and not (
-            ctx.get("worker_notes") or ctx.get("session_cookies") or ctx.get("session_headers")
-        ):
-            return
+        # 优先恢复「周期落盘检查点」：这是硬杀/崩溃/重启时最可靠的进度（可能比
+        # deepen_context 更新），任何来源都先看它，文件里没有才回落 deepen_context。
+        checkpoint = self._load_resume_checkpoint()
+        ctx: dict = {}
+        if checkpoint:
+            ctx = dict(checkpoint)
+            ctx["_from_checkpoint"] = True
+            # 把检查点内容合并回 deepen_context，让首轮 _deepen_brief 走「断点续挖」
+            # 分支并带上恢复的笔记/摘要；directive 优先用检查点自带，否则保留老的。
+            _prev = dict(self.deepen_context or {})
+            self.deepen_context = {
+                "directive": str(
+                    checkpoint.get("directive")
+                    or _prev.get("directive")
+                    or "从已恢复的笔记与取证进度继续，不要重新泛扫。"
+                )[:2000],
+                "original_title": _prev.get("original_title") or "LLM中断续挖",
+                "original_summary": str(
+                    checkpoint.get("original_summary")
+                    or checkpoint.get("worker_notes")
+                    or _prev.get("original_summary")
+                    or ""
+                )[:1000],
+                "source": "llm_interrupt",
+            }
+        if not checkpoint:
+            _ctx = self.deepen_context or {}
+            if _ctx.get("source") != "llm_interrupt" and not (
+                _ctx.get("worker_notes") or _ctx.get("session_cookies") or _ctx.get("session_headers")
+            ):
+                return
+            ctx = dict(_ctx)
         notes = str(ctx.get("worker_notes") or "")
         cookies = ctx.get("session_cookies") if isinstance(ctx.get("session_cookies"), dict) else {}
         headers = ctx.get("session_headers") if isinstance(ctx.get("session_headers"), dict) else {}
