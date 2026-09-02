@@ -831,11 +831,6 @@ class Worker:
                 "协作黑板仍在线：每轮会注入同站其它 worker 的最新共享情报，"
                 "优先在黑板标注的未覆盖方向/新入口上继续，避免重复已探测路线。"
             )
-        if probed:
-            directive_bits.append(
-                "已探测过的 URL（不要再重复请求，优先找新入口/深挖未验证点）：\n"
-                + "\n".join(f"  · {u}" for u in probed[:80])
-            )
         if notes:
             directive_bits.append(f"工作笔记：\n{notes[:1500]}")
         recent_evidence = self._recent_evidence_brief()
@@ -859,6 +854,11 @@ class Worker:
         if self.findings:
             directive_bits.append(
                 f"本轮已提交 {len(self.findings)} 个漏洞，继续挖其它入口或 finish。"
+            )
+        if probed:
+            directive_bits.append(
+                "已探测过的 URL（不要再重复请求，优先找新入口/深挖未验证点）：\n"
+                + "\n".join(f"  · {u}" for u in probed[:60])
             )
         return {
             "directive": "\n".join(directive_bits)[:2000],
