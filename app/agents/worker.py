@@ -888,6 +888,26 @@ class Worker:
                 lines.append(f"  · $ {cmd}" + (f" → {out}" if out else ""))
         return "\n".join(lines)
 
+    def _restore_probed_from_trail(self) -> None:
+        """从本目标证据链回灌已探测 URL，作为硬杀/重启后无中断上下文时的续挖兜底。
+
+        证据链（evidence_trail.jsonl）里每次 http_request 都记录了真实请求的 URL，
+        是比 LLM 笔记更可靠、永不丢失的进度来源。把它填进 _probed_urls，首轮
+        _deepen_brief 就能看到上轮打过的点，避免从 0 泛扫。
+        """
+        if not hasattr(self, "_probed_urls"):
+            self._probed_urls = set()
+        try:
+            trail = _load_evidence_trail(self.executor.work_dir)
+        except Exception:
+            return
+        for r in trail:
+            if r.get("kind") != "http_request":
+                continue
+            url = (r.get("url") or "").strip()
+            if url:
+                self._probed_urls.add(url)
+
     def _build_resume_context(self, rounds: int) -> dict:
         snap = self.executor.export_resume_state()
         notes = (snap.get("worker_notes") or "").strip()
@@ -981,6 +1001,22 @@ class Worker:
             if _ctx.get("source") != "llm_interrupt" and not (
                 _ctx.get("worker_notes") or _ctx.get("session_cookies") or _ctx.get("session_headers")
             ):
+                # 无中断上下文，仍是续挖场景：只要本目标证据链有真实取证动作，就回灌
+                # 已探测 URL 并继续，让首轮 _deepen_brief 走断点分支、直接接上上轮进度，
+                # 而不是从 0 泛扫。这是硬杀/重启后最关键的兜底。
+                self._restore_probed_from_trail()
+                if self._probed_urls:
+                    self.deepen_context = {"source": "llm_interrupt"}
+                    self._emit(
+                        "worker_resume",
+                        source="evidence_trail",
+                        notes_len=0,
+                        cookies=[],
+                        headers=[],
+                        probed_urls=len(self._probed_urls),
+                        shell_cwd="",
+                        rounds_done=0,
+                    )
                 return
             ctx = dict(_ctx)
         notes = str(ctx.get("worker_notes") or "")
@@ -1048,6 +1084,14 @@ class Worker:
         directive = ctx.get("directive", "").strip()
         original = ctx.get("original_title", "") or ctx.get("vuln_type", "")
         summary = (ctx.get("original_summary", "") or "").strip()
+        # 断点恢复最可靠的进度来源是本目标证据链（evidence_trail.jsonl）：每次真实请求/响应
+        # 都在工具调用那一刻落盘，与 LLM 笔记完全解耦。即便没有 deepen_context 笔记/checkpoint，
+        # 续挖 worker 也应看到上一轮实际取证的证据，直接接着打，而不是从 0 泛扫。
+        recent_evidence = ""
+        try:
+            recent_evidence = self._recent_evidence_brief()
+        except Exception:
+            recent_evidence = ""
         if ctx.get("source") == "llm_interrupt":
             parts = [
                 f"目标：{self.target}",
@@ -1056,7 +1100,11 @@ class Worker:
             ]
             if summary:
                 parts.append(f"已有进度摘要：{summary[:800]}")
-            if self._probed_urls:
+            if recent_evidence:
+                parts.append(
+                    "上一轮已落盘的真实取证动作（继续验证这些点，别丢进度）：\n" + recent_evidence
+                )
+            if getattr(self, "_probed_urls", None):
                 parts.append(
                     "已探测过的 URL（不要再重复请求，优先找新入口/深挖未验证点）：\n"
                     + "\n".join(f"  · {u}" for u in sorted(self._probed_urls)[:80])

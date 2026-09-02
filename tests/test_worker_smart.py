@@ -119,5 +119,53 @@ class ResumeCognitionTest(unittest.TestCase):
         self.assertIn("不要再重复请求", brief)
 
 
+class EvidenceTrailResumeTest(unittest.TestCase):
+    def test_restore_from_trail_without_context(self):
+        # 硬杀/重启后无中断上下文，但证据链有取证动作：应回灌 probed_urls 并触发断点续挖
+        import tempfile
+        from app.tools import evidence_trail
+
+        tmp = tempfile.mkdtemp()
+        evidence_trail.append_trail(tmp, kind="http_request", target="https://example.com",
+                                    url="https://example.com/api/login", method="GET", status=200)
+        evidence_trail.append_trail(tmp, kind="http_request", target="https://example.com",
+                                    url="https://example.com/role/set?userId=1&role=admin", method="GET", status=200)
+
+        class FakeExecutor:
+            work_dir = tmp
+
+        w = make_worker()
+        w.executor = FakeExecutor()  # type: ignore
+        w.deepen_context = {"source": "worker_lead"}  # 非 llm_interrupt，且无 notes/cookies
+        w._emit = Mock()
+        w._restore_interrupt_progress()
+        self.assertIn("https://example.com/api/login", w._probed_urls)
+        self.assertIn("https://example.com/role/set?userId=1&role=admin", w._probed_urls)
+        # 应被改写为 llm_interrupt，触发断点续挖分支
+        self.assertEqual(w.deepen_context.get("source"), "llm_interrupt")
+        self.assertEqual(w._emit.call_args.args[0], "worker_resume")
+        self.assertEqual(w._emit.call_args.kwargs["source"], "evidence_trail")
+
+    def test_deepen_brief_injects_evidence(self):
+        # 断点续挖首轮 prompt 应包含上一轮落盘的真实取证动作
+        import tempfile
+        from app.tools import evidence_trail
+
+        tmp = tempfile.mkdtemp()
+        evidence_trail.append_trail(tmp, kind="http_request", target="https://example.com",
+                                    url="https://example.com/role/set?userId=1&role=admin", method="GET", status=200)
+
+        class FakeExecutor:
+            work_dir = tmp
+
+        w = make_worker()
+        w.executor = FakeExecutor()  # type: ignore
+        w.deepen_context = {"source": "llm_interrupt", "directive": "继续验证越权"}
+        brief = w._deepen_brief()
+        self.assertIn("断点续挖", brief)
+        self.assertIn("role/set", brief)
+        self.assertIn("真实取证动作", brief)
+
+
 if __name__ == "__main__":
     unittest.main()
