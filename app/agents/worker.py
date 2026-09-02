@@ -11,6 +11,7 @@ import os
 import re
 import threading
 import time
+from pathlib import Path
 from typing import Any, Callable, Optional
 from urllib.parse import urlparse
 
@@ -971,6 +972,16 @@ class Worker:
         }
 
     def _restore_interrupt_progress(self) -> None:
+        # 首认领「已 submit 的暂存洞」：过去 submit 成功但因硬杀/崩溃未整轮落库的洞，
+        # 永久在 findings_staged.jsonl 里。预填充 self.findings，保证即使在恢复后的
+        # 续挖回合里 LLM 收尾判 no_vuln，这些洞也会随 _persist_worker_result 兜底落库，
+        # 绝不因「提交过一次就丢」而静默遗漏。
+        for _staged_f in self._load_staged_findings():
+            try:
+                _parsed = Finding(**_staged_f)
+                self.findings.append(_parsed)
+            except Exception:
+                continue
         # 优先恢复「周期落盘检查点」：这是硬杀/崩溃/重启时最可靠的进度（可能比
         # deepen_context 更新），任何来源都先看它，文件里没有才回落 deepen_context。
         checkpoint = self._load_resume_checkpoint()
@@ -2081,6 +2092,10 @@ class Worker:
         self._backfill_finding_fields(finding)
         self._auto_capture_evidence(finding)
         self.findings.append(finding)
+        # 同步落盘暂存（findings_staged.jsonl）：与 evidence_trail 并列，进程被硬杀
+        # （kill -9/容器重启/崩溃）时，本已 submit 成功的洞判定仍在盘上，可被断点续挖
+        # 认领，绝不因「_emit 异步落库未 commit」而静默丢弃。
+        self._stash_finding(finding)
         # 携带完整 finding 供 orchestrator 实时落库（进程被打断时不丢洞）。
         self._emit(
             "finding_submitted",
@@ -2090,6 +2105,63 @@ class Worker:
             finding=finding.model_dump(mode="json"),
         )
         return {"ok": True, "message": f"已收录漏洞「{finding.title}」（{finding.severity_claimed.value}）。可继续挖其它漏洞或调用 finish。"}
+
+    def _stash_finding(self, finding: "Finding") -> None:
+        """把 submit 成功的洞同步追加到 work_dir/findings_staged.jsonl。
+
+        与证据链并列的本地暂存，仅用于硬杀/崩溃时的兜底认领；任何失败静默忽略，
+        绝不影响 submit 主流程。正常整轮落库成功后，由兜底清理。
+        """
+        try:
+            path = self._staged_findings_path()
+            if path is None:
+                return
+            record = {
+                "kind": "finding_staged",
+                "ts": time.time(),
+                "title": finding.title or "",
+                "severity": getattr(finding.severity_claimed, "value", "") or "",
+                "vuln_type": finding.vuln_type or "",
+                "target_url": finding.target_url or "",
+                "owner": finding.owner or "",
+                "dedup_key": getattr(finding, "dedup_key", "") or "",
+                "finding": finding.model_dump(mode="json"),
+            }
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
+
+    def _staged_findings_path(self):
+        try:
+            wd = self.executor.work_dir
+            if wd is None:
+                return None
+            return Path(wd) / "findings_staged.jsonl"
+        except Exception:
+            return None
+
+    def _load_staged_findings(self) -> list[dict]:
+        """读取本目标暂存的已 submit 洞（幂等认领用）。不存在/失败返回空。"""
+        try:
+            path = self._staged_findings_path()
+            if path is None or not path.exists():
+                return []
+            out: list[dict] = []
+            for line in path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                    if rec.get("finding"):
+                        out.append(rec["finding"])
+                except Exception:
+                    continue
+            return out
+        except Exception:
+            return []
 
     def _backfill_finding_fields(self, finding: Finding) -> None:
         """从本地证据链确定性补齐 LLM 可能漏写的大字段（raw_request/raw_response/poc_http）。

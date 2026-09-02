@@ -167,5 +167,60 @@ class EvidenceTrailResumeTest(unittest.TestCase):
         self.assertIn("真实取证动作", brief)
 
 
+class StagedFindingsTest(unittest.TestCase):
+    def test_stash_and_claim_roundtrip(self):
+        # submit 成功后同步落盘暂存，恢复时认领回 self.findings（硬杀不丢洞）
+        import tempfile
+        from app.agents.worker import Finding
+
+        tmp = tempfile.mkdtemp()
+
+        class FakeExecutor:
+            work_dir = tmp
+
+        w = make_worker()
+        w.executor = FakeExecutor()  # type: ignore
+        f = Finding(
+            title="越权漏洞", vuln_type="unauthorized",
+            severity_claimed="高危", target_url="https://example.com/role/set",
+            description="未授权修改角色", steps=[], poc="curl -x",
+        )
+        w._stash_finding(f)
+        # 文件已落盘
+        path = w._staged_findings_path()
+        self.assertTrue(path.exists())
+        # 恢复认领
+        w2 = make_worker()
+        w2.executor = FakeExecutor()  # type: ignore
+        w2.deepen_context = {}
+        staged = w2._load_staged_findings()
+        self.assertEqual(len(staged), 1)
+        self.assertEqual(staged[0]["title"], "越权漏洞")
+        w2._restore_interrupt_progress()
+        self.assertEqual(len(w2.findings), 1)
+        self.assertEqual(w2.findings[0].title, "越权漏洞")
+
+    def test_stash_failure_does_not_block_submit(self):
+        # 暂存失败（如 work_dir 不可写）静默忽略，不影响 submit 主流程
+        import tempfile
+        from app.agents.worker import Finding
+
+        tmp = tempfile.mkdtemp()
+
+        class FakeExecutor:
+            work_dir = tmp
+
+        w = make_worker()
+        w.executor = FakeExecutor()  # type: ignore
+        w._staged_findings_path = lambda: None  # 模拟不可用
+        f = Finding(
+            title="XSS", vuln_type="xss",
+            severity_claimed="中危", target_url="https://example.com/x",
+            description="存储型XSS", steps=[], poc="",
+        )
+        w._stash_finding(f)  # 不应抛异常
+        self.assertEqual(len(w.findings), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
