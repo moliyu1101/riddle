@@ -43,21 +43,25 @@ const kpis = computed(() => {
   return { tools, http, hits, errors };
 });
 
-// 渲染序列：按轮次插入分区头 + 折叠相邻重复行（落库/实时两副本 text 差异导致去重键不匹配）。
+// 渲染序列：按轮次插入分区头 + 全局去重。
+// 同一目标被多次重启/断点续挖时，多条 worker 轨迹会合并排进同一抽屉；
+// 只折叠「相邻」重复（原实现）仍会让同一轮次在数组里反复出现（A/B/A/B…交替），
+// 表现为事件流里大量重复的「第 N 轮 / 第 0 轮」空轮。这里改为全量去重：
+// 同一轮次分区只出一个表头，事件按完整 key 全局去重，彻底消除重复渲染。
 const rows = computed(() => {
   const out = [];
-  let prevRound = null;
-  let prevKey = null;
+  const seenRound = new Set();
+  const seenEv = new Set();
   for (const ev of props.events || []) {
     const round = ev.round || 0;
     const text = ev._text || ev.message || ev.kind || "";
-    const key = `${ev.kind || ""}|${round}|${text}`;
-    if (prevKey === key) continue;
-    prevKey = key;
-    if (round !== prevRound) {
+    if (!seenRound.has(round)) {
       out.push({ type: "round", round, ts: ev._displayTs || ev.ts });
-      prevRound = round;
+      seenRound.add(round);
     }
+    const key = `${ev.kind || ""}|${round}|${text}`;
+    if (seenEv.has(key)) continue;
+    seenEv.add(key);
     out.push({ type: "ev", ev });
   }
   return out;

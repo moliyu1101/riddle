@@ -30,6 +30,7 @@ from app.tools.evidence_capture import capture_snapshot, load_snapshot, save_sna
 from app.llm.client import LLMClient, LLMError, llm_error_event_fields
 from app.schemas import Finding, Verdict, WorkerResult
 from app.tools.evidence_trail import latest_trail as _latest_evidence_trail
+from app.tools.evidence_trail import load_trail as _load_evidence_trail
 from app.tools.executor import ToolExecutor
 from app.tools.schemas import (
     JS_ANALYZER_TOOL_SCHEMAS,
@@ -782,6 +783,36 @@ class Worker:
         text = str(exc).lower()
         return any(k in text for k in ("timeout", "timed out", "connection", "network", "429", "rate"))
 
+    def _recent_evidence_brief(self, max_items: int = 10) -> str:
+        """从本地证据链取最近若干条工具动作，压缩成断点续挖可读的进度摘要。
+
+        断点续挖的痛点：worker 依赖 LLM 主动调 update_notes 才有笔记，一旦中断时没记，
+        恢复上下文只有 probed_urls，正在取证的漏洞（还没 submit）就丢了。而真实请求/响应
+        早已随每次工具调用落盘（evidence_trail），此处把它们回灌进恢复指令，让续挖的
+        worker 能看见自己上一轮在验证什么、拿到什么证据，接着干而不是从头泛扫。
+        """
+        try:
+            trail = _load_evidence_trail(self.executor.work_dir)
+        except Exception:
+            return ""
+        recent = [r for r in trail if r.get("kind") in ("http_request", "run_shell")][-max_items:]
+        if not recent:
+            return ""
+        lines: list[str] = []
+        for r in recent:
+            url = (r.get("url") or "").strip()
+            method = (r.get("method") or "").strip() or "GET"
+            if r.get("kind") == "http_request":
+                status = r.get("status")
+                body = (r.get("body") or "").strip()
+                snippet = body[:90].replace("\n", " ")
+                lines.append(f"  · {method} {url} → HTTP {status}" + (f" | {snippet}" if snippet else ""))
+            else:
+                cmd = (r.get("notes") or "").replace("$ ", "", 1)
+                out = (r.get("output") or "").strip()[:90].replace("\n", " ")
+                lines.append(f"  · $ {cmd}" + (f" → {out}" if out else ""))
+        return "\n".join(lines)
+
     def _build_resume_context(self, rounds: int) -> dict:
         snap = self.executor.export_resume_state()
         notes = (snap.get("worker_notes") or "").strip()
@@ -807,6 +838,11 @@ class Worker:
             )
         if notes:
             directive_bits.append(f"工作笔记：\n{notes[:1500]}")
+        recent_evidence = self._recent_evidence_brief()
+        if recent_evidence:
+            directive_bits.append(
+                "最近已执行的取证动作（继续验证这些点，别丢上一轮进度）：\n" + recent_evidence
+            )
         if cognition:
             cog_lines = []
             for slot in ("confirmed", "excluded", "leads"):
