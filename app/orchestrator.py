@@ -2111,6 +2111,17 @@ class TaskRunner:
                         target_meta["intel_block"] = block
                 except Exception:
                     pass
+                # 挖洞知识库：按任务漏洞类型 + 目标特征命中相关手册/方法论，限量注入。
+                try:
+                    from app.agents.knowledge import lookup_kb, render_kb_block
+                    _vtypes = (task_obj.vuln_types or []) if task_obj else []
+                    _qtext = f"{tgt.title or ''} {tgt.org or ''} {tgt.priority_reason or ''}"
+                    _kbits = await lookup_kb(session, query_terms=_vtypes, query_text=_qtext)
+                    _kb = render_kb_block(_kbits)
+                    if _kb:
+                        target_meta["knowledge_block"] = _kb
+                except Exception:
+                    pass
                 try:
                     route = site_collab.route_for_source(tgt.source or "")
                     if route:

@@ -198,7 +198,7 @@ class Worker:
         blackboard = self._blackboard_block()
         # 即使没有资产情报，只要有泄露凭证/情报库命中也要带出去（企业目标常无 school/org/title）。
         if not (school or org or title or source):
-            return site + playbook + lessons + business + diff + state_machine + biz_test + exploit + blackboard + self._user_auth_block() + self._creds_block() + self._intel_lib_block()
+            return site + playbook + lessons + business + diff + state_machine + biz_test + exploit + blackboard + self._user_auth_block() + self._creds_block() + self._intel_lib_block() + self._knowledge_block()
         owner_label = "候选归属单位/系统" if is_enterprise_src(self.src_type) else "候选归属学校"
         prefix = [b.rstrip() for b in (site, playbook, lessons, business, diff, state_machine, biz_test, exploit, blackboard) if b.strip()]
         lines = prefix + ["# 资产情报（搜集阶段提供，需你核实）"]
@@ -214,7 +214,7 @@ class Worker:
                 lines.append(f"- 通杀上下文：{priority_reason}")
             lines.append("注意：你只负责把当前站点的实际漏洞证据打出来，不要围绕该产品继续做通杀扩散判断。")
         lines.append("提交漏洞时，请核实归属（域名/备案/证书CN/页脚版权/FOFA org/登录页品牌）后把最终归属写进 submit_finding 的 owner 字段。")
-        return "\n".join(lines) + "\n\n" + self._user_auth_block() + self._creds_block() + self._intel_lib_block()
+        return "\n".join(lines) + "\n\n" + self._user_auth_block() + self._creds_block() + self._intel_lib_block() + self._knowledge_block()
 
     def _user_auth_block(self) -> str:
         """用户在凭据区提供的 Cookie/账密（系统已尝试后的回执）。"""
@@ -361,6 +361,10 @@ class Worker:
     def _intel_lib_block(self) -> str:
         """全局情报库命中（编排层触发式检索后注入的现成文本块）。"""
         return (self.target_meta or {}).get("intel_block") or ""
+
+    def _knowledge_block(self) -> str:
+        """挖洞知识库命中（按目标漏洞类型/特征检索注入的测试手册与方法论）注入块。"""
+        return (self.target_meta or {}).get("knowledge_block") or ""
 
     def _creds_block(self) -> str:
         """泄露凭证情报：搜集阶段查到的该域已泄露账号密码（已过滤打分）。"""

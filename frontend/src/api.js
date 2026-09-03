@@ -344,6 +344,12 @@ export const api = {
   applyIntelCurate: (limit) => req("POST", `/api/intel/curate${qs({ limit })}`),
   deleteIntel: (id) => req("DELETE", `/api/intel/${id}`),
   clearIntel: (kind) => req("DELETE", `/api/intel${qs({ kind })}`),
+  // 挖洞知识库
+  knowledgeList: (category, q) => req("GET", `/api/intel/knowledge${qs({ category, q })}`),
+  knowledgeDetail: (id) => req("GET", `/api/intel/knowledge/${id}`),
+  knowledgeCreate: (body) => req("POST", "/api/intel/knowledge", body),
+  knowledgeUpdate: (id, body) => req("PUT", `/api/intel/knowledge/${id}`, body),
+  knowledgeSync: () => req("POST", "/api/intel/knowledge/sync"),
   // 全局漏洞库
   vulnStats: () => req("GET", "/api/vulns/stats"),
   vulns: (submitted, severity, q, opts = {}) =>

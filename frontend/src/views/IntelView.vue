@@ -241,6 +241,111 @@ function openTask(row) {
   router.push(`/task/${row.task_id}`);
 }
 
+/* ---------- 知识库 ---------- */
+const kbRows = ref([]);
+const kbLoading = ref(true);
+const kbRefreshing = ref(false);
+const kbCategory = ref("all");
+const kbSearchDraft = ref("");
+const kbSearchText = ref("");
+const kbViewOpen = ref(false);
+const kbViewed = ref(null);
+const kbAddOpen = ref(false);
+const kbForm = ref({ title: "", category: "user", keyword: "", content: "", enabled: true });
+const checking = ref(false);
+let kbTimer = null;
+
+const KB_CATS = [
+  { id: "all", label: "全部" },
+  { id: "rules", label: "方法论" },
+  { id: "kb", label: "测试手册" },
+  { id: "user", label: "用户沉淀" },
+];
+const KB_CAT_LABEL = { rules: "方法论", kb: "测试手册", user: "用户沉淀" };
+function kbCatLabel(c) { return KB_CAT_LABEL[c] || "知识"; }
+
+async function loadKbList() {
+  if (!kbRows.value.length) kbLoading.value = true;
+  else kbRefreshing.value = true;
+  try {
+    kbRows.value = await api.knowledgeList(kbCategory.value, kbSearchText.value);
+  } finally {
+    kbLoading.value = false;
+    kbRefreshing.value = false;
+  }
+}
+function reloadKb() { return loadKbList(); }
+watch(kbCategory, loadKbList);
+watch(kbSearchDraft, (v) => {
+  clearTimeout(kbTimer);
+  kbTimer = setTimeout(() => {
+    kbSearchText.value = v.trim();
+    loadKbList();
+  }, 180);
+});
+
+async function viewKb(row) {
+  try {
+    kbViewed.value = await api.knowledgeDetail(row.id);
+    kbViewOpen.value = true;
+  } catch (e) {
+    alert(`读取失败：${e?.message || e}`);
+  }
+}
+function closeKbView() {
+  kbViewOpen.value = false;
+  kbViewed.value = null;
+}
+async function removeKb(row) {
+  if (!writable.value) return;
+  if (!confirm(`确认删除这篇知识？\n${row.summary || row.match_key}`)) return;
+  try {
+    await api.deleteIntel(row.id);
+    await reloadKb();
+    await loadStats();
+  } catch (e) {
+    alert(`删除失败：${e?.message || e}`);
+  }
+}
+async function toggleKb(row) {
+  try {
+    await api.knowledgeUpdate(row.id, { enabled: !row.enabled });
+    await reloadKb();
+  } catch (e) {
+    alert(`操作失败：${e?.message || e}`);
+  }
+}
+async function syncKb() {
+  if (!writable.value || checking.value) return;
+  checking.value = true;
+  try {
+    const res = await api.knowledgeSync();
+    alert(`知识库种子同步完成：新增 ${res?.added ?? 0} 篇，已存在 ${res?.skipped ?? 0} 篇（保留你的编辑）`);
+    await reloadKb();
+    await loadStats();
+  } catch (e) {
+    alert(`同步失败：${e?.message || e}`);
+  } finally {
+    checking.value = false;
+  }
+}
+function openAddKb() {
+  kbForm.value = { title: "", category: "user", keyword: "", content: "", enabled: true };
+  kbAddOpen.value = true;
+}
+async function saveKb() {
+  if (!writable.value) return;
+  if (!kbForm.value.content.trim()) { alert("内容不能为空"); return; }
+  try {
+    await api.knowledgeCreate(kbForm.value);
+    kbAddOpen.value = false;
+    await reloadKb();
+    await loadStats();
+  } catch (e) {
+    alert(`保存失败：${e?.message || e}`);
+  }
+}
+
 watch(hardStatus, reloadHard);
 watch(hardSearchDraft, (v) => {
   clearTimeout(hardSearchTimer);
@@ -253,7 +358,7 @@ watch(hardSearchDraft, (v) => {
 
 /* ---------- 公共 ---------- */
 async function reload() {
-  await Promise.all([reloadIntel(), reloadHard()]);
+  await Promise.all([reloadIntel(), reloadHard(), loadKbList()]);
 }
 
 onMounted(reload);
@@ -299,6 +404,15 @@ onActivated(() => {
           <small>dead / skipped 攻坚记录</small>
         </span>
         <span class="ops-tab-num">{{ hardStats.total }}</span>
+      </button>
+      <button type="button" role="tab" :aria-selected="activeTab === 'kb'"
+              class="ops-tab" :class="{ on: activeTab === 'kb' }" @click="activeTab = 'kb'">
+        <span class="ops-tab-ico">📚</span>
+        <span class="ops-tab-txt">
+          <b>知识库</b>
+          <small>挖洞测试手册 / 方法论 / 用户沉淀</small>
+        </span>
+        <span class="ops-tab-num">{{ kbRows.length }}</span>
       </button>
     </div>
 
@@ -452,7 +566,7 @@ onActivated(() => {
     </template>
 
     <!-- ============ 硬骨头 ============ -->
-    <template v-else>
+    <template v-else-if="activeTab === 'hard'">
       <div class="hard-dash">
         <div class="dash-card hero">
           <span class="dash-k">攻坚记录</span>
@@ -511,6 +625,105 @@ onActivated(() => {
         <button type="button" @click="hardPrevPage" :disabled="hardPage <= 0 || hardRefreshing">上一页</button>
         <span>第 {{ hardPage + 1 }} 页 · {{ hardPage * hardPageSize + 1 }}-{{ hardPage * hardPageSize + hardRows.length }} / {{ hardTotal }}</span>
         <button type="button" @click="hardNextPage" :disabled="!hardHasMore || hardRefreshing">下一页</button>
+      </div>
+    </template>
+
+    <!-- ============ 知识库 ============ -->
+    <template v-else>
+      <div class="kb-toolbar">
+        <div class="kind-tabs">
+          <button v-for="t in KB_CATS" :key="t.id" type="button"
+                  class="kind-tab" :class="{ on: kbCategory === t.id }" @click="kbCategory = t.id">
+            {{ t.label }}
+          </button>
+        </div>
+        <div class="search-box">
+          <span>⌕</span>
+          <input v-model="kbSearchDraft" placeholder="搜索 篇名 / 关键词 / 内容" />
+        </div>
+        <button class="btn-ghost" @click="syncKb" :disabled="checking || !writable">{{ checking ? "同步中…" : "同步种子" }}</button>
+        <button v-if="writable" class="btn-primary" @click="openAddKb">＋ 手动添加</button>
+      </div>
+
+      <div class="kb-hint">
+        <b>知识库说明</b>
+        <span>worker 挖洞时会按目标任务命中这些测试手册/方法论并注入；你可以「＋手动添加」沉淀自己的经验，或「同步种子」从本地文件补基础库。</span>
+      </div>
+
+      <div v-if="kbLoading" class="intel-grid">
+        <div v-for="n in 8" :key="n" class="intel-row skeleton-hard"></div>
+      </div>
+      <div v-else-if="!kbRows.length" class="empty">
+        知识库暂无条目
+        <span class="hint">点击「同步种子」导入基础手册，或「手动添加」沉淀你的经验</span>
+      </div>
+      <div v-else class="kb-list">
+        <article v-for="(row, i) in kbRows" :key="row.id" class="kb-row anim-fade-up" :style="{ '--i': i }"
+                 :class="{ on: row.enabled }" type="button" @click="viewKb(row)">
+          <span class="kb-cat" :class="row.category">{{ kbCatLabel(row.category) }}</span>
+          <div class="kb-main">
+            <b>{{ row.summary || row.match_key }}</b>
+            <small>{{ row.keyword ? `关键词：${row.keyword}` : "无关键词" }} · {{ row.match_key }}</small>
+            <em v-if="row.hit_count > 1">已复用 ×{{ row.hit_count }}</em>
+          </div>
+          <span class="kb-side">
+            <time>{{ fmtTime(row.updated_at) }}</time>
+            <i class="kb-enabled" :class="row.enabled ? 'yes' : 'no'" title="点击切换启用/停用" @click.stop="toggleKb(row)">
+              {{ row.enabled ? "已启用" : "已停用" }}
+            </i>
+            <button v-if="writable" class="kb-del" type="button" title="删除" @click.stop="removeKb(row)">✕</button>
+          </span>
+        </article>
+      </div>
+
+      <!-- 查看详情弹层 -->
+      <div v-if="kbViewOpen" class="kb-mask" @click.self="closeKbView">
+        <div class="kb-dialog">
+          <header class="kb-dialog-head">
+            <div>
+              <b>{{ kbViewed?.summary || kbViewed?.match_key }}</b>
+              <small>类别：{{ kbCatLabel(kbViewed?.category) }} · {{ kbViewed?.origin === 'seed' ? '种子库' : '用户沉淀' }} · 命中 ×{{ kbViewed?.hit_count }}</small>
+            </div>
+            <button type="button" class="kb-x" @click="closeKbView">✕</button>
+          </header>
+          <pre class="kb-content">{{ kbViewed?.content }}</pre>
+        </div>
+      </div>
+
+      <!-- 手动添加弹层 -->
+      <div v-if="kbAddOpen" class="kb-mask" @click.self="kbAddOpen = false">
+        <div class="kb-dialog">
+          <header class="kb-dialog-head">
+            <div>
+              <b>手动添加知识</b>
+              <small>沉淀一条可复用的挖洞经验 / 手册（worker 会按关键词命中注入）</small>
+            </div>
+            <button type="button" class="kb-x" @click="kbAddOpen = false">✕</button>
+          </header>
+          <div class="kb-form">
+            <label><span>标题</span>
+              <input v-model="kbForm.title" placeholder="例如：某系统越权验证技巧" />
+            </label>
+            <label><span>分类</span>
+              <select v-model="kbForm.category">
+                <option value="rules">方法论</option>
+                <option value="kb">测试手册</option>
+                <option value="user">用户沉淀</option>
+              </select>
+            </label>
+            <label><span>关键词（命中用，可留空）</span>
+              <input v-model="kbForm.keyword" placeholder="例如：越权 · idor · 任意登录（worker 据此检索）" />
+            </label>
+            <label><span>内容</span>
+              <textarea v-model="kbForm.content" rows="10" placeholder="把这篇知识的正文粘贴/填写在这里…"></textarea>
+            </label>
+            <label class="kb-form-en"><input v-model="kbForm.enabled" type="checkbox" /> 创建后立即启用</label>
+            <div class="kb-form-actions">
+              <button class="btn-ghost" @click="kbAddOpen = false">取消</button>
+              <button class="btn-primary" @click="saveKb">保存</button>
+            </div>
+          </div>
+        </div>
       </div>
     </template>
   </section>
