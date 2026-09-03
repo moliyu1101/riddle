@@ -184,6 +184,9 @@ async def curate_intel(session: "AsyncSession", *, apply: bool = False, limit: i
     flagged: list[dict] = []
     deleted = 0
     for item in rows:
+        # 知识库条目永不自动清理：它可能是用户手动沉淀/种子基础库，由前端显式管理。
+        if item.kind == "knowledge":
+            continue
         # 高复用情报不自动删，只在报告里提示，避免误伤。
         assess = assess_intel(item.kind, item.match_key, item.payload or {}, item.summary or "", item.confidence or "likely")
         if assess.ok:
