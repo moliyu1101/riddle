@@ -1025,6 +1025,8 @@ class ToolExecutor:
         if self._worker_notes:
             lines.append("- 工作笔记：")
             lines.append(self._worker_notes)
+        else:
+            lines.append("- 工作笔记：（空，本轮结束前用 update_notes 记录进度，断点续挖才能接上）")
         return "\n".join(lines) + "\n\n"
 
     def export_resume_state(self) -> dict[str, Any]:
