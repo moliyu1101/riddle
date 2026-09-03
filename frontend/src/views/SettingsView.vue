@@ -33,6 +33,8 @@ const singleModels = ref([]);
 const singleModelsLoading = ref(false);
 const singleModelsError = ref("");
 const testingLlm = ref(false);
+/** LLM 段加载时的指纹：用户未改动 LLM 时保存其它配置不强制校验 LLM */
+let llmLoadedSig = "";
 /** 自动保存状态：idle | pending | saving | saved | error | incomplete */
 const autoSaveStatus = ref("idle");
 const autoSaveError = ref("");
@@ -162,14 +164,17 @@ function scheduleAutoSave() {
 
 async function save({ silent = false } = {}) {
   if (saving.value || loading.value) return;
-  // 配置不完整时：静默跳过自动保存，手动保存仍提示
-  try {
-    llm.validateLlmProviders();
-  } catch (e) {
-    autoSaveStatus.value = "incomplete";
-    autoSaveError.value = String(e.message || e);
-    if (!silent) toast(autoSaveError.value);
-    return;
+  // 仅当用户改动了 LLM 段时才强制校验 LLM 配置完整性；
+  // 只改令牌/测绘/调度等其它配置时，即使 LLM 未配全也允许保存。
+  if (llmSig() !== llmLoadedSig) {
+    try {
+      llm.validateLlmProviders();
+    } catch (e) {
+      autoSaveStatus.value = "incomplete";
+      autoSaveError.value = String(e.message || e);
+      if (!silent) toast(autoSaveError.value);
+      return;
+    }
   }
 
   saving.value = true;
@@ -217,6 +222,8 @@ async function save({ silent = false } = {}) {
     for (const [name, eng] of Object.entries(form.engines || {})) {
       const patch = { base_url: eng.base_url || "" };
       if (secretReady(eng.key)) patch.key = eng.key.trim();
+      if (secretReady(eng.key_backup)) patch.key_backup = eng.key_backup.trim();
+      if (secretReady(eng.key_backup2)) patch.key_backup2 = eng.key_backup2.trim();
       body.engines[name] = patch;
     }
     const fofaEng = form.engines?.fofa;
@@ -251,6 +258,10 @@ async function save({ silent = false } = {}) {
       const cur = engView[name] || {};
       form.engines[name].key = "";
       form.engines[name].key_set = !!cur.key_set || (name === "fofa" && !!s.fofa?.key_set);
+      form.engines[name].key_backup = "";
+      form.engines[name].key_backup_set = !!cur.key_backup_set;
+      form.engines[name].key_backup2 = "";
+      form.engines[name].key_backup2_set = !!cur.key_backup2_set;
       form.engines[name].base_url = cur.base_url || (name === "fofa" ? (s.fofa?.base_url || "") : "") || form.engines[name].base_url || "";
       if (cur.display_name) form.engines[name].display_name = cur.display_name;
     }
@@ -298,6 +309,37 @@ async function save({ silent = false } = {}) {
   }
 }
 
+/** 单令牌独立保存：只提交 auth 段，绕过 LLM/测绘校验，其它令牌用 MASKED 保留原值。 */
+const tokenSaving = ref(false);
+async function saveAuthToken(row) {
+  if (saving.value || loading.value || tokenSaving.value) return;
+  const val = String(form[row.valKey] || "").trim();
+  if (val.length < 8 && !form[row.setKey]) {
+    toast("请输入新令牌（至少 8 位）");
+    return;
+  }
+  // 只发 auth：当前令牌输入新值则覆盖，否则 MASKED 保留；其它令牌一律 MASKED 保留
+  const auth = {
+    full_token: MASKED,
+    read_token: MASKED,
+    observer_token: MASKED,
+  };
+  if (val.length >= 8) auth[row.valKey] = val;
+  tokenSaving.value = true;
+  try {
+    const s = await api.updateSettings({ auth });
+    form[row.valKey] = "";
+    form[row.setKey] = !!s.auth?.[row.setKey];
+    form[row.envKey] = !!s.auth?.[row.envKey];
+    authSaveFlash.value = Date.now();
+    toast("访问令牌已保存并生效");
+  } catch (e) {
+    toast(String(e.message || e).replace(/^\d+\s*/, ""));
+  } finally {
+    tokenSaving.value = false;
+  }
+}
+
 async function load() {
   clearTimeout(autoSaveTimer);
   autoSaveTimer = null;
@@ -334,6 +376,10 @@ async function load() {
         display_name: meta.display_name || cur.display_name || name,
         key: "",
         key_set: !!cur.key_set,
+        key_backup: "",
+        key_backup_set: !!cur.key_backup_set,
+        key_backup2: "",
+        key_backup2_set: !!cur.key_backup2_set,
         base_url: cur.base_url || "",
       };
     }
@@ -364,11 +410,21 @@ async function load() {
     }
     autoSaveStatus.value = "idle";
     autoSaveError.value = "";
+    llmLoadedSig = llmSig();
   } finally {
     loading.value = false;
     await nextTick();
     suppressAutoSave.value = false;
   }
+}
+
+/** LLM 段指纹：单端点用 base_url+model+key 状态，pool 用各端点的核心字段拼接。 */
+function llmSig() {
+  const single = `${llmMode.value}|${form.base_url}|${form.model}|${form.api_key_set}|${form.key_ref}`;
+  if (llmMode.value !== "pool") return single;
+  return "pool|" + (form.llm_providers || [])
+    .map((p) => `${p.base_url}|${p.model}|${p.api_key_set}|${p.key_ref}`)
+    .join("~");
 }
 
 watch([form, llmMode], () => scheduleAutoSave(), { deep: true });
@@ -583,7 +639,7 @@ onUnmounted(() => {
             <span>访问安全</span>
             <small>自定义访问令牌，控制谁能登录本实例。留空不修改，输入新值覆盖。</small>
           </legend>
-          <SecurityPanel :form="form" :save-flash="authSaveFlash" />
+          <SecurityPanel :form="form" :save-flash="authSaveFlash" :on-save-token="saveAuthToken" />
         </fieldset>
 
         <fieldset v-show="settingsTab === 'data'" class="settings-block">

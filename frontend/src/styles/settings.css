@@ -1562,6 +1562,24 @@
   color: var(--danger);
   border-color: var(--danger);
 }
+.security-save {
+  flex: none;
+  min-height: 34px;
+  padding: 4px 14px;
+  font-size: 12px;
+  color: var(--ok, #2e9e5b);
+  border-color: color-mix(in oklch, var(--ok, #2e9e5b) 35%, var(--border));
+  background: color-mix(in oklch, var(--ok, #2e9e5b) 10%, var(--surface-1));
+}
+.security-save:hover:not(:disabled) {
+  color: var(--ok, #2e9e5b);
+  border-color: var(--ok, #2e9e5b);
+  background: color-mix(in oklch, var(--ok, #2e9e5b) 16%, var(--surface-1));
+}
+.security-save:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 .security-note {
   margin: 0;
 }

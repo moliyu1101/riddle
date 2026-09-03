@@ -220,8 +220,15 @@ def _env_llm() -> dict[str, Any]:
 
 
 def _env_fofa() -> dict[str, Any]:
+    """FOFA 配置。支持多账号：FOFA_KEY 主号 + FOFA_KEY_BACKUP / FOFA_KEY_BACKUP2 备用，
+    逗号拼接后由 FofaEngine 自动切换（限流/账号错误时换下一个）。"""
+    keys = [k for k in (
+        os.environ.get("FOFA_KEY", ""),
+        os.environ.get("FOFA_KEY_BACKUP", ""),
+        os.environ.get("FOFA_KEY_BACKUP2", ""),
+    ) if k.strip()]
     return {
-        "key": os.environ.get("FOFA_KEY", ""),
+        "key": ",".join(keys),
         "base_url": os.environ.get("FOFA_BASE_URL") or "https://fofa.info",
         "max_pages": 20,
         "page_size": 100,
@@ -239,6 +246,18 @@ def _env_engines() -> dict[str, Any]:
         env_key = name.upper()
         key = os.environ.get(f"{env_key}_KEY", "")
         base_url = os.environ.get(f"{env_key}_BASE_URL", "")
+        # FOFA 多账号：主号 + BACKUP + BACKUP2 独立字段，引擎内按逗号拆分自动切换
+        if name == "fofa":
+            result.setdefault(name, {})
+            if key:
+                result[name]["key"] = key
+            for db_key, env_var in (("key_backup", "FOFA_KEY_BACKUP"), ("key_backup2", "FOFA_KEY_BACKUP2")):
+                extra = os.environ.get(env_var, "").strip()
+                if extra:
+                    result[name][db_key] = extra
+            if base_url:
+                result[name]["base_url"] = base_url
+            continue
         if key:
             result.setdefault(name, {})["key"] = key
         if base_url:
@@ -432,6 +451,21 @@ def resolve_engine_key(engine_name: str, task: Task | None = None) -> str:
     # FOFA 兼容旧版 fofa section
     if not key and engine_name == "fofa":
         key = str(eff.get("fofa", {}).get("key") or "")
+    # FOFA 多账号：DB 缓存只存了主号时，把 DB 的 backup/backup2 拼上；
+    # DB 未配 backup 时用环境变量 FOFA_KEY_BACKUP / FOFA_KEY_BACKUP2 兜底（去重），
+    # 引擎内按逗号拆分自动切换
+    if engine_name == "fofa" and key:
+        existing = {k.strip() for k in key.split(",") if k.strip()}
+        for db_key, env_var in (("key_backup", "FOFA_KEY_BACKUP"), ("key_backup2", "FOFA_KEY_BACKUP2")):
+            extra = str(eng_cfg.get(db_key) or "").strip()
+            if extra and extra not in existing:
+                key = f"{key},{extra}"
+                existing.add(extra)
+            elif not extra:
+                env_extra = os.environ.get(env_var, "").strip()
+                if env_extra and env_extra not in existing:
+                    key = f"{key},{env_extra}"
+                    existing.add(env_extra)
     return key
 
 
@@ -534,6 +568,10 @@ def public_settings_view() -> dict[str, Any]:
             "display_name": eng["display_name"],
             "key": mask_secret(key),
             "key_set": bool(key),
+            "key_backup": mask_secret(ecfg.get("key_backup", "")),
+            "key_backup_set": bool(ecfg.get("key_backup")),
+            "key_backup2": mask_secret(ecfg.get("key_backup2", "")),
+            "key_backup2_set": bool(ecfg.get("key_backup2")),
             "base_url": base_url or "",
         }
 
@@ -722,7 +760,7 @@ async def update_settings(session: AsyncSession, payload: dict[str, Any]) -> dic
                 continue
             current = dict(engines.get(eng_name, {}))
             for k, v in eng_cfg.items():
-                if k == "key":
+                if k in ("key", "key_backup", "key_backup2"):
                     if not str(v or "").strip() or is_masked_secret(v):
                         continue
                 if v is not None:

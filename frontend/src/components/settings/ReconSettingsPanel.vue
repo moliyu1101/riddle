@@ -115,6 +115,19 @@ function engineTestLabel(name) {
                 ((eng.display_name || eng.name) + ' API Key')
               )" />
           </label>
+          <template v-if="eng.name === 'fofa'">
+            <label class="full">备用账号 1（可选）
+              <input v-model="form.engines[eng.name].key_backup" type="password"
+                :placeholder="form.engines[eng.name]?.key_backup_set ? '已配置，留空不修改' : '主号限流时自动切换'" />
+            </label>
+            <label class="full">备用账号 2（可选）
+              <input v-model="form.engines[eng.name].key_backup2" type="password"
+                :placeholder="form.engines[eng.name]?.key_backup2_set ? '已配置，留空不修改' : '前两个用尽才用'" />
+            </label>
+            <p class="field-hint full">
+              多账号自动切换：主号遇 429 / 请求频繁 / 今日上限 / F点不足 时自动换备用账号，全部限流才报错。
+            </p>
+          </template>
           <p v-if="eng.name === 'censys'" class="field-hint full">
             新账号用 Censys Platform 的 Personal Access Token；仅旧 Legacy Search 才填 <code>API_ID:SECRET</code>。
           </p>

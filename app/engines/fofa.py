@@ -1,4 +1,5 @@
-"""FOFA 搜索引擎适配。"""
+"""FOFA 搜索引擎适配。支持多账号自动切换：api_key 可传逗号分隔的多个 key，
+主号 → backup → backup2 依次尝试，遇限流/账号错误自动切下一个，全部失败才抛错。"""
 from __future__ import annotations
 
 import base64
@@ -24,10 +25,29 @@ _FOFA_ACCOUNT_ERROR_MARKERS = (
     "expired", "insufficient", "quota", "permission", "unauthorized", "forbidden",
 )
 
+# 限流/配额耗尽标记（对齐 clown-src fofa.py）：命中即切下一个账号
+_FOFA_RATE_LIMIT_MARKERS = (
+    "429", "too many", "rate", "820041", "今日", "上限", "f点", "fpoint",
+    "请求频繁", "访问频率", "频繁",
+)
+
 
 def _is_account_error(errmsg: str) -> bool:
     text = str(errmsg or "").lower()
     return any(m in text for m in _FOFA_ACCOUNT_ERROR_MARKERS)
+
+
+def _is_rate_limited(errmsg: str, status_code: int | None = None) -> bool:
+    if status_code in (429, 403):
+        return True
+    text = str(errmsg or "").lower()
+    return any(m in text for m in _FOFA_RATE_LIMIT_MARKERS)
+
+
+def _split_keys(api_key: str) -> list[str]:
+    """把逗号分隔的多 key 拆成列表；单 key 原样返回。"""
+    parts = [k.strip() for k in (api_key or "").split(",") if k.strip()]
+    return parts or []
 
 
 def _qbase64(query: str) -> str:
@@ -60,36 +80,52 @@ class FofaEngine(SearchEngine):
         base_url: str | None = None,
         cursor: str | None = None,
     ) -> EngineResult:
-        if not api_key:
+        keys = _split_keys(api_key)
+        if not keys:
             raise FofaError("缺少 FOFA key")
         base = (base_url or BASE).rstrip("/")
         # 不再对 FOFA base_url 做本地白名单/SSRF 拦截：私有部署、内网镜像、自建代理均可直连。
 
         fields = "host,ip,port,title,domain,org"
-        params = {
-            "key": api_key, "qbase64": _qbase64(query),
-            "fields": fields, "page": str(page), "size": str(page_size), "full": "false",
-        }
-        try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                resp = await client.get(f"{base}/api/v1/search/all", params=params)
-                try:
-                    data = resp.json()
-                except Exception:
-                    raise FofaError(f"FOFA 返回非 JSON (HTTP {resp.status_code}): {resp.text[:200]}")
-        except FofaError:
-            raise
-        except httpx.HTTPError as e:
-            raise FofaError(f"FOFA 请求失败: {type(e).__name__}: {e}") from e
+        last_error: FofaError | None = None
+        tried: list[str] = []
+        for idx, key in enumerate(keys):
+            tried.append(f"#{idx + 1}")
+            params = {
+                "key": key, "qbase64": _qbase64(query),
+                "fields": fields, "page": str(page), "size": str(page_size), "full": "false",
+            }
+            try:
+                async with httpx.AsyncClient(timeout=30) as client:
+                    resp = await client.get(f"{base}/api/v1/search/all", params=params)
+                    try:
+                        data = resp.json()
+                    except Exception:
+                        raise FofaError(f"FOFA 返回非 JSON (HTTP {resp.status_code}): {resp.text[:200]}")
+            except FofaError:
+                raise
+            except httpx.HTTPError as e:
+                raise FofaError(f"FOFA 请求失败: {type(e).__name__}: {e}") from e
 
-        if data.get("error"):
-            errmsg = data.get("errmsg")
-            raise FofaError(f"FOFA 错误: {errmsg}", account_error=_is_account_error(errmsg))
+            if data.get("error"):
+                errmsg = data.get("errmsg")
+                # 限流/账号错误：切下一个账号重试
+                if _is_rate_limited(errmsg, resp.status_code) or _is_account_error(errmsg):
+                    last_error = FofaError(f"FOFA 错误: {errmsg}", account_error=_is_account_error(errmsg))
+                    continue
+                raise FofaError(f"FOFA 错误: {errmsg}", account_error=_is_account_error(errmsg))
 
-        return EngineResult(
-            fields=fields.split(","),
-            results=data.get("results", []),
-            size=data.get("size", 0),
-            page=page,
-            engine="fofa",
-        )
+            return EngineResult(
+                fields=fields.split(","),
+                results=data.get("results", []),
+                size=data.get("size", 0),
+                page=page,
+                engine="fofa",
+            )
+
+        if last_error is not None:
+            raise FofaError(
+                f"FOFA 错误: {last_error}（已尝试 {len(tried)} 个账号）",
+                account_error=last_error.account_error,
+            )
+        raise FofaError("FOFA 查询失败：所有账号均不可用")
