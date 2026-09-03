@@ -37,6 +37,25 @@ _KB_DIR = _ROOT / "knowledge" / "kb"
 # 注入上限（防 prompt 膨胀 / 不冗余）
 _KB_MAX = int(os.environ.get("KB_MAX_INJECT", "3"))
 _KB_CHARS = int(os.environ.get("KB_MAX_INJECT_CHARS", "2600"))
+# 方法论（category=rules）随任务常驻注入，独立于手册名额，最多 _METHOD_MAX 篇
+_METHOD_MAX = int(os.environ.get("KB_METHOD_MAX", "2"))
+
+# ============ 方法论（rules）触发词 → 篇目名 ============
+# 与手册（kb）的「漏洞类型映射」解耦：方法论承载锁面/范围/价值排序/迭代等
+# 工作流指引，只要任务命中任一触发词即优先注入，不占 _KB_MAX 手册名额。
+_METHOD_ALIAS: list[tuple[tuple[str, ...], str]] = [
+    (("锁面", "自由跳", "范围", "扩面", "资产", "续挖", "侦察", "流程", "协作", "站点", "seed", "挖掘"), "dig-scope-workflow"),
+    (("价值", "高危", "优先级", "排序", "类型", "矩阵", "四件套", "力气", "优先"), "src-value-hunting"),
+    (("迭代", "能力", "换站", "短表", "复盘", "经验", "收口", "拟进"), "hunt-iter"),
+    (("报告", "提交", "复现", "格式", "定级", "验收", "编写", "poc"), "vuln-report-format"),
+    (("能力", "增强", "方法论", "打穿", "深度", "boost"), "skill-as-boost"),
+    (("白盒", "黑盒", "代码审计", "授权研究", "渗透测试", "审计"), "researcher-blackbox-whitebox"),
+    (("cors", "跨域"), "cors-vuln-report-priority"),
+    (("桌面", "任务夹", "目录"), "desktop-task-folder"),
+    (("浏览器", "playwright", "mcp", "自动化"), "playwright-browser-mcp"),
+    (("授权研究", "安全研究", "研究语境", "渗透测试授权"), "security-research-context"),
+    (("道德", "伦理", "过度", "造作"), "anti-over-moralization"),
+]
 
 
 def _now_ts_str() -> str:
@@ -129,32 +148,34 @@ def _category_label(cat: str) -> str:
 
 
 # ============ 中文漏洞类型 → 篇目别名（提高检索命中） ============
+# 同时覆盖 orchestrator 传入的英文漏洞类型（vuln_types 如 weak_password/rce/info_leak）
 _ALIAS: list[tuple[tuple[str, ...], tuple[str, ...]]] = [
-    (("越权", "idor", "垂直越权", "水平越权", "批量", "bola", "bfla"), ("idor-test",)),
-    (("注入", "sql", "sql注入", "hql", "表达式注入"), ("injection-test",)),
+    (("越权", "idor", "垂直越权", "水平越权", "批量", "bola", "bfla", "privilege_escalation", "提权"), ("idor-test",)),
+    (("注入", "sql", "sql注入", "hql", "表达式注入", "rce", "命令执行", "远程代码执行", "命令注入", "ssti", "模板注入", "模板引擎"), ("injection-test",)),
     (("ssrf", "服务端请求伪造"), ("ssrf-test",)),
     (("xss", "跨站脚本", "存储型", "反射型"), ("xss-test",)),
     (("csrf", "跨站请求伪造"), ("csrf-test",)),
-    (("文件上传", "上传绕过"), ("file-upload-test",)),
-    (("逻辑", "业务逻辑", "订单", "优惠券", "积分"), ("logic-test",)),
+    (("文件上传", "上传绕过", "file_upload"), ("file-upload-test",)),
+    (("逻辑", "业务逻辑", "订单", "优惠券", "积分", "logic_flaw", "逻辑漏洞"), ("logic-test",)),
     (("竞态", "并发", "并发竞态", "race"), ("race-condition-test",)),
     (("jwt", "oauth", "单点登录", "令牌", "token"), ("oauth-jwt-test",)),
     (("graphql",), ("graphql-test",)),
     (("websocket",), ("websocket-test",)),
     (("反序列化", "jndi", "fastjson"), ("deserialization-test", "jndi-injection-test")),
-    (("路径穿越", "lfi", "任意文件下载", "file read"), ("path-traversal-lfi-test",)),
+    (("路径穿越", "lfi", "任意文件下载", "任意文件读取", "文件读取", "file read", "file_read"), ("path-traversal-lfi-test",)),
     (("xxe", "xml外部实体"), ("xxe-test",)),
-    (("waf", "waf绕过", "bypass"), ("waf-bypass",)),
-    (("认证绕过", "绕过认证", "任意登录", "账号接管", "任意账号"), ("authbypass-test",)),
-    (("信息泄露", "信息泄漏", "信息收集", "源码泄露"), ("info-leak-test",)),
+    (("waf", "waf绕过", "bypass", "captcha_bypass", "验证码绕过", "captcha"), ("waf-bypass",)),
+    (("认证绕过", "绕过认证", "任意登录", "账号接管", "任意账号", "unauthorized_access", "未授权", "未授权访问"), ("authbypass-test",)),
+    (("信息泄露", "信息泄漏", "信息收集", "源码泄露", "info_leak", "backdoor_compromised", "后门", "被攻陷", "webshell"), ("info-leak-test",)),
     (("原型链", "原型链污染"), ("prototype-pollution-test",)),
     (("缓存投毒", "缓存欺骗", "cache"), ("cache-poisoning-test",)),
     (("请求走私", "smuggling"), ("http-smuggling-test",)),
     (("侦察", "指纹", "fofa", "资产"), ("recon-methodology",)),
-    (("弱口令", "默认口令", "爆破"), ("recon-methodology",)),
+    (("弱口令", "默认口令", "爆破", "弱密码", "weak_password"), ("recon-methodology",)),
     (("前端", "js逆向", "js反编译", "接口"), ("js-reverse-guide",)),
     (("api网关", "网关"), ("api-gateway-test",)),
     (("反序列化绕过", "类型杂耍", "php"), ("type-juggling-test",)),
+    (("开放重定向", "任意跳转", "open_redirect"), ("open-redirect-test",)),
 ]
 
 def _match_terms(text: str) -> list[str]:
@@ -169,6 +190,18 @@ def _match_terms(text: str) -> list[str]:
     return hits
 
 
+def _match_methods(text: str) -> list[str]:
+    """映射到方法论（category=rules）篇目名：命中触发词即算。"""
+    text = (text or "").lower()
+    out: list[str] = []
+    for words, target in _METHOD_ALIAS:
+        for w in words:
+            if w in text:
+                out.append(target)
+                break
+    return out
+
+
 async def lookup_kb(
     session: AsyncSession,
     query_terms: list[str] | None = None,
@@ -177,27 +210,48 @@ async def lookup_kb(
 ) -> list[Intel]:
     """按漏洞类型/技术栈检索知识库（enabled 的条目）。
 
-    命中策略（两级）：
-      1) 别名映射：query_terms 里的中文漏洞词 → 篇目名，与 match_key 精确命中；
-      2) 全文兜底：query_text 在 summary/content 里 in 匹配。
-    限量返回（默认 _KB_MAX），便于按需注入。
+    命中策略（三级）：
+      1) 方法论优先：query_terms + query_text 命中触发词的 rules 篇目，优先注入（占 _METHOD_MAX 名额）；
+      2) 别名映射：query_terms 里的中文漏洞词 → 手册篇目名，与 match_key 精确命中；
+      3) 全文兜底：query_text 在 summary/content 里 in 匹配。
+    限量返回，手册不占方法论名额。
     """
     limit = limit or _KB_MAX
     # 覆盖 seed(种子) + 用户手动添加两类条目：种子用 kb: 前缀，用户条目用 kbu: 前缀。
     stmt = select(Intel).where(Intel.kind == "knowledge")
     rows = (await session.execute(stmt)).scalars().all()
+    by_name = {it.match_key: it for it in rows}
 
     alias_names: set[str] = set()
     terms = [t for t in (query_terms or []) if t]
+    method_names: list[str] = []
     needle = (query_text or "").lower()
     for t in terms:
         alias_names.update(_match_terms(t))
         alias_names.add(t.lower())
+        method_names.extend(_match_methods(t))
+    # query_text 也参与方法论命中（目标标题/org 里的范围/优先级等词）
+    method_names.extend(_match_methods(needle))
+
+    # 方法论：命中多篇时保持声明顺序（稳定、可预期）
+    method_items: list[Intel] = []
+    seen_method: set[str] = set()
+    for m in method_names:
+        if m in seen_method:
+            continue
+        seen_method.add(m)
+        it = by_name.get(m)
+        if it is not None and (it.payload or {}).get("enabled", True):
+            method_items.append(it)
+    method_items = method_items[:_METHOD_MAX]
 
     scored: list[tuple[int, Intel]] = []
     for it in rows:
         pl = it.payload or {}
         if not pl.get("enabled", True):
+            continue
+        if pl.get("category") == "rules":
+            # 方法论已在上面单独优先处理，这里不重复占手册名额
             continue
         name = (it.match_key or "").lower()
         keyword = (pl.get("keyword") or "").lower()
@@ -212,24 +266,58 @@ async def lookup_kb(
             scored.append((score, it))
 
     scored.sort(key=lambda x: -x[0])
-    return [it for _, it in scored[:limit]]
+    items = scored[:limit]
+    # 方法论置顶：作为工作流指引优先给 worker 看到
+    return method_items + [it for _, it in items]
 
 
 def render_kb_block(items: list[Intel], max_chars: int = 0) -> str:
-    """把命中的知识库篇目裁剪渲染成 worker 注入块。"""
+    """把命中的知识库篇目裁剪渲染成 worker 注入块。
+
+    方法论（category=rules）与测试手册（kb）分开渲染：方法论只留简短指引头部，
+    手册保留正文摘要；指令总长仍受 max_chars 约束（避免长方法论挤掉按类型命中的手册）。
+    """
     if not items:
         return ""
     max_chars = max_chars or _KB_CHARS
-    lines = ["# 挖洞知识库（按当前目标命中，按需取用，勿硬套）"]
-    used = len("".join(lines))
-    for it in items[: _KB_MAX]:
-        pl = it.payload or {}
-        content = pl.get("content", "")
-        title = it.summary or it.match_key or "未命名"
-        head = content[:500].strip().replace("\n", " ")
-        entry = f"- [{title}] {head}"
-        if used + len(entry) + 2 > max_chars:
-            entry = f"- [{title}] …(正文较长，仅保留开篇摘要；可到作战情报→知识库查看全文)"
-        lines.append(entry)
-        used += len(entry) + 2
-    return "\n".join(lines) + "\n"
+    method_items = [it for it in items if (it.payload or {}).get("category") == "rules"]
+    manual_items = [it for it in items if (it.payload or {}).get("category") != "rules"]
+
+    out: list[str] = []
+    used = 0
+
+    def _push_line(line: str) -> None:
+        """追加一行，超预算时用截断占位替换该行正文只留标题。"""
+        nonlocal used
+        rest = max_chars - used
+        if rest <= 0:
+            return
+        if len(line) + 2 > rest:
+            # 塞不下：退化为只保留「标题 + 占位」，仍尽量给出可读指引
+            idx = line.find("]")
+            if idx > 0:
+                line = line[: idx + 1] + " …(正文过长，仅保留此指引；详见作战情报→知识库)"
+        out.append(line)
+        used += len(line) + 2
+
+    # 方法论：只取开篇要点，不整篇灌（dig-scope 等动辄上万字）。
+    if method_items:
+        _push_line("# 挖洞工作流方法论（命中随任务注入，按需遵循）")
+        for it in method_items[:_METHOD_MAX]:
+            pl = it.payload or {}
+            content = pl.get("content", "")
+            title = it.summary or it.match_key or "未命名"
+            head = content[:300].strip().replace("\n", " ") or content[:180]
+            _push_line(f"- [{title}] {head}")
+
+    # 手册：正文摘要。
+    if manual_items:
+        _push_line("# 挖洞知识库（按当前目标命中，按需取用）")
+        for it in manual_items[:_KB_MAX]:
+            pl = it.payload or {}
+            content = pl.get("content", "")
+            title = it.summary or it.match_key or "未命名"
+            head = content[:500].strip().replace("\n", " ")
+            _push_line(f"- [{title}] {head}")
+
+    return "\n".join(out) + "\n"

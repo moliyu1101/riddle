@@ -251,9 +251,19 @@ const kbSearchText = ref("");
 const kbViewOpen = ref(false);
 const kbViewed = ref(null);
 const kbAddOpen = ref(false);
+const kbEditId = ref(null);
 const kbForm = ref({ title: "", category: "user", keyword: "", content: "", enabled: true });
 const checking = ref(false);
 let kbTimer = null;
+
+// 种子条目标题 summary 带“（分类）”后缀，与列表的类型标签重复，展示时剥掉
+function kbCleanTitle(row) {
+  const s = (row?.summary || row?.match_key || "").replace(/（[^）]*）$/, "").trim();
+  return s || "未命名知识";
+}
+function kbOrigin(row) {
+  return row?.origin === "seed" ? "种子库导入" : "用户沉淀";
+}
 
 const KB_CATS = [
   { id: "all", label: "全部" },
@@ -329,20 +339,59 @@ async function syncKb() {
     checking.value = false;
   }
 }
+function autoCloseKbView() {
+  // 编辑保存后关闭详情/编辑弹层，复位编辑态
+  kbViewOpen.value = false;
+  kbViewed.value = null;
+  kbEditId.value = null;
+  kbAddOpen.value = false;
+}
 function openAddKb() {
+  kbEditId.value = null;
   kbForm.value = { title: "", category: "user", keyword: "", content: "", enabled: true };
   kbAddOpen.value = true;
+}
+async function openEditKb(row) {
+  try {
+    const d = await api.knowledgeDetail(row.id);
+    kbForm.value = {
+      title: d.name || kbCleanTitle(d),
+      category: d.category || "user",
+      keyword: d.keyword || "",
+      content: d.content || "",
+      enabled: !!d.enabled,
+    };
+    kbEditId.value = row.id;
+    kbViewOpen.value = false;
+    kbAddOpen.value = true;
+  } catch (e) {
+    alert(`读取失败：${e?.message || e}`);
+  }
 }
 async function saveKb() {
   if (!writable.value) return;
   if (!kbForm.value.content.trim()) { alert("内容不能为空"); return; }
   try {
-    await api.knowledgeCreate(kbForm.value);
-    kbAddOpen.value = false;
+    if (kbEditId.value) {
+      await api.knowledgeUpdate(kbEditId.value, kbForm.value);
+    } else {
+      await api.knowledgeCreate(kbForm.value);
+    }
+    autoCloseKbView();
     await reloadKb();
     await loadStats();
   } catch (e) {
     alert(`保存失败：${e?.message || e}`);
+  }
+}
+async function copyKbContent(row) {
+  const content = row?.content || "";
+  if (!content) { alert("内容为空，无可复制"); return; }
+  try {
+    await navigator.clipboard.writeText(content);
+    alert("内容已复制到剪贴板");
+  } catch {
+    alert("复制失败，请手动选中复制");
   }
 }
 
@@ -659,15 +708,21 @@ onActivated(() => {
       </div>
       <div v-else class="kb-list">
         <article v-for="(row, i) in kbRows" :key="row.id" class="kb-row anim-fade-up" :style="{ '--i': i }"
-                 :class="{ on: row.enabled }" type="button" @click="viewKb(row)">
+                 :class="{ on: row.enabled, off: !row.enabled }" type="button" @click="viewKb(row)" :title="`查看：${kbCleanTitle(row)}`">
           <span class="kb-cat" :class="row.category">{{ kbCatLabel(row.category) }}</span>
           <div class="kb-main">
-            <b>{{ row.summary || row.match_key }}</b>
-            <small>{{ row.keyword ? `关键词：${row.keyword}` : "无关键词" }} · {{ row.match_key }}</small>
-            <em v-if="row.hit_count > 1">已复用 ×{{ row.hit_count }}</em>
+            <b>
+              {{ kbCleanTitle(row) }}
+              <em v-if="row.hit_count > 1" class="kb-reuse" title="已被 worker 复用次数">已复用 {{ row.hit_count }}</em>
+            </b>
+            <small>
+              <span v-if="row.keyword && row.keyword !== kbCleanTitle(row)" class="kw">关键词：{{ row.keyword }}</span>
+              <span v-else class="src" :class="row.origin">{{ kbOrigin(row) }}</span>
+              <template v-if="row.updated_at">· {{ fmtTime(row.updated_at) }}</template>
+            </small>
           </div>
           <span class="kb-side">
-            <time>{{ fmtTime(row.updated_at) }}</time>
+            <button v-if="writable" class="kb-act kb-edit" type="button" title="编辑" @click.stop="openEditKb(row)">编辑</button>
             <i class="kb-enabled" :class="row.enabled ? 'yes' : 'no'" title="点击切换启用/停用" @click.stop="toggleKb(row)">
               {{ row.enabled ? "已启用" : "已停用" }}
             </i>
@@ -678,25 +733,39 @@ onActivated(() => {
 
       <!-- 查看详情弹层 -->
       <div v-if="kbViewOpen" class="kb-mask" @click.self="closeKbView">
-        <div class="kb-dialog">
+        <div class="kb-dialog kb-dialog--wide">
           <header class="kb-dialog-head">
-            <div>
-              <b>{{ kbViewed?.summary || kbViewed?.match_key }}</b>
-              <small>类别：{{ kbCatLabel(kbViewed?.category) }} · {{ kbViewed?.origin === 'seed' ? '种子库' : '用户沉淀' }} · 命中 ×{{ kbViewed?.hit_count }}</small>
+            <div class="kb-head-main">
+              <span class="kb-cat" :class="kbViewed?.category">{{ kbCatLabel(kbViewed?.category) }}</span>
+              <b>{{ kbCleanTitle(kbViewed) }}</b>
             </div>
             <button type="button" class="kb-x" @click="closeKbView">✕</button>
           </header>
+          <div class="kb-dialog-meta">
+            <span>{{ kbOrigin(kbViewed) }}</span>
+            <span v-if="kbViewed?.keyword && kbViewed.keyword !== kbCleanTitle(kbViewed)">关键词：{{ kbViewed.keyword }}</span>
+            <span v-if="kbViewed?.hit_count > 1">已复用 {{ kbViewed.hit_count }}</span>
+            <span v-if="kbViewed?.updated_at">更新于 {{ fmtTime(kbViewed.updated_at) }}</span>
+          </div>
           <pre class="kb-content">{{ kbViewed?.content }}</pre>
+          <footer class="kb-actions" v-if="writable">
+            <button class="btn-ghost" type="button" @click="copyKbContent(kbViewed)">复制内容</button>
+            <button class="btn-ghost" type="button" @click="toggleKb(kbViewed); kbViewed.enabled = !kbViewed.enabled">
+              {{ kbViewed?.enabled ? "停用" : "启用" }}
+            </button>
+            <button class="btn-ghost" type="button" @click="openEditKb(kbViewed)">编辑</button>
+            <button class="btn-danger" type="button" @click="removeKb(kbViewed); kbViewed = null">删除</button>
+          </footer>
         </div>
       </div>
 
-      <!-- 手动添加弹层 -->
+      <!-- 手动添加 / 编辑弹层 -->
       <div v-if="kbAddOpen" class="kb-mask" @click.self="kbAddOpen = false">
-        <div class="kb-dialog">
+        <div class="kb-dialog kb-dialog--wide">
           <header class="kb-dialog-head">
             <div>
-              <b>手动添加知识</b>
-              <small>沉淀一条可复用的挖洞经验 / 手册（worker 会按关键词命中注入）</small>
+              <b>{{ kbEditId ? "编辑知识" : "手动添加知识" }}</b>
+              <small>{{ kbEditId ? "修改后保存，worker 检索会立即用到新内容" : "沉淀一条可复用的挖洞经验 / 手册（worker 会按关键词命中注入）" }}</small>
             </div>
             <button type="button" class="kb-x" @click="kbAddOpen = false">✕</button>
           </header>
@@ -717,10 +786,10 @@ onActivated(() => {
             <label><span>内容</span>
               <textarea v-model="kbForm.content" rows="10" placeholder="把这篇知识的正文粘贴/填写在这里…"></textarea>
             </label>
-            <label class="kb-form-en"><input v-model="kbForm.enabled" type="checkbox" /> 创建后立即启用</label>
+            <label class="kb-form-en"><input v-model="kbForm.enabled" type="checkbox" /> {{ kbEditId ? "保存后保持启用状态" : "创建后立即启用" }}</label>
             <div class="kb-form-actions">
               <button class="btn-ghost" @click="kbAddOpen = false">取消</button>
-              <button class="btn-primary" @click="saveKb">保存</button>
+              <button class="btn-primary" @click="saveKb">{{ kbEditId ? "保存修改" : "保存" }}</button>
             </div>
           </div>
         </div>

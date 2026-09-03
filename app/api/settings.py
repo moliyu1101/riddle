@@ -180,12 +180,21 @@ async def health_overview(session: AsyncSession = Depends(get_session)):
     await refresh_cache(session)
     view = public_settings_view()
     llm = view["llm"]
-    providers = llm.get("providers", [])
-    enabled = [p for p in providers if p.get("enabled", True)]
-    degraded = any(
-        (p.get("health") or {}).get("status") in ("failed", "cooldown")
-        for p in enabled
-    )
+    mode = llm.get("mode", "single")
+    if mode == "pool":
+        providers = llm.get("providers", [])
+        enabled = [p for p in providers if p.get("enabled", True)]
+        degraded = any(
+            (p.get("health") or {}).get("status") in ("failed", "cooldown")
+            for p in enabled
+        )
+        healthy = len(enabled) > 0 and not degraded
+    else:
+        # single 模式：单端点运行时健康状态（providers 为空，不能按 pool 逻辑算）
+        h = llm.get("health") or {}
+        status = h.get("status")
+        healthy = status == "ok"
+        degraded = status in ("failed", "cooldown")
     engines_view = view["engines"] or {}
     engine_items = []
     for meta in view.get("available_engines", []):
@@ -201,10 +210,10 @@ async def health_overview(session: AsyncSession = Depends(get_session)):
     return {
         "updated_at": view.get("updated_at"),
         "llm": {
-            "mode": llm.get("mode", "single"),
-            "provider_count": len(providers),
-            "enabled_count": len(enabled),
-            "healthy": len(enabled) > 0 and not degraded,
+            "mode": mode,
+            "provider_count": len(llm.get("providers", [])),
+            "enabled_count": len([p for p in llm.get("providers", []) if p.get("enabled", True)]),
+            "healthy": healthy,
             "degraded": degraded,
         },
         "engines": {

@@ -16,7 +16,9 @@ from app.db.session import get_session
 
 router = APIRouter(prefix="/api/intel", tags=["intel"])
 
-_KINDS = ("cred", "fingerprint", "endpoint", "profile", "lesson", "knowledge")
+# 知识库（knowledge）是独立模块，有专属接口（/knowledge）与前端页签，不应混入"情报沉淀"的统计与列表。
+_INTEL_KINDS = ("cred", "fingerprint", "endpoint", "profile", "lesson")
+_KINDS = _INTEL_KINDS + ("knowledge",)
 
 
 def _intel_to_dict(it: Intel) -> dict:
@@ -37,21 +39,31 @@ def _intel_to_dict(it: Intel) -> dict:
 
 @router.get("/stats")
 async def intel_stats(session: AsyncSession = Depends(get_session)):
-    """情报库总览：总条数、各类别数、已验证数、被复用(hit>1)数。"""
-    total = (await session.execute(select(func.count()).select_from(Intel))).scalar() or 0
+    """情报库总览：总条数、各类别数、已验证数、被复用(hit>1)数。
+
+    仅统计真正的情报（cred/fingerprint/endpoint/profile/lesson），
+    知识库（knowledge）走独立知识库接口，不计入这里。
+    """
+    total = (await session.execute(
+        select(func.count()).select_from(Intel).where(Intel.kind != "knowledge")
+    )).scalar() or 0
     by_kind = {}
-    rows = await session.execute(select(Intel.kind, func.count()).group_by(Intel.kind))
+    rows = await session.execute(
+        select(Intel.kind, func.count()).where(Intel.kind.in_(_INTEL_KINDS)).group_by(Intel.kind)
+    )
     for kind, cnt in rows.all():
         by_kind[kind] = cnt
     verified = (await session.execute(
-        select(func.count()).select_from(Intel).where(Intel.confidence == "verified")
+        select(func.count()).select_from(Intel)
+        .where(Intel.kind != "knowledge", Intel.confidence == "verified")
     )).scalar() or 0
     reused = (await session.execute(
-        select(func.count()).select_from(Intel).where(Intel.hit_count > 1)
+        select(func.count()).select_from(Intel)
+        .where(Intel.kind != "knowledge", Intel.hit_count > 1)
     )).scalar() or 0
     return {
         "total": total,
-        "by_kind": {k: by_kind.get(k, 0) for k in _KINDS},
+        "by_kind": {k: by_kind.get(k, 0) for k in _INTEL_KINDS},
         "verified": verified,
         "reused": reused,
     }
@@ -68,9 +80,10 @@ async def intel_hit_stats(session: AsyncSession = Depends(get_session)):
     """
     rows = (await session.execute(
         select(Intel.kind, Intel.confidence, Intel.hit_count, Intel.source_host)
+        .where(Intel.kind != "knowledge")
     )).all()
     top_reused = (await session.execute(
-        select(Intel).where(Intel.hit_count > 1)
+        select(Intel).where(Intel.kind != "knowledge", Intel.hit_count > 1)
         .order_by(Intel.hit_count.desc(), Intel.last_seen.desc()).limit(10)
     )).scalars().all()
     return _aggregate_hit_stats(rows, top_reused)
@@ -78,10 +91,13 @@ async def intel_hit_stats(session: AsyncSession = Depends(get_session)):
 
 def _aggregate_hit_stats(rows, top_reused):
     """纯函数：把 (kind, confidence, hit_count, source_host) 行聚合成命中统计字典（可单测）。"""
-    by_kind: dict[str, dict] = {k: {"total": 0, "verified": 0, "reused": 0, "avg_hit": 0.0} for k in _KINDS}
+    by_kind: dict[str, dict] = {k: {"total": 0, "verified": 0, "reused": 0, "avg_hit": 0.0} for k in _INTEL_KINDS}
     dist = {"once": 0, "few": 0, "many": 0}
     src_counter: dict[str, int] = {}
     for kind, conf, hit, host in rows:
+        if kind == "knowledge":
+            # 知识库独立统计与展示，不进情报命中统计。
+            continue
         k = kind if kind in by_kind else "other"
         if k not in by_kind:
             by_kind[k] = {"total": 0, "verified": 0, "reused": 0, "avg_hit": 0.0}
@@ -127,8 +143,13 @@ async def list_intel(
 ):
     """情报列表：按类别/可信度筛选 + 关键词搜索（match_key/summary/source_host/payload）。"""
     stmt = select(Intel)
-    if kind in _KINDS:
+    if kind == "all":
+        # 默认只列真正的情报；知识库用独立 /knowledge 接口 + 专属页签，不混入列表。
+        stmt = stmt.where(Intel.kind.in_(_INTEL_KINDS))
+    elif kind in _INTEL_KINDS:
         stmt = stmt.where(Intel.kind == kind)
+    else:
+        return []
     if confidence in ("verified", "likely"):
         stmt = stmt.where(Intel.confidence == confidence)
     stmt = stmt.order_by(
@@ -184,10 +205,16 @@ async def clear_intel(
     kind: str = Query("all"),
     session: AsyncSession = Depends(get_session),
 ):
-    """批量清空（按类别或全部）。谨慎使用。"""
+    """批量清空（按类别或全部）。谨慎使用。默认 only 情报，知识库须显式 kind=knowledge 才会被清。"""
     stmt = select(Intel)
-    if kind in _KINDS:
+    if kind == "all":
+        stmt = stmt.where(Intel.kind.in_(_INTEL_KINDS))
+    elif kind in _INTEL_KINDS:
         stmt = stmt.where(Intel.kind == kind)
+    elif kind == "knowledge":
+        stmt = stmt.where(Intel.kind == "knowledge")
+    else:
+        return {"ok": True, "deleted": 0}
     rows = (await session.execute(stmt)).scalars().all()
     n = 0
     for it in rows:
