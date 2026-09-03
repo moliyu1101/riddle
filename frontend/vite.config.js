@@ -11,6 +11,8 @@ export default defineConfig({
   server: {
     proxy: {
       "/api": { target: "http://localhost:8000", changeOrigin: true, ws: true },
+      // 真实浏览器截图静态目录（后端 /workfiles 挂载工作目录根）
+      "/workfiles": { target: "http://localhost:8000", changeOrigin: true },
     },
   },
 });

@@ -11,3 +11,6 @@ sqlalchemy>=2.0.0
 greenlet>=3.0.0
 aiosqlite>=0.19.0
 python-multipart>=0.0.9
+# 真实浏览器截图（capture_evidence screenshot 开关）。容器内需 playwright install chromium。
+# 注意：不要装 pyppeteer/selenium/undetected-chromedriver，它们会降级 websockets 导致 uvicorn 崩溃。
+playwright>=1.40.0

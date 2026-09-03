@@ -215,15 +215,84 @@ def render_snapshot_markdown(snapshot: dict) -> str:
     return "\n".join(lines)
 
 
+def capture_screenshot(
+    executor: Any,
+    url: str,
+    timeout: int = 20,
+    width: int = 1280,
+    height: int = 900,
+) -> dict[str, Any]:
+    """用 playwright 无头浏览器截取页面真实渲染图（自动注入会话 cookie）。
+
+    对 JS 渲染页 / 登录后页面 / 需要视觉佐证的漏洞，比结构化快照更有说服力。
+    截图保存到 work_dir/evidence/screenshots/，返回 {ok, url, ref, width, height, elapsed}。
+    playwright/chromium 未安装时返回 ok=False 并给明确提示，不抛异常、不阻塞提交。
+    """
+    url = (url or "").strip()
+    if not url:
+        return {"ok": False, "kind": "arg_error", "error": "url 不能为空。"}
+    try:
+        from playwright.sync_api import sync_playwright
+    except Exception as e:
+        return {"ok": False, "error": f"playwright 未安装（{type(e).__name__}）。请将 playwright 加入 requirements.txt 并重新构建镜像。"}
+    t0 = time.time()
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+            )
+            try:
+                context = browser.new_context(viewport={"width": width, "height": height})
+                cookies = getattr(executor, "_session_cookies", None) or {}
+                if cookies:
+                    try:
+                        context.add_cookies(
+                            [{"name": k, "value": str(v), "url": url} for k, v in cookies.items()]
+                        )
+                    except Exception:
+                        pass
+                page = context.new_page()
+                page.goto(url, timeout=int(timeout or 20) * 1000, wait_until="domcontentloaded")
+                page.wait_for_timeout(800)  # 等 JS 渲染 / 懒加载
+                base = Path(executor.work_dir) / "evidence" / "screenshots"
+                base.mkdir(parents=True, exist_ok=True)
+                ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+                name = f"shot_{ts}_{abs(hash(url)) % 10000}.png"
+                path = base / name
+                page.screenshot(path=str(path), full_page=False)
+                return {
+                    "ok": True,
+                    "url": url,
+                    "ref": f"evidence/screenshots/{name}",
+                    "path": str(path),
+                    "workdir": Path(executor.work_dir).name,
+                    "width": width,
+                    "height": height,
+                    "elapsed": round(time.time() - t0, 2),
+                    "captured_at": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
+                }
+            finally:
+                try:
+                    browser.close()
+                except Exception:
+                    pass
+    except Exception as e:
+        return {"ok": False, "error": f"截图失败: {type(e).__name__}: {e}", "url": url}
+
+
 def capture_evidence(
     executor: Any,
     url: str = "",
     method: str = "GET",
     data: str = "",
     timeout: int = 15,
+    screenshot: bool = False,
 ) -> dict[str, Any]:
     """capture_evidence 工具实现：抓取指定 URL 存证快照并持久化，返回摘要 + evidence_ref。
 
+    screenshot=True 时额外用 playwright 截真实渲染图（JS 渲染/登录后页面建议开启），
+    截图引用挂到 snapshot.screenshot.ref，随 evidence_ref 一起进报告证据链。
     worker 在确认漏洞后调用，把返回的 evidence_ref 通过 submit_finding 的
     evidence.snapshot_ref 带上，提交时自动合并进报告证据链。
     """
@@ -233,6 +302,11 @@ def capture_evidence(
     snap = capture_snapshot(executor, url, method=method, data=data, timeout=timeout)
     if not snap.get("ok"):
         return {"ok": False, "error": snap.get("error") or "存证快照抓取失败。", "url": url}
+    shot = None
+    if screenshot:
+        shot = capture_screenshot(executor, url, timeout=timeout)
+        if shot.get("ok"):
+            snap["screenshot"] = shot
     ref = save_snapshot(executor.work_dir, snap)
     return {
         "ok": True,
@@ -241,9 +315,11 @@ def capture_evidence(
         "title": snap.get("title") or "",
         "body_len": snap.get("body_len") or 0,
         "evidence_ref": ref,
+        "screenshot_ref": (shot or {}).get("ref") or "",
         "summary": (
             f"存证快照已保存：{url} → HTTP {snap.get('status') or '-'}，"
             f"标题「{snap.get('title') or '-'}」，正文 {snap.get('body_len') or 0}B。"
+            + ("真实截图已保存。" if (shot or {}).get("ok") else "")
         ),
         "guidance": (
             "在 submit_finding 的 evidence 里带上 snapshot_ref 引用该存证"

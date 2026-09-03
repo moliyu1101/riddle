@@ -514,13 +514,14 @@ TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "capture_evidence",
-            "description": "存证快照：对确认漏洞的页面 URL 抓取结构化 HTTP 快照（状态码/响应头/正文片段/标题/可见文本/耗时）作为存证，保存到工作目录并返回 evidence_ref。只读为主，走当前会话。命中漏洞后、submit_finding 前调用，把返回的 evidence_ref 通过 submit_finding 的 evidence.snapshot_ref 带上，提交时会自动合并进报告证据链。",
+            "description": "存证快照：对确认漏洞的页面 URL 抓取结构化 HTTP 快照（状态码/响应头/正文片段/标题/可见文本/耗时）作为存证，保存到工作目录并返回 evidence_ref。只读为主，走当前会话。screenshot=true 时额外用 playwright 截真实浏览器渲染图（对 JS 渲染页、登录后页面、需要视觉佐证的漏洞建议开启），截图引用随 evidence_ref 一起进报告证据链。命中漏洞后、submit_finding 前调用，把返回的 evidence_ref 通过 submit_finding 的 evidence.snapshot_ref 带上，提交时会自动合并进报告证据链。",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "url": {"type": "string", "description": "要存证的页面 URL（含 PoC 参数）"},
                     "method": {"type": "string", "description": "GET 或 POST，默认 GET"},
                     "data": {"type": "string", "description": "POST body（可选）"},
+                    "screenshot": {"type": "boolean", "default": False, "description": "是否同时截真实浏览器渲染图（playwright+chromium）。JS 渲染/登录后页面建议 true，普通静态页可 false 省资源。"},
                 },
                 "required": ["url"],
             },

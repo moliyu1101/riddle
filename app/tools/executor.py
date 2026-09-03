@@ -1553,14 +1553,20 @@ class ToolExecutor:
         method: str = "GET",
         data: str = "",
         timeout: int = 15,
+        screenshot: bool = False,
     ) -> dict[str, Any]:
-        """存证快照：抓取指定页面 HTTP 快照并持久化，返回 evidence_ref（只读无害）。"""
+        """存证快照：抓取指定页面 HTTP 快照并持久化，返回 evidence_ref（只读无害）。
+
+        screenshot=True 时额外用 playwright 截真实渲染图（自动注入会话 cookie）。
+        """
         try:
             check_task_forbidden(f"{method} {url}", self._forbidden_ops)
         except CommandBlocked as e:
             return {"ok": False, "blocked": True, "error": str(e)}
         try:
-            return _capture_evidence_tool(self, url=url, method=method, data=data, timeout=timeout)
+            return _capture_evidence_tool(
+                self, url=url, method=method, data=data, timeout=timeout, screenshot=bool(screenshot),
+            )
         except Exception as e:
             return {"ok": False, "error": f"capture_evidence 异常: {type(e).__name__}: {e}"}
 

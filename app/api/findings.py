@@ -139,6 +139,29 @@ def _diff_score_dict(f: Finding) -> dict:
         return {"score": 50.0, "tier": "normal", "label": "普通", "reasons": [], "common_hits": [], "suggestions": []}
 
 
+def _enrich_evidence(evidence: Any, target_url: str | None) -> Any:
+    """给 evidence.snapshot.screenshot 补可访问 URL（/workfiles/<safe_name>/<ref>）。
+
+    截图文件存于 work_dir/evidence/screenshots/，静态目录挂载在 /workfiles 下，
+    前端 <img> 直接引用该 URL 即可显示真实渲染图。目录名优先用存证时记录
+    的 workdir（executor 按 target 生成），旧快照回退到 target_url 推导。
+    """
+    if not isinstance(evidence, dict):
+        try:
+            evidence = evidence.model_dump() if hasattr(evidence, "model_dump") else {}
+        except Exception:
+            return evidence
+    snap = evidence.get("snapshot")
+    if isinstance(snap, dict):
+        shot = snap.get("screenshot")
+        if isinstance(shot, dict) and shot.get("ref"):
+            dir_name = str(shot.get("workdir") or "").strip() or None
+            if not dir_name:
+                dir_name = "".join(c if c.isalnum() else "_" for c in (target_url or ""))[:60]
+            shot["url"] = f"/workfiles/{dir_name}/{shot['ref']}"
+    return evidence
+
+
 def _finding_dict(f: Finding, r: Review | None, *, compact: bool = False) -> dict:
     user_edits = r.user_edits or {} if r else {}
     item = {
@@ -189,7 +212,7 @@ def _finding_dict(f: Finding, r: Review | None, *, compact: bool = False) -> dic
         "poc": f.poc,
         "raw_request": f.raw_request,
         "raw_response": f.raw_response,
-        "evidence": f.evidence,
+        "evidence": _enrich_evidence(f.evidence, f.target_url),
         "affected_scope": f.affected_scope,
         "kill_chain": f.kill_chain or [],
         "assistant_messages": _sanitize_assistant_messages(f.assistant_messages)

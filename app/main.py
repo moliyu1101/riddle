@@ -35,6 +35,7 @@ from app.agent_runtime import (
 )
 from app.api import backup, findings, intel, runtime_logs, settings, stream, tasks, update, vulns
 from app.backup import run_periodic_backup
+from app.config import worker_config
 from app.db.session import init_db
 from app.ds2api_proxy import ENABLED as DS2API_ENABLED, router as ds2api_router
 from app.orchestrator import manager
@@ -164,6 +165,12 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="知蠹 Riddle", version="0.1", lifespan=lifespan)
+# 真实浏览器截图静态目录：/workfiles/<任务目录>/evidence/screenshots/*.png。
+# 注意：此路径不纳入令牌鉴权（<img> 无法带 Authorization 头），路径含任务 safe_name 不可枚举；
+# 若部署在公网且担心证据泄露，请在反向代理层对该前缀加访问控制。
+_work_root = Path(worker_config.work_root)
+if _work_root.exists():
+    app.mount("/workfiles", StaticFiles(directory=str(_work_root)), name="workfiles")
 # 可选的 LLM 反代（默认关闭；仅当 DS2API_PROXY_ENABLED=1 才挂载）。
 if DS2API_ENABLED:
     app.include_router(ds2api_router)
