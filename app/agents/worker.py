@@ -72,6 +72,7 @@ _REFLECT_PROMPT = (
     "④ 当前方向还值得追吗：若只是枚举/网络/公开数据、换任何参数都拿不到实质，就收敛 finish(no_vuln)；\n"
     "   若还有一条明确线索，写下更新的下一步计划。\n"
     "请调用 update_cognition 把结论落盘（confirmed/excluded/leads/plan 四个槽都尽量更新），"
+    "并用 update_notes 把本轮进度写进工作笔记（【已发现】/【已试失败】/【当前突破口】/【下一步】），"
     "然后带着最清晰的下一步继续调工具验证，或 finish。不要为了凑复盘而空转。"
 )
 
@@ -1111,6 +1112,14 @@ class Worker:
             ]
             if summary:
                 parts.append(f"已有进度摘要：{summary[:800]}")
+            # 恢复的工作笔记直接展示给续挖 worker，这是上一轮 LLM 主动记下的关键进度
+            _notes = ""
+            try:
+                _notes = str(getattr(self.executor, "_worker_notes", "") or "")
+            except Exception:
+                _notes = ""
+            if _notes:
+                parts.append(f"上一轮工作笔记：\n{_notes[:1500]}")
             if recent_evidence:
                 parts.append(
                     "上一轮已落盘的真实取证动作（继续验证这些点，别丢进度）：\n" + recent_evidence
