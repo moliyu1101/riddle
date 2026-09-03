@@ -176,6 +176,27 @@ _ALIAS: list[tuple[tuple[str, ...], tuple[str, ...]]] = [
     (("api网关", "网关"), ("api-gateway-test",)),
     (("反序列化绕过", "类型杂耍", "php"), ("type-juggling-test",)),
     (("开放重定向", "任意跳转", "open_redirect"), ("open-redirect-test",)),
+    # 补充映射：覆盖其余测试手册（含「几乎不交」降级类，让 worker 知道默认不收）
+    (("401", "403", "接口鉴权", "权限绕过", "未授权接口"), ("401-403-bypass",)),
+    (("短表", "手法索引", "打穿短表", "索引"), ("打穿短表",)),
+    (("工具真执行", "对话口", "工具执行", "会跑命令"), ("agent-tool-exec-test",)),
+    (("云ide", "codex", "编程平台", "ai编程", "编程台", "rce链"), ("cloud-ide-codex-rce-chain",)),
+    (("点击劫持", "clickjacking", "覆盖攻击"), ("clickjacking-test",)),
+    (("csp", "内容安全策略", "策略绕过"), ("csp-bypass-test",)),
+    (("csv", "公式注入", "电子表格注入"), ("csv-formula-injection-test",)),
+    (("悬空标记", "dangling", "悬空"), ("dangling-markup-test",)),
+    (("依赖混淆", "供应链", "内部包名"), ("dependency-confusion-test",)),
+    (("dns重绑定", "重绑定", "dns rebinding"), ("dns-rebinding-test",)),
+    (("el注入", "表达式语言", "expression language"), ("el-injection-test",)),
+    (("邮件头", "邮件注入", "邮件头注入"), ("email-header-injection-test",)),
+    (("ghost bits", "幽灵位", "cast攻击", "类型转换攻击"), ("ghost-bits-cast-test",)),
+    (("参数污染", "hpp", "参数覆盖"), ("hpp-test",)),
+    (("host头", "主机头", "毒重置信", "重置信", "host header"), ("http-host-header-test",)),
+    (("http2", "h2走私", "http/2"), ("http2-attacks-test",)),
+    (("scm", "源码管理", "git泄露", "代码仓库", "不安全scm"), ("insecure-scm-test",)),
+    (("llm", "ai安全", "越狱", "提示注入", "prompt injection"), ("llm-security-test",)),
+    (("子域接管", "子域名接管", "域名接管", "subdomain"), ("subdomain-takeover-test",)),
+    (("xslt", "xslt注入"), ("xslt-injection-test",)),
 ]
 
 def _match_terms(text: str) -> list[str]:

@@ -43,7 +43,7 @@ _URL_RE = re.compile(r"""https?://[^\s"'`<>\\)]{1,400}""", re.I)
 # 高价值路径前缀白名单：覆盖鉴权、网关、支付、订单、版本化 API、文件、验证码等。
 # 含 gateway/bbs/client：部分前端把 Client*/管理接口挂在 /gateway/.../bbs/ 等路径下。
 _PATH_RE = re.compile(
-    r"""(?P<path>/(?:api|admin|manager|user|users|auth|login|logout|oauth|sso|config|parse|classes|upload|files?|download|export|import|sms|phone|mobile|captcha|password|passwd|reset|forget|common|system|front|order|orders|pay|payment|refund|withdraw|account|wallet|gateway|bbs|client|operator|v\d{1,2})[A-Za-z0-9_./?=&:%-]{1,220})""",
+    r"""(?P<path>/(?:api|admin|manager|user|users|auth|login|logout|oauth|sso|config|parse|classes|upload|files?|download|export|import|sms|phone|mobile|captcha|password|passwd|reset|forget|changepwd|change_pwd|changePwd|bind|unbind|transfer|grant|role|roles|permission|permissions|backup|dump|sql|common|system|front|order|orders|pay|payment|refund|withdraw|account|wallet|gateway|bbs|client|operator|v\d{1,2})[A-Za-z0-9_./?=&:%-]{1,220})""",
     re.I,
 )
 # 中段高价值：/xxx/Admin/...、/xxx/ClientSysOperator 等（前缀未必在白名单）。

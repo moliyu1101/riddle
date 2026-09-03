@@ -5,7 +5,12 @@ const props = defineProps({
   form: { type: Object, required: true },
   /** 保存完成信号：时间戳变化即提示「已保存并生效」 */
   saveFlash: { type: Number, default: 0 },
+  /** 单令牌独立保存回调（只提交 auth 段） */
+  onSaveToken: { type: Function, default: null },
 });
+
+/** 单令牌保存进行中（禁用按钮防重复点击） */
+const tokenSaving = ref(false);
 
 /** 每个令牌的展示状态：是否明文显示 */
 const show = reactive({ full: false, read: false, observer: false });
@@ -60,6 +65,20 @@ function statusOf(row) {
 function clearToken(row) {
   props.form[row.valKey] = "";
   props.form[row.setKey] = false;
+}
+
+/** 单令牌独立保存：委托给父组件 saveAuthToken */
+async function onSaveToken(row) {
+  if (!props.onSaveToken || tokenSaving.value) return;
+  const val = String(props.form[row.valKey] || "").trim();
+  // 未输入新值且当前未设置 → 无内容可保存
+  if (!val && !props.form[row.setKey]) return;
+  tokenSaving.value = true;
+  try {
+    await props.onSaveToken(row);
+  } finally {
+    tokenSaving.value = false;
+  }
 }
 </script>
 
@@ -117,6 +136,15 @@ function clearToken(row) {
             @click="clearToken(row)"
           >
             清除
+          </button>
+          <button
+            type="button"
+            class="security-save"
+            :disabled="tokenSaving || !form[row.valKey].trim() || !props.onSaveToken"
+            title="保存该令牌"
+            @click="onSaveToken(row)"
+          >
+            {{ tokenSaving ? "保存中…" : "保存" }}
           </button>
         </div>
       </div>

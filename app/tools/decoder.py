@@ -159,6 +159,30 @@ def _identify_hash(s: str) -> dict[str, Any] | None:
     }
 
 
+def _identify_bcrypt(s: str) -> dict[str, Any] | None:
+    """识别 bcrypt 口令哈希（$2a$/$2b$/$2y$ + 成本 + 53 字符盐+摘要）。
+
+    bcrypt 非纯 hex，_identify_hash 会漏；DB 泄露/日志里的口令哈希常见 bcrypt，
+    识别后能指导 worker 判断可爆破性（成本因子高则爆破成本高）。
+    """
+    raw = s.strip()
+    if len(raw) < 20 or len(raw) > 80 or not raw.startswith("$2"):
+        return None
+    # $2a$/$2b$/$2y$ + 两位成本 + $ + 53 位 [./A-Za-z0-9]
+    if len(raw) < 7 or raw[3] != "$":
+        return None
+    cost = raw[4:6]
+    if not cost.isdigit():
+        return None
+    body = raw[7:]
+    if len(body) != 53 or not set(body) <= set("./ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"):
+        return None
+    note = ("bcrypt 口令哈希：成本因子 " + cost + "，可用 hashcat -m 3200 跑弱口令字典（只读取证，勿改库）。"
+            if int(cost) <= 12 else
+            "bcrypt 口令哈希：成本因子 " + cost + " 较高，爆破成本大，优先找明文/其它可逆凭证。")
+    return {"scheme": "hash_identify", "hash_type": "bcrypt", "cost": cost, "attack_notes": note}
+
+
 def _compute_hashes(s: str) -> dict[str, str]:
     data = s.encode("utf-8", "replace")
     return {
@@ -201,7 +225,7 @@ def decode_transform(value: str, mode: str = "auto") -> dict[str, Any]:
         if mode == "hash":
             return {"ok": True, "input_truncated": truncated_input,
                     "scheme": "hash", "hashes": _compute_hashes(clipped),
-                    "identify": _identify_hash(clipped)}
+                    "identify": _identify_hash(clipped) or _identify_bcrypt(clipped)}
 
         # auto：依次尝试，收集所有命中（jwt 最具体优先展示）。
         decodings: list[dict[str, Any]] = []
@@ -214,7 +238,7 @@ def decode_transform(value: str, mode: str = "auto") -> dict[str, Any]:
                 decodings.append(r)
         hash_id = None
         try:
-            hash_id = _identify_hash(clipped)
+            hash_id = _identify_hash(clipped) or _identify_bcrypt(clipped)
         except Exception:
             hash_id = None
 
