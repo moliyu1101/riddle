@@ -238,6 +238,44 @@ class Worker:
             **payload,
         )
 
+    def _autotag_injected_if_session(self) -> None:
+        """session_set 成功 / 续挖恢复会话后，若已持有可用 cookie/header 凭据，自动标记为
+        『已在当前会话注入』并上报看板（只暴露字段名，绝不落会话明文）。
+
+        幂等：auth 已是更高的 login_ok 或本就在 injected 则不重复标记，避免看板闪变。
+        供同目标断点续挖复用：后续轮次/续挖 worker 看到已注入会话，直接带登录态深入。
+        """
+        try:
+            ex = self.executor
+            cookies = dict(getattr(ex, "_session_cookies", {}) or {})
+            headers = dict(getattr(ex, "_session_headers", {}) or {})
+            if not cookies and not headers:
+                return
+            cur = (self.target_meta or {}).get("auth_attempt") or {}
+            if cur.get("status") in ("injected", "login_ok"):
+                return
+            names = sorted(cookies.keys())
+            hnames = sorted(headers.keys())
+            payload = {
+                "used": True,
+                "matched": True,
+                "status": "injected",
+                "kinds": (["cookie"] if cookies else []) + (["bearer"] if headers else []),
+                "matched_by": "自动捕获",
+                "binding_target": self.target,
+                "reason": "挖掘中 session_set 成功，已注入会话，后续请求自动携带",
+                "cookie_names": names[:20],
+                "header_names": hnames[:20],
+            }
+            self.target_meta["auth_attempt"] = payload
+            self._emit(
+                "auth_status",
+                message="已注入会话（session_set 自动捕获），后续请求自动携带。",
+                **payload,
+            )
+        except Exception:
+            pass
+
     def _playbook_block(self) -> str:
         """目标打法路由：编排层生成的短路线块。"""
         return (self.target_meta or {}).get("playbook_block") or ""
@@ -1050,6 +1088,8 @@ class Worker:
         for u in probed:
             if isinstance(u, str) and u.strip():
                 self._probed_urls.add(u.strip())
+        # 续挖恢复成功后若已携带会话凭据，同样自动标记「已注入」（供看板显示 + 同目标复用）
+        self._autotag_injected_if_session()
         self._emit(
             "worker_resume",
             notes_len=len(notes),
@@ -1559,11 +1599,16 @@ class Worker:
             self._mark_tool_used(name, rnd)
             self._emit("tool_session_set", round=rnd,
                        has_cookies=bool(args.get("cookies")), has_headers=bool(args.get("headers")))
-            return self.executor.session_set(
+            result = self.executor.session_set(
                 cookies=args.get("cookies"),
                 headers=args.get("headers"),
                 clear=bool(args.get("clear", False)),
             )
+            # 登记成功后若已持有可用 cookie/header 凭据，自动标记为「已注入会话」，
+            # 前端看板即显示「凭据·已注入」，供同目标断点续挖复用（不落明文）。
+            if result.get("ok") and (result.get("active_cookies") or result.get("active_headers")):
+                self._autotag_injected_if_session()
+            return result
 
         if name == "update_notes":
             self._mark_tool_used(name, rnd)
