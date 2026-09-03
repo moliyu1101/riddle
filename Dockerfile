@@ -71,6 +71,10 @@ COPY requirements.txt .
 # 国内网络优先清华 PyPI 镜像，提速并降低 install 失败率
 RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn -r requirements.txt
 
+# 真实浏览器截图：playwright + chromium（无头）。--with-deps 自动装系统依赖；
+# 国内网络下载失败不阻断构建（截图功能缺失时 capture_evidence 会返回明确提示）。
+RUN python -m playwright install --with-deps chromium || true
+
 # 更新 nuclei 模板（失败不阻断构建）
 RUN nuclei -update-templates -silent || true
 

@@ -40,7 +40,7 @@ _SELF_DESTRUCT_PATTERNS = [
 _DANGEROUS_PIP_MSG = (
     "禁止在容器内 pip install pyppeteer/selenium/undetected-chromedriver 等包："
     "它们会无约束拉旧版 websockets，导致 uvicorn 启动崩溃（ServerProtocol 导入失败）。"
-    "如需浏览器自动化，请将 playwright 加入 requirements.txt 并重新构建镜像。"
+    "真实浏览器截图已内置 playwright+chromium，用 capture_evidence 的 screenshot 开关即可，无需再装浏览器自动化包。"
 )
 
 _COMPILED = [re.compile(p, re.IGNORECASE) for p in _SELF_DESTRUCT_PATTERNS]

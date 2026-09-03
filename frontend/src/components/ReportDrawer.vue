@@ -795,6 +795,7 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
                         <span class="snap-status" :class="snapStatusClass(evidence.snapshot.status)">HTTP {{ evidence.snapshot.status }}</span>
                         <span class="snap-len">{{ evidence.snapshot.body_len }}B · {{ evidence.snapshot.elapsed }}s</span>
                       </div>
+                      <img v-if="evidence.snapshot.screenshot?.url" :src="evidence.snapshot.screenshot.url" class="snap-shot" alt="真实浏览器截图" loading="lazy" />
                       <div v-if="evidence.snapshot.title" class="snap-title">标题：{{ evidence.snapshot.title }}</div>
                       <div v-if="evidence.snapshot.visible_text" class="snap-text">{{ evidence.snapshot.visible_text }}</div>
                       <pre v-if="evidence.snapshot.body_snippet" class="code-block"><code>{{ evidence.snapshot.body_snippet }}</code></pre>

@@ -1582,9 +1582,11 @@ class Worker:
                     "capture_evidence", "url",
                     "必须传要存证的页面 URL（含 PoC 参数）；无明确目标就别空调用。",
                 )
-            self._emit("tool_capture_evidence", round=rnd, url=url[:200])
+            self._emit("tool_capture_evidence", round=rnd, url=url[:200],
+                       screenshot=bool(args.get("screenshot", False)))
             return self.executor.capture_evidence(
                 url=url, method=args.get("method", "GET"), data=args.get("data", ""),
+                screenshot=bool(args.get("screenshot", False)),
             )
 
         if name == "verify_known_vuln":

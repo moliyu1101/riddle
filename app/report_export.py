@@ -5,13 +5,16 @@
 """
 from __future__ import annotations
 
+import base64
 import html as _html
 import io
 import json
 import zipfile
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
+from app.config import worker_config
 from app.db.models import Finding, Review, to_cst_iso
 from app.schemas import Step
 from app.tools.evidence_capture import render_snapshot_markdown
@@ -110,8 +113,82 @@ def _evidence_items(f: Finding) -> list[dict]:
         items.append({"label": "说明", "kind": "text", "content": ev["notes"]})
     snap = ev.get("snapshot")
     if snap:
-        items.append({"label": "存证快照", "kind": "snapshot", "content": render_snapshot_markdown(snap)})
+        item = {"label": "存证快照", "kind": "snapshot", "content": render_snapshot_markdown(snap)}
+        shot = snap.get("screenshot") if isinstance(snap, dict) else None
+        if isinstance(shot, dict) and shot.get("ref"):
+            item["screenshot_ref"] = shot["ref"]
+        items.append(item)
     return items
+
+
+def _screenshot_path(f: Finding, ref: str) -> Path | None:
+    """按截图相对引用（evidence/screenshots/xxx.png）解析绝对路径，不存在返回 None。
+
+    优先用存证时记录的 work_dir 目录名（executor 按 target 生成，可靠）；
+    旧快照未记录时回退到 target_url 推导的 safe_name。
+    """
+    if not ref:
+        return None
+    dir_name = ""
+    ev = f.evidence or {}
+    if not isinstance(ev, dict):
+        try:
+            ev = ev.model_dump()
+        except Exception:
+            ev = {}
+    snap = ev.get("snapshot")
+    if isinstance(snap, dict):
+        shot = snap.get("screenshot")
+        if isinstance(shot, dict):
+            dir_name = str(shot.get("workdir") or "").strip()
+    if not dir_name:
+        dir_name = "".join(c if c.isalnum() else "_" for c in (f.target_url or ""))[:60]
+    p = Path(worker_config.work_root) / dir_name / ref
+    return p if p.exists() else None
+
+
+def _png_size(data: bytes) -> tuple[int, int]:
+    """从 PNG 二进制解析宽高（IHDR chunk），失败返回 (0, 0)。"""
+    if len(data) < 24 or data[:8] != b"\x89PNG\r\n\x1a\n":
+        return 0, 0
+    try:
+        w = int.from_bytes(data[16:20], "big")
+        h = int.from_bytes(data[20:24], "big")
+        return w, h
+    except Exception:
+        return 0, 0
+
+
+def _screenshot_base64(p: Path) -> str:
+    try:
+        return base64.b64encode(p.read_bytes()).decode()
+    except Exception:
+        return ""
+
+
+def _docx_image_para(path: Path, r_id: str, max_width_px: int = 560) -> str:
+    """生成 docx 内联图片段落 XML（OOXML drawing）。按 PNG 实际尺寸等比缩放。"""
+    try:
+        data = path.read_bytes()
+    except Exception:
+        return ""
+    w, h = _png_size(data)
+    if w <= 0 or h <= 0:
+        return ""
+    scale = min(1.0, max_width_px / w)
+    cx = int(w * scale * 9525)  # 1px @96dpi = 9525 EMU
+    cy = int(h * scale * 9525)
+    return (
+        f'<w:p><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">'
+        f'<wp:extent cx="{cx}" cy="{cy}"/>'
+        f'<wp:docPr id="1" name="screenshot.png"/>'
+        f'<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+        f'<pic:pic><pic:nvPicPr><pic:cNvPr id="1" name="screenshot.png"/><pic:cNvPicPr/></pic:nvPicPr>'
+        f'<pic:blipFill><a:blip r:embed="{r_id}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
+        f'<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm>'
+        f'<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>'
+        f'</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>'
+    )
 
 
 def _chain(f: Finding) -> list[dict]:
@@ -279,6 +356,13 @@ def build_report_markdown(f: Finding, r: Review | None, src_type: str = "edusrc"
             lines.append("```")
         else:
             lines.append(item["content"])
+        if item.get("screenshot_ref"):
+            p = _screenshot_path(f, item["screenshot_ref"])
+            if p:
+                b64 = _screenshot_base64(p)
+                if b64:
+                    lines.append("")
+                    lines.append(f"![真实浏览器截图](data:image/png;base64,{b64})")
         lines.append("")
     chain = d["chain"]
     if chain:
@@ -357,9 +441,21 @@ def build_docx_bytes(f: Finding, r: Review | None, src_type: str = "edusrc") -> 
         body.append(para("原始请求包（yakit / Burp 可直接导入）", bold=True))
         body.append(code(d["poc_http"]))
     body.append(heading("证据链", 2))
+    media: list[tuple[str, bytes]] = []
+    rel_entries: list[tuple[str, str]] = []
     for item in d["evidence"]:
         body.append(para(item["label"], bold=True))
         body.append(code(item["content"]) if item["kind"] in ("code", "snapshot") else para(item["content"]))
+        if item.get("screenshot_ref"):
+            p = _screenshot_path(f, item["screenshot_ref"])
+            if p and p.exists():
+                idx = len(media) + 1
+                rid = f"rId{idx + 1}"
+                media.append((f"image{idx}.png", p.read_bytes()))
+                rel_entries.append((rid, f"media/image{idx}.png"))
+                img_para = _docx_image_para(p, rid)
+                if img_para:
+                    body.append(img_para)
     if d["chain"]:
         body.append(heading("攻击链路", 2))
         body.append(para(" → ".join(s["method"] for s in d["chain"])))
@@ -373,7 +469,11 @@ def build_docx_bytes(f: Finding, r: Review | None, src_type: str = "edusrc") -> 
 
     document_xml = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-        '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+        ' xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"'
+        ' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
+        ' xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"'
+        ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
         "<w:body>" + "".join(body) + "</w:body></w:document>"
     )
     content_types = (
@@ -381,6 +481,7 @@ def build_docx_bytes(f: Finding, r: Review | None, src_type: str = "edusrc") -> 
         '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
         '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
         '<Default Extension="xml" ContentType="application/xml"/>'
+        '<Default Extension="png" ContentType="image/png"/>'
         '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
         "</Types>"
     )
@@ -390,11 +491,27 @@ def build_docx_bytes(f: Finding, r: Review | None, src_type: str = "edusrc") -> 
         '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>'
         "</Relationships>"
     )
+    document_rels = ""
+    if rel_entries:
+        document_rels = (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>'
+            + "".join(
+                f'<Relationship Id="{rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="{target}"/>'
+                for rid, target in rel_entries
+            )
+            + "</Relationships>"
+        )
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("[Content_Types].xml", content_types)
         zf.writestr("_rels/.rels", rels)
         zf.writestr("word/document.xml", document_xml)
+        if media:
+            zf.writestr("word/_rels/document.xml.rels", document_rels)
+            for name, data in media:
+                zf.writestr(f"word/media/{name}", data)
     return buf.getvalue()
 
 
@@ -443,6 +560,12 @@ def build_report_html(f: Finding, r: Review | None, src_type: str = "edusrc") ->
         for item in d["evidence"]:
             parts.append(f"<h3>{esc(item['label'])}</h3>")
             parts.append(f"<pre>{esc(item['content'])}</pre>" if item["kind"] in ("code", "snapshot") else f"<p>{esc(item['content'])}</p>")
+            if item.get("screenshot_ref"):
+                p = _screenshot_path(f, item["screenshot_ref"])
+                if p:
+                    b64 = _screenshot_base64(p)
+                    if b64:
+                        parts.append(f"<img class='snap-shot' src='data:image/png;base64,{b64}' alt='真实浏览器截图' />")
     if d["chain"]:
         parts.append("<h2>攻击链路</h2><p>" + " → ".join(esc(s["method"]) for s in d["chain"]) + "</p>")
         parts.append("<ol>" + "".join(f"<li><b>{esc(s['method'])}</b> {esc(s.get('detail', ''))}</li>" for s in d["chain"]) + "</ol>")
@@ -462,6 +585,7 @@ def build_report_html(f: Finding, r: Review | None, src_type: str = "edusrc") ->
         "pre{{background:#0f172a;color:#e2e8f0;padding:14px;border-radius:8px;overflow-x:auto;font-size:12.5px;white-space:pre-wrap;word-break:break-all}}"
         "blockquote{{border-left:4px solid #f59e0b;background:#fffbeb;padding:10px 14px;margin:12px 0;color:#78350f}}"
         "p.poc-tag{{font-size:12px;color:#3b9eff;margin:10px 0 2px;font-weight:600}}"
+        "img.snap-shot{{max-width:100%;border:1px solid #e5e7eb;border-radius:8px;margin:10px 0}}"
         "ol{{padding-left:22px}}li{{margin:4px 0}}"
         "@media print{{body{{margin:0}}pre{{white-space:pre-wrap}}}}</style></head><body>{}</body></html>"
     ).format(esc(ov["title"]), "".join(parts))
