@@ -302,6 +302,19 @@ async function viewKb(row) {
     alert(`读取失败：${e?.message || e}`);
   }
 }
+// 关联篇目跳转：优先在当前列表按 match_key 命中，否则按名称查全库
+async function viewKbByName(name) {
+  const row = kbRows.value.find((r) => r.match_key === name || r.name === name);
+  if (row) return viewKb(row);
+  try {
+    const list = await api.knowledgeList("all", name);
+    const hit = list.find((r) => r.match_key === name || r.name === name);
+    if (hit) return viewKb(hit);
+    alert(`未找到关联篇目：${name}`);
+  } catch (e) {
+    alert(`跳转失败：${e?.message || e}`);
+  }
+}
 function closeKbView() {
   kbViewOpen.value = false;
   kbViewed.value = null;
@@ -746,6 +759,15 @@ onActivated(() => {
             <span v-if="kbViewed?.keyword && kbViewed.keyword !== kbCleanTitle(kbViewed)">关键词：{{ kbViewed.keyword }}</span>
             <span v-if="kbViewed?.hit_count > 1">已复用 {{ kbViewed.hit_count }}</span>
             <span v-if="kbViewed?.updated_at">更新于 {{ fmtTime(kbViewed.updated_at) }}</span>
+          </div>
+          <div v-if="kbViewed?.related?.length" class="kb-related">
+            <span class="kb-related-label">关联篇目</span>
+            <div class="kb-related-list">
+              <button v-for="r in kbViewed.related" :key="r" type="button" class="kb-related-chip"
+                      @click="viewKbByName(r)" :title="`跳转查看：${r}`">
+                {{ r }} <i>→</i>
+              </button>
+            </div>
           </div>
           <pre class="kb-content">{{ kbViewed?.content }}</pre>
           <footer class="kb-actions" v-if="writable">

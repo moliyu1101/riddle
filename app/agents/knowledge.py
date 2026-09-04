@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 from pathlib import Path
 
 from sqlalchemy import select
@@ -33,6 +34,9 @@ from app.db.models import Intel
 _ROOT = Path(__file__).resolve().parent.parent.parent
 _RULES_DIR = _ROOT / "knowledge" / "rules"
 _KB_DIR = _ROOT / "knowledge" / "kb"
+
+# 文档交叉引用：`xxx-test.md` 一类（含中文文件名），用于解析文档间跳转关系。
+_REF_RE = re.compile(r"[A-Za-z0-9_\-\u4e00-\u9fff]+\.md")
 
 # 注入上限（防 prompt 膨胀 / 不冗余）
 _KB_MAX = int(os.environ.get("KB_MAX_INJECT", "3"))
@@ -89,10 +93,29 @@ def _seed_dedup(name: str) -> str:
     return "kb:" + hashlib.sha1(name.encode("utf-8", "ignore")).hexdigest()
 
 
+def _parse_refs(content: str, known: set[str]) -> list[str]:
+    """解析文档里的 `.md` 交叉引用，只保留知识库中真实存在的篇目名。
+
+    源知识库文档互相跳转（如「见 authbypass-test.md §18」），直接搬移后这些引用
+    对 worker 只是无意义字符串。这里把引用解析成可用的关联篇目列表（related），
+    供注入提示与 kb_lookup 查询使用；指向不存在文件的引用（xxx.md/hashlib.md 等）自动过滤。
+    """
+    out: list[str] = []
+    seen: set[str] = set()
+    for m in _REF_RE.finditer(content or ""):
+        name = m.group(0)[:-3]  # 去掉 .md 后缀
+        if name in known and name not in seen:
+            seen.add(name)
+            out.append(name)
+    return out
+
+
 async def sync_kb_from_files(session: AsyncSession) -> dict:
     """把本地知识库文件同步为 Intel(kind='knowledge')。同名 seed 已存在则跳过（保留用户编辑）。"""
-    added = skipped = 0
-    for f in scan_local_files():
+    added = skipped = updated = 0
+    files = scan_local_files()
+    known = {f["name"] for f in files}
+    for f in files:
         try:
             already = (await session.execute(
                 select(Intel).where(
@@ -102,12 +125,24 @@ async def sync_kb_from_files(session: AsyncSession) -> dict:
                 )
             )).scalar_one_or_none()
             if already is not None:
+                # 旧 seed 条目可能缺 related（关联解析是后加的）：补上，不覆盖用户其它编辑。
+                # 注意：必须用 dict() 拷贝新对象——直接复用 payload 原 dict 再赋回，
+                # SQLAlchemy 按对象身份判断未变化，session.add 后变更会静默丢失。
+                pl = dict(already.payload or {})
+                if not pl.get("related"):
+                    content = Path(f["path"]).read_text(encoding="utf-8", errors="ignore")
+                    pl["related"] = _parse_refs(content, known)
+                    already.payload = pl
+                    session.add(already)
+                    updated += 1
                 skipped += 1
                 continue
             content = Path(f["path"]).read_text(encoding="utf-8", errors="ignore")
             # 从文件名去 `-test`/`-hunting` 等后缀，拼一个可读标题。
             title = _human_title(f["name"])
             summary = f"{title}（{_category_label(f['category'])}）"
+            # 解析文档间交叉引用（只保留真实存在的篇目），供注入提示与 kb_lookup 跳转。
+            related = _parse_refs(content, known)
             it = Intel(
                 kind="knowledge",
                 match_key=f["name"],
@@ -120,6 +155,7 @@ async def sync_kb_from_files(session: AsyncSession) -> dict:
                     "content": content,
                     "enabled": True,
                     "keyword": title,
+                    "related": related,
                 },
                 summary=summary[:500],
                 source_host="",
@@ -135,7 +171,7 @@ async def sync_kb_from_files(session: AsyncSession) -> dict:
         await session.commit()
     except Exception:
         await session.rollback()
-    return {"added": added, "skipped": skipped, "total": added + skipped}
+    return {"added": added, "skipped": skipped, "updated": updated, "total": added + skipped}
 
 
 def _human_title(name: str) -> str:
@@ -340,5 +376,85 @@ def render_kb_block(items: list[Intel], max_chars: int = 0) -> str:
             title = it.summary or it.match_key or "未命名"
             head = content[:500].strip().replace("\n", " ")
             _push_line(f"- [{title}] {head}")
+            # 关联篇目：文档内交叉引用的其他知识库篇目，worker 可用 kb_lookup 查全文跳转。
+            related = pl.get("related") or []
+            if related:
+                _push_line(f"    关联篇目: {'、'.join(related)}（kb_lookup 可查全文）")
 
     return "\n".join(out) + "\n"
+
+
+def lookup_kb_file(query: str, max_chars: int = 4000) -> dict:
+    """按篇目名/关键词查知识库全文（读 knowledge 目录文件，同步、无 DB 依赖）。
+
+    知识库文档互相引用（如「见 authbypass-test.md §18」），worker 看到跳转指引时
+    用本函数查对应篇目全文。精确命中篇目名返回全文；否则按关键词返回候选列表。
+    """
+    query = (query or "").strip().lower()
+    if not query:
+        return {"ok": False, "error": "query 不能为空"}
+    if query.endswith(".md"):
+        query = query[:-3]
+    files: list[tuple[str, str, Path]] = []
+    for category, folder in (("rules", _RULES_DIR), ("kb", _KB_DIR)):
+        if not folder.exists():
+            continue
+        for p in sorted(folder.glob("*.md")):
+            files.append((p.stem, category, p))
+    known = {f[0] for f in files}
+
+    def _read(name: str, category: str, path: Path) -> dict:
+        content = path.read_text(encoding="utf-8", errors="ignore")
+        return {
+            "ok": True,
+            "query": query,
+            "name": name,
+            "category": category,
+            "title": _human_title(name),
+            "related": _parse_refs(content, known),
+            "content": content[:max_chars],
+            "truncated": len(content) > max_chars,
+        }
+
+    exact = [f for f in files if f[0].lower() == query]
+    if exact:
+        return _read(*exact[0])
+    partial = [f for f in files if query in f[0].lower()]
+    if partial:
+        out = _read(*partial[0])
+        out["matches"] = [
+            {"name": f[0], "category": f[1], "title": _human_title(f[0])} for f in partial
+        ]
+        return out
+    hits: list[dict] = []
+    parts = _kw_parts(query)
+    need = min(2, len(parts))  # 中文 2 字窗口至少命中 2 个，避免单窗口误命中
+    for name, category, path in files:
+        try:
+            content = path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        low = content.lower()
+        if sum(1 for p in parts if p in low) >= need:
+            hits.append({"name": name, "category": category, "title": _human_title(name)})
+    if hits:
+        return {
+            "ok": True,
+            "query": query,
+            "matches": hits[:10],
+            "content": "",
+            "summary": f"关键词命中 {len(hits)} 篇，用篇目名精确查询可读全文",
+        }
+    return {"ok": False, "error": f"知识库无匹配篇目: {query}", "matches": []}
+
+
+def _kw_parts(query: str) -> list[str]:
+    """把查询拆成匹配片段：纯英文按原词；含中文按 2 字滑动窗口（「滑块验证码」→滑块/块验/验证/证码）。
+
+    中文短语常被文档拆开表述（如「滑块」与「验证码」分处两处），整串 in 匹配会漏；
+    2 字窗口任一命中即算，作为关键词兜底足够（返回候选列表由调用方取舍）。
+    """
+    if re.search(r"[\u4e00-\u9fff]", query):
+        parts = [query[i : i + 2] for i in range(len(query) - 1)]
+        return parts or [query]
+    return [query]

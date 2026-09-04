@@ -550,6 +550,21 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "kb_lookup",
+            "description": "查询挖洞知识库篇目全文：按篇目名（如 authbypass-test）或关键词命中，返回对应文档内容。知识库文档互相引用（如「见 authbypass-test.md §18」「走 xss-test.md」），当当前文档指引跳转其他篇目时用它查全文，按图索骥。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "篇目名（如 authbypass-test、xss-test）或关键词"},
+                    "max_chars": {"type": "integer", "description": "返回内容上限字符数，默认 4000"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "blackboard_publish",
             "description": "发布一条情报到协作黑板，供同站其它 worker 实时共享。适合发布：已探测/已覆盖的入口与结论、发现的强线索、验证过打不穿的点。动手前先 blackboard_query 看别人是否已测过；测完把结论发布出来避免别人重复。只读无副作用。",
             "parameters": {

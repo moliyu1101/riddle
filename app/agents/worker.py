@@ -1610,6 +1610,17 @@ class Worker:
                 timeout=int(args.get("timeout", 20) or 20),
             )
 
+        if name == "kb_lookup":
+            self._mark_tool_used(name, rnd)
+            query = (args.get("query") or "").strip()
+            if not query:
+                return self._tool_arg_error("kb_lookup", "query", "必须传 query（篇目名或关键词）。")
+            self._emit("tool_kb_lookup", round=rnd, query=query[:100])
+            return self.executor.kb_lookup(
+                query=query,
+                max_chars=int(args.get("max_chars", 4000) or 4000),
+            )
+
         if name == "verify_known_vuln":
             self._mark_tool_used(name, rnd)
             url = (args.get("url") or "").strip()

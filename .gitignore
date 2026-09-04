@@ -29,6 +29,7 @@ node_modules/
 /_test_save_*.py
 /_test_browser_action.py
 /_test_browser_aria.py
+/_test_kb_related.py
 /_test_screenshot.py
 /_chk_*.py
 /_dbq*.py
