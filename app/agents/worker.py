@@ -1589,6 +1589,27 @@ class Worker:
                 screenshot=bool(args.get("screenshot", False)),
             )
 
+        if name == "browser_action":
+            self._mark_tool_used(name, rnd)
+            action = (args.get("action") or "").strip().lower()
+            url = (args.get("url") or "").strip()
+            if action not in ("open", "click", "fill", "submit", "extract", "screenshot", "wait", "close"):
+                return self._tool_arg_error(
+                    "browser_action", "action",
+                    "必须传 action ∈ open/click/fill/submit/extract/screenshot/wait/close；open 时还要传 url。",
+                )
+            self._emit("tool_browser_action", round=rnd, action=action, url=url[:200],
+                       has_selector=bool(args.get("selector")), has_text=bool(args.get("text")))
+            return self.executor.browser_action(
+                action=action,
+                url=url,
+                selector=args.get("selector", ""),
+                text=args.get("text", ""),
+                value=args.get("value", ""),
+                wait_ms=int(args.get("wait_ms", 0) or 0),
+                timeout=int(args.get("timeout", 20) or 20),
+            )
+
         if name == "verify_known_vuln":
             self._mark_tool_used(name, rnd)
             url = (args.get("url") or "").strip()

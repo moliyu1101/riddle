@@ -27,9 +27,21 @@ node_modules/
 /_check_*.py
 /_restore_*.py
 /_test_save_*.py
+/_test_browser_action.py
+/_test_browser_aria.py
+/_test_screenshot.py
+/_chk_*.py
+/_dbq*.py
+/_deploy_*.py
+/_diag_*
+/_probe_*.sh
+/_sim_kb.py
+/_create_task.ps1
+/_find_out.txt
 /_tmp_*.db
 /scripts/_seed_review.py
 /preview-layout.html
+/null
 
 # 本机 cookies / 会话数据（含真实站点会话，禁止上传）
 *.cookies.txt
@@ -37,6 +49,7 @@ node_modules/
 
 # 本机工作区（含真实站点响应/HTML/凭据等运行时数据，禁止上传）
 /src_hunter_work/
+/riddle_work/
 /work/
 /findings/
 

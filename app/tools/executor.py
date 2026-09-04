@@ -43,6 +43,7 @@ from app.tools.attack_tools import crawl_links as _crawl_links
 from app.tools.attack_tools import diff_response as _diff_response
 from app.tools.attack_tools import http_batch as _http_batch
 from app.tools.attack_tools import timing_probe as _timing_probe
+from app.tools.browser_actions import browser_action as _browser_action_tool
 from app.tools.evidence_capture import capture_evidence as _capture_evidence_tool
 from app.tools.evidence_trail import append_trail as _append_evidence_trail
 from app.tools.probe_tools import access_boundary as _access_boundary
@@ -245,6 +246,8 @@ class ToolExecutor:
         }
         # HTTP 会话复用：持久 httpx.Client（惰性创建），避免同 host 大量请求每次重做 TCP+TLS 握手。
         self._client: Optional[httpx.Client] = None
+        # 浏览器自动化会话（browser_action 工具）：惰性初始化 + idle 超时自动关闭。
+        self._browser_session = None
         # 工作目录体积：增量估算 + 周期性全目录校准（见 _write_log），避免每次写日志都全目录扫描。
         self._workdir_bytes: int = self._dir_size()
         self._writes_since_scan: int = 0
@@ -277,8 +280,19 @@ class ToolExecutor:
         for proc in list(self._active_procs):
             self._kill_process_group(proc)
         self.close_http_client()
+        self.close_browser()
         drop_tree_cache(self.work_dir, cap=80)
         trim_process_memory()
+
+    def close_browser(self) -> None:
+        """关闭浏览器自动化会话（browser_action 工具），释放 chromium 进程。"""
+        session = getattr(self, "_browser_session", None)
+        if session is not None:
+            try:
+                session.close()
+            except Exception:
+                pass
+            self._browser_session = None
 
     # ---- run_shell ----
     def _apply_shell_state(self, command: str) -> tuple[str, str]:
@@ -1569,6 +1583,39 @@ class ToolExecutor:
             )
         except Exception as e:
             return {"ok": False, "error": f"capture_evidence 异常: {type(e).__name__}: {e}"}
+
+    def browser_action(
+        self,
+        action: str = "",
+        url: str = "",
+        selector: str = "",
+        text: str = "",
+        value: str = "",
+        wait_ms: int = 0,
+        timeout: int = 20,
+    ) -> dict[str, Any]:
+        """真实浏览器自动化：JS 渲染页/登录后页面/多步业务流交互（playwright 无头）。
+
+        open/click/fill/submit/extract/screenshot/wait/close 八种操作；浏览器会话跨调用保持，
+        登录/交互产生的 cookie 自动同步回 http_request 会话；只允许访问目标域。
+        """
+        try:
+            check_task_forbidden(f"browser_action {action} {url}", self._forbidden_ops)
+        except CommandBlocked as e:
+            return {"ok": False, "blocked": True, "error": str(e)}
+        try:
+            return _browser_action_tool(
+                self,
+                action=action,
+                url=url,
+                selector=selector,
+                text=text,
+                value=value,
+                wait_ms=wait_ms,
+                timeout=timeout,
+            )
+        except Exception as e:
+            return {"ok": False, "error": f"browser_action 异常: {type(e).__name__}: {e}"}
 
     @staticmethod
     def _read_limited_response(resp: httpx.Response) -> tuple[str, bool]:

@@ -530,6 +530,26 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "browser_action",
+            "description": "真实浏览器自动化(playwright)：open/click/fill/submit/extract/screenshot/wait/close。JS渲染页/登录后页面/多步业务流交互，open/extract 返回 ARIA 结构树（可交互元素语义）+可见文本+链接+表单，会话跨调用保持，cookie自动同步http_request会话，只允许目标域。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["open", "click", "fill", "submit", "extract", "screenshot", "wait", "close"], "description": "要执行的浏览器操作"},
+                    "url": {"type": "string", "description": "open 时必填：要打开的 URL"},
+                    "selector": {"type": "string", "description": "CSS 选择器（click/fill/submit 用）"},
+                    "text": {"type": "string", "description": "要点击的可见文本（click 时与 selector 二选一）"},
+                    "value": {"type": "string", "description": "要填入的值（fill 时必填）"},
+                    "wait_ms": {"type": "integer", "description": "wait 时等待毫秒数"},
+                    "timeout": {"type": "integer", "description": "操作超时秒数，默认 20"},
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "blackboard_publish",
             "description": "发布一条情报到协作黑板，供同站其它 worker 实时共享。适合发布：已探测/已覆盖的入口与结论、发现的强线索、验证过打不穿的点。动手前先 blackboard_query 看别人是否已测过；测完把结论发布出来避免别人重复。只读无副作用。",
             "parameters": {
