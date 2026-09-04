@@ -26,6 +26,7 @@ export const NOISE_KINDS = new Set([
   "tool_sqli_probe", "tool_upload_probe", "tool_access_boundary",
   "tool_path_probe", "tool_injection_probe",
   "tool_capture_evidence",
+  "tool_browser_action",
   "tool_verify_known_vuln",
   "tool_update_cognition", "worker_reflect",
   "worker_thought", "intel_reported", "js_analyzer_enabled",
@@ -58,6 +59,7 @@ export const DETAIL_KINDS = new Set([
   "tool_sqli_probe", "tool_upload_probe", "tool_access_boundary",
   "tool_path_probe", "tool_injection_probe",
   "tool_capture_evidence",
+  "tool_browser_action",
   "tool_verify_known_vuln",
   "tool_update_cognition", "worker_reflect",
   "worker_thought", "worker_directive", "llm_round_start", "llm_error", "llm_soft_retry",
@@ -308,6 +310,7 @@ export function useEventFormat(engineRef) {
       case "tool_injection_probe": return `注入探针：${cap(d.url, 100)}（${d.param_name || ""}）`;
       case "tool_access_boundary": return `权限边界测试：${cap(d.url, 120)}`;
       case "tool_capture_evidence": return `存证快照：${cap(d.url, 120)}`;
+      case "tool_browser_action": return `浏览器操作：${d.action || ""} ${cap(d.url, 100)}`;
       case "tool_verify_known_vuln": return `已知漏洞实测：${cap(d.vuln_name, 60)} @ ${cap(d.url, 80)}`;
       case "tool_update_cognition": {
         const slotCn = ({ confirmed: "已确认", excluded: "已排除", leads: "线索", plan: "计划" })[d.slot] || d.slot || "";
