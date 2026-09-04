@@ -44,6 +44,7 @@ from app.tools.attack_tools import diff_response as _diff_response
 from app.tools.attack_tools import http_batch as _http_batch
 from app.tools.attack_tools import timing_probe as _timing_probe
 from app.tools.browser_actions import browser_action as _browser_action_tool
+from app.agents.knowledge import lookup_kb_file as _kb_lookup_tool
 from app.tools.evidence_capture import capture_evidence as _capture_evidence_tool
 from app.tools.evidence_trail import append_trail as _append_evidence_trail
 from app.tools.probe_tools import access_boundary as _access_boundary
@@ -1616,6 +1617,18 @@ class ToolExecutor:
             )
         except Exception as e:
             return {"ok": False, "error": f"browser_action 异常: {type(e).__name__}: {e}"}
+
+    def kb_lookup(self, query: str = "", max_chars: int = 4000) -> dict[str, Any]:
+        """查询挖洞知识库篇目全文：知识库文档互相引用（如「见 authbypass-test.md §18」），
+        当前文档指引跳转其他篇目时用它查全文。"""
+        try:
+            check_task_forbidden(f"kb_lookup {query}", self._forbidden_ops)
+        except CommandBlocked as e:
+            return {"ok": False, "blocked": True, "error": str(e)}
+        try:
+            return _kb_lookup_tool(query=query, max_chars=max_chars)
+        except Exception as e:
+            return {"ok": False, "error": f"kb_lookup 异常: {type(e).__name__}: {e}"}
 
     @staticmethod
     def _read_limited_response(resp: httpx.Response) -> tuple[str, bool]:

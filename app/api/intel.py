@@ -238,6 +238,7 @@ def _knowledge_to_dict(it: Intel, with_content: bool = False) -> dict:
         "summary": it.summary or "",
         "enabled": bool(pl.get("enabled", True)),
         "hit_count": it.hit_count or 1,
+        "related": pl.get("related", []),
         "created_at": to_cst_iso(it.first_seen),
         "updated_at": to_cst_iso(it.last_seen),
     }
