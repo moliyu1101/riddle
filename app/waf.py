@@ -108,6 +108,11 @@ def inspect_request(request: Request) -> WAFDecision:
     method = request.method.upper()
     if path == "/dpskapi" or path.startswith("/dpskapi/"):
         return WAFDecision(True)
+    if path == "/workfiles" or path.startswith("/workfiles/"):
+        # 工作目录静态文件：路径由 app/workfiles.resolve_workfile 做越界校验与
+        # 内容消毒，不再做攻击特征匹配（目标目录名可能天然含 wp-admin/.env/
+        # phpinfo.php 等片段，按特征拦截会误杀正常截图/证据加载）。
+        return WAFDecision(True)
     ip = _client_ip(request)
 
     if method not in _ALLOWED_METHODS:

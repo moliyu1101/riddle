@@ -44,6 +44,7 @@ from app.security import SECURITY_HEADERS, auth_enabled, protected_path, request
 from app.waf import WAF_BLOCK_MODE, inspect_request, waf_headers
 from app.workdir_cleanup import run_periodic_cleanup
 from app.memory import run_periodic_memory_reclaim
+from app.workfiles import workfile_response
 
 # Vite 构建产物目录（多阶段构建拷贝到此）
 WEB_DIR = Path(__file__).resolve().parent.parent / "web" / "dist"
@@ -166,11 +167,15 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="知蠹 Riddle", version="0.1", lifespan=lifespan)
 # 真实浏览器截图静态目录：/workfiles/<任务目录>/evidence/screenshots/*.png。
-# 注意：此路径不纳入令牌鉴权（<img> 无法带 Authorization 头），路径含任务 safe_name 不可枚举；
-# 若部署在公网且担心证据泄露，请在反向代理层对该前缀加访问控制。
+# 安全静态服务：/workfiles 已纳入 security_middleware 鉴权（full/readonly 可访问，
+# observer 与未认证拒绝）；<img> 为同源请求自动携带 ah_api_token cookie，无需
+# Authorization 头。内容安全（路径穿越防护 + HTML/SVG 强制下载）见 app/workfiles.py。
 _work_root = Path(worker_config.work_root)
-if _work_root.exists():
-    app.mount("/workfiles", StaticFiles(directory=str(_work_root)), name="workfiles")
+
+
+@app.get("/workfiles/{file_path:path}", include_in_schema=False)
+async def serve_workfiles(file_path: str):
+    return workfile_response(_work_root, file_path)
 # 可选的 LLM 反代（默认关闭；仅当 DS2API_PROXY_ENABLED=1 才挂载）。
 if DS2API_ENABLED:
     app.include_router(ds2api_router)
