@@ -151,7 +151,8 @@ class HealthOverviewTests(unittest.TestCase):
         view = dict(self.FAKE_VIEW)
         view["llm"] = {
             "mode": "single",
-            "providers": [{"name": "a", "enabled": True, "health": {"status": "ok"}}],
+            # single 模式健康状态在顶层 llm.health（与 public_settings_view 输出一致）
+            "health": {"status": "ok"},
         }
         with mock.patch("app.api.settings.refresh_cache", new_callable=mock.AsyncMock), \
              mock.patch("app.api.settings.public_settings_view", return_value=view), \

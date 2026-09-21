@@ -49,7 +49,11 @@ class TestEvidenceTrailAppend:
     def test_append_failure_silent(self):
         # 非法 work_dir（None）不抛异常
         et.append_trail(None, kind="http_request")  # 不应抛
-        et.append_trail(Path("Z:/no/such/dir"), kind="http_request")  # 不应抛
+        # 路径不可创建（父级是文件）不抛异常；不用 Z:/ 相对路径，避免 POSIX 上
+        # 在仓库根目录生成 Z:/no/such/dir 污染工作区。
+        blocker = Path(tempfile.mkdtemp()) / "file"
+        blocker.write_text("x", encoding="utf-8")
+        et.append_trail(blocker / "no" / "such" / "dir", kind="http_request")  # 不应抛
 
 
 # ---------- LLM 中断不再自动重建漏洞，仅保留断点续挖 ----------
