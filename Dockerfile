@@ -73,10 +73,17 @@ RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple --tru
 
 # 真实浏览器截图：playwright + chromium（无头）。--with-deps 自动装系统依赖；
 # 国内网络下载失败不阻断构建（截图功能缺失时 capture_evidence 会返回明确提示）。
+# 浏览器装到共享目录：容器最终以非 root 用户运行，默认 $HOME 安装会导致
+# 降权后找不到 chromium，这里用 PLAYWRIGHT_BROWSERS_PATH 固定位置（world-readable）。
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
 RUN python -m playwright install --with-deps chromium || true
 
-# 更新 nuclei 模板（失败不阻断构建）
-RUN nuclei -update-templates -silent || true
+# 应用运行用户：先建好，下面 nuclei 模板直接装到其 HOME，
+# 否则运行期降权后 nuclei 找不到模板（模板只在 /root 下）。
+RUN useradd --create-home --uid 10001 riddle
+
+# 更新 nuclei 模板到 riddle HOME（失败不阻断构建）
+RUN su riddle -s /bin/sh -c "HOME=/home/riddle nuclei -update-templates -silent" || true
 
 COPY . .
 # Windows 检出/解压可能带 CRLF；入口脚本带 \r 时容器会报 no such file or directory。
@@ -89,6 +96,13 @@ COPY --from=frontend /web/dist /app/web/dist
 RUN mkdir -p /work /app/data
 ENV WORKER_WORK_ROOT=/work \
     DB_PATH=/app/data/riddle.db
+
+# 降权运行：应用进程非 root——即使 LLM 被诱导执行破坏性命令，OS 权限层兜底
+# （无法删 /app 代码、/etc 配置、/root 家目录；仅 /app/data 与 /work 可写）。
+# 注意：update API 的 git pull/pip 需要写 /app 与系统 site-packages，降权后
+# 一键更新会失败并干净报错；需要更新请用 docker compose up -d --build。
+RUN chown -R riddle:riddle /work /app/data
+USER riddle
 
 EXPOSE 18800
 
