@@ -302,6 +302,9 @@ docker compose logs -f riddle   # 实时日志
 - **数据存哪**：Docker volume `ah_data`（SQLite + 证据）、`ah_work`（Worker 工作区），升级重启不丢。
 - **备份**：设置页「数据备份」导出一致快照并恢复。别直接 `cp riddle.db`——WAL 模式拷半截库会坏。
 - **续跑**：`RIDDLE_RESTORE_ON_STARTUP=1` 时重启会自动续跑之前进行中的任务。
+- **容器已非 root 运行**（应用用户 `riddle`，仅 `/app/data` 与 `/work` 可写）：即使
+  AI 被诱导执行破坏性命令也有 OS 权限层兜底。副作用是设置页「一键更新」（git pull）
+  不再可用，更新请统一走 `docker compose up -d --build`。
 
 ---
 

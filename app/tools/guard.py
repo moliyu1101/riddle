@@ -11,11 +11,24 @@ from typing import Any
 
 # 会自毁运行环境的命令模式（大小写不敏感）。仅拦这些，不拦攻击。
 _SELF_DESTRUCT_PATTERNS = [
-    r"\brm\s+-rf\s+(/|/\*|~|\$HOME)\b",          # 删根目录/家目录
+    # 只拦根目录/家目录本身（`/` 后跟分隔符才算）：旧版 `\b` 会误伤
+    # rm -rf /tmp/x 这类任意绝对路径，改成 lookahead 只看结束分隔符。
+    r"\brm\s+-rf\s+(?:/|/\*|~|\$HOME)(?=[\"']?(?:\s|$|[;&|]))",
     r"\brm\s+-rf\s+--no-preserve-root",
+    # 平台自身运行数据/代码/证据根：容器内 /app=代码+SQLite 库、/work=证据工作区根、
+    # /root=容器家目录。删除它们会让平台失联/证据全毁，一律硬拦（worker 只应清理
+    # /work/<目标> 下的临时文件，/app 与 /work 根级删除绝不合法）。
+    # rm -rf /app、/app/data、/app/data/riddle.db、/app/* 等（/app 整个子树）
+    r"\brm\s+(?:-[a-z]*[rf][a-z]*\s+)+(?:--\s+)?[\"']?/app\b",
+    # rm -rf /work、/work/、/root（仅根级；引号/-- 变体）
+    r"\brm\s+(?:-[a-z]*[rf][a-z]*\s+)+(?:--\s+)?[\"']?(?:/work/?|/root)(?=[\"']?(?:\s|$|[;&|]))",
+    # 家目录整删：rm -rf ~、rm -rf "$HOME"、rm -rf ${HOME}、rm -rf '~'
+    r"\brm\s+(?:-[a-z]*[rf][a-z]*\s+)+[\"']?(?:~|\$HOME|\$\{HOME\})[\"']?(?=\s|$|[;&|])",
+    # 家目录内容整删：rm -rf ~/*、rm -rf "$HOME"/*、rm -rf ${HOME}/*
+    r"\brm\s+(?:-[a-z]*[rf][a-z]*\s+)+[\"']?(?:~|\$HOME|\$\{HOME\})[\"']?/[\"']?\*",
     r":\(\)\s*\{\s*:\|:&\s*\}\s*;",               # fork 炸弹
     r"\bmkfs\b",                                   # 格式化
-    r"\bdd\s+if=.*of=/dev/(sd|disk|nvme)",        # 覆写磁盘
+    r"\bdd\s+if=.*of=(?:/dev/(?:sd|disk|nvme)|/app\b)",  # 覆写磁盘/平台自身文件
     r">\s*/dev/(sd|disk|nvme)",
     r"\bshutdown\b", r"\breboot\b", r"\bhalt\b", r"\bpoweroff\b",
     r"\binit\s+0\b", r"\binit\s+6\b",
@@ -26,7 +39,9 @@ _SELF_DESTRUCT_PATTERNS = [
     r"\bkillall\b", r"\bpkill\s+-9\s+-1\b",
     # 篡改系统认证/配置
     r">\s*/etc/(passwd|shadow|sudoers|hosts)\b",
-    r"\bchmod\s+-R\s+000\s+/\b",
+    r"\bchmod\s+(?:-R\s+)?000\s+(?:/|/app\b|/work\b)",
+    # find 批量删除平台自身文件（/app 任意深度、/work 根级）
+    r"\bfind\s+(?:/app\b|/work\s)[^\n;&|]{0,160}?-(?:delete|exec\s+rm\b)",
     # pip install 会破坏运行时的危险包（pyppeteer/selenium/undetected-chromedriver
     # 依赖无约束的旧版 websockets，会将其降级到 <13，导致 uvicorn 崩溃）
     r"\bpip3?\s+install\b.*\b(pyppeteer|selenium|undetected[_-]chromedriver)\b",
