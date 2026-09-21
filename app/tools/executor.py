@@ -304,6 +304,10 @@ class ToolExecutor:
         """
         cmd = command.strip()
         hint = ""
+        if cmd == "cd":
+            # 裸 cd：纯状态命令，不实际执行（真实 shell 会跳 $HOME 且无输出），
+            # 改为报告当前工作目录，方便 LLM 确认所在位置。
+            return "", f"[cwd] {self._shell_cwd}"
         m = re.match(r"^cd\s+(.+)$", cmd)
         if m:
             target = m.group(1).strip().strip('"').strip("'")
