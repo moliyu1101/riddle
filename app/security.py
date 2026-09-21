@@ -35,7 +35,7 @@ def set_db_tokens(full: str = "", read: str = "", observer: str = "") -> None:
 # 显式设置 DS2API_PROXY_PUBLIC=1 放行。
 _DS2API_PUBLIC = os.environ.get("DS2API_PROXY_PUBLIC", "").strip().lower() in {"1", "true", "yes", "on"}
 _AUTH_EXEMPT_PREFIXES: tuple[str, ...] = ("/dpskapi",) if _DS2API_PUBLIC else ()
-_AUTH_PROTECTED_PREFIXES = ("/api/",)
+_AUTH_PROTECTED_PREFIXES = ("/api/", "/workfiles")
 _AUTH_PROTECTED_PATHS = {"/docs", "/redoc", "/openapi.json"}
 _READ_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 

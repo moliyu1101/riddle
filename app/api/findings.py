@@ -142,8 +142,8 @@ def _diff_score_dict(f: Finding) -> dict:
 def _enrich_evidence(evidence: Any, target_url: str | None) -> Any:
     """给 evidence.snapshot.screenshot 补可访问 URL（/workfiles/<safe_name>/<ref>）。
 
-    截图文件存于 work_dir/evidence/screenshots/，静态目录挂载在 /workfiles 下，
-    前端 <img> 直接引用该 URL 即可显示真实渲染图。目录名优先用存证时记录
+    截图文件存于 work_dir/evidence/screenshots/，由 /workfiles 安全静态服务
+    （app/workfiles.py）提供，前端 <img> 同源请求自动携带令牌 cookie。目录名优先用存证时记录
     的 workdir（executor 按 target 生成），旧快照回退到 target_url 推导。
     """
     if not isinstance(evidence, dict):
