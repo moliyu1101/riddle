@@ -14,6 +14,10 @@ _LOCK = threading.Lock()
 _FAIL_THRESHOLD = max(1, int(os.environ.get("LLM_PROVIDER_FAIL_THRESHOLD", "5")))
 _BEHAVIOR_FAIL_THRESHOLD = max(1, int(os.environ.get("LLM_PROVIDER_BEHAVIOR_FAIL_THRESHOLD", "3")))
 _FAILED_RETRY_SECONDS = max(1, int(os.environ.get("LLM_PROVIDER_FAILED_RETRY_SECONDS", "60")))
+# 冷却档位复位阈值：连续健康 N 次后 cooldown_count 整体清零。
+# 单次成功不清零（flapping 端点「冷却到期→成功 1 次→又失败」会永停最低档），
+# 也不放任单调递增（长期健康的端点一次真实故障就直接跳最高档太苛刻）。
+_OK_STREAK_RESET = max(1, int(os.environ.get("LLM_PROVIDER_OK_STREAK_RESET", "20")))
 _TRANSPORT_PROBE_SECONDS = max(1, int(os.environ.get("LLM_PROVIDER_PROBE_SECONDS", "120")))
 _BEHAVIOR_PROBE_SECONDS = max(1, int(os.environ.get("LLM_PROVIDER_BEHAVIOR_PROBE_SECONDS", "900")))
 
@@ -206,6 +210,7 @@ def mark_provider_ok(
     now = _now()
     with _LOCK:
         row = _HEALTH.setdefault(ref, {})
+        ok_streak = int(row.get("consecutive_ok") or 0) + 1
         row.update({
             **_base_row(ref, base_url, model, protocol),
             "transport_status": "ok",
@@ -213,7 +218,8 @@ def mark_provider_ok(
             "error_kind": "",
             "last_seen": _iso(now),
             "consecutive_failures": 0,
-            "cooldown_count": 0,
+            "consecutive_ok": ok_streak,
+            # cooldown_count 不在此清零，见 _OK_STREAK_RESET 注释
             "cooldown_seconds": 0,
             "cooldown_until": "",
             "cooldown_until_ts": 0,
@@ -221,6 +227,9 @@ def mark_provider_ok(
             "half_open_inflight": False,
             "half_open_until_ts": 0,
         })
+        if ok_streak >= _OK_STREAK_RESET:
+            row["cooldown_count"] = 0
+            row["consecutive_ok"] = 0
         _refresh_status(row, now)
         return dict(row)
 
@@ -269,6 +278,7 @@ def mark_provider_behavior_failed(
             **_base_row(ref, base_url, model, protocol),
             "behavior_status": status,
             "behavior_strikes": strikes,
+            "behavior_consecutive_ok": 0,
             "behavior_last_error": " ".join(str(error or "").split())[:500],
             "behavior_error_kind": kind,
             "behavior_cooldown_until": cooldown_until,
@@ -293,6 +303,7 @@ def mark_provider_behavior_ok(
     ref = provider_ref(base_url, model, api_key, protocol)
     with _LOCK:
         row = _HEALTH.setdefault(ref, {})
+        behavior_ok_streak = int(row.get("behavior_consecutive_ok") or 0) + 1
         row.update({
             **_base_row(ref, base_url, model, protocol),
             "behavior_status": "ok",
@@ -302,10 +313,13 @@ def mark_provider_behavior_ok(
             "behavior_cooldown_until": "",
             "behavior_cooldown_until_ts": 0,
             "behavior_retry_at_ts": 0,
-            "behavior_cooldown_count": 0,
+            "behavior_consecutive_ok": behavior_ok_streak,
             "behavior_probe_owner": "",
             "behavior_probe_until_ts": 0,
         })
+        if behavior_ok_streak >= _OK_STREAK_RESET:
+            row["behavior_cooldown_count"] = 0
+            row["behavior_consecutive_ok"] = 0
         _refresh_status(row)
         return dict(row)
 
@@ -393,6 +407,7 @@ def mark_provider_failed(
             "last_error": " ".join(str(error or "").split())[:500],
             "error_kind": str(kind or ""),
             "last_seen": _iso(now),
+            "consecutive_ok": 0,
             "consecutive_failures": consecutive,
             "cooldown_count": cooldown_count,
             "cooldown_seconds": cooldown_seconds,

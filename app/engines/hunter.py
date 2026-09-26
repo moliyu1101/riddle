@@ -78,6 +78,8 @@ class HunterEngine(SearchEngine):
         except Exception as e:
             raise ValueError(f"Hunter 请求失败: {e}") from e
 
+        if not isinstance(data, dict):
+            raise ValueError(f"Hunter 返回非对象 JSON (HTTP {resp.status_code}): {str(data)[:200]}")
         # 猎鹰返回 code=200 表示成功
         if data.get("code") != 200:
             msg = data.get("message", str(data.get("data", "")))

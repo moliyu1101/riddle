@@ -30,6 +30,10 @@ class ZoomEyeEngine(SearchEngine):
         # 新官方 API；旧 api.zoomeye.org/web/search 已不适用 v2 语法
         return "https://api.zoomeye.ai"
 
+    def get_test_query(self) -> str:
+        # ZoomEye 语法用冒号；基类默认 "port=80" 是 FOFA 语法，会误报连接失败
+        return "port:80"
+
     async def search(
         self,
         api_key: str,

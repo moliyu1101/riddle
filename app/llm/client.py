@@ -673,6 +673,27 @@ def _coerce_chat_message(resp: Any) -> Any:
     )
 
 
+def _parse_retry_after(response: Any) -> int:
+    """从 429 响应头解析 Retry-After（秒），封顶 300s 防异常大值拖死 worker。
+
+    上游明确要求等待时按它退避，不再按固定 1/2/4/8s 节奏反复硬打放大限流。
+    """
+    try:
+        val = getattr(response, "headers", None)
+        val = val.get("retry-after") if val is not None else None
+        val = str(val or "").strip()
+        if not val:
+            return 0
+        if val.isdigit():
+            return min(int(val), 300)
+        from email.utils import parsedate_to_datetime
+
+        dt = parsedate_to_datetime(val)
+        return max(0, min(int(dt.timestamp() - time.time()), 300))
+    except Exception:
+        return 0
+
+
 def _classify_error(e: Exception) -> LLMError:
     response = getattr(e, "response", None)
     status = getattr(e, "status_code", None) or getattr(response, "status_code", None)
@@ -730,6 +751,7 @@ def _classify_error(e: Exception) -> LLMError:
         return LLMError(
             "rate_limit", "LLM 请求被限流，请稍后重试或降低并发。",
             e, status=status, code=str(code), detail=detail,
+            retry_after=_parse_retry_after(response),
         )
     if status in {400, 422} or any(k in text for k in (
         "invalid_request", "bad request", "unprocessable entity", "参数有误", "参数错误",
@@ -1393,7 +1415,11 @@ class LLMClient:
                 if retry_count < max_retries:
                     logger.info("LLM chat retry %d/%d (kind=%s, model=%s)",
                                 retry_count + 1, max_retries, kind, self.config.model)
-                    time.sleep(min(2 ** retry_count, 8))  # 1s, 2s, 4s... 封顶 8s
+                    wait = min(2 ** retry_count, 8)  # 1s, 2s, 4s... 封顶 8s
+                    # 上游 429 带 Retry-After 时按它等待（封顶 300s），别比上游要求更激进
+                    if isinstance(last_exc, LLMError) and last_exc.retry_after:
+                        wait = max(wait, min(int(last_exc.retry_after), 300))
+                    time.sleep(wait)
                     retry_count += 1
                 else:
                     diag = last_exc.diagnostic() if isinstance(last_exc, LLMError) else str(last_exc)
