@@ -138,6 +138,8 @@ KILLSWEEP_WALL_TIMEOUT = float(os.environ.get("KILLSWEEP_WALL_TIMEOUT", "3600"))
 ESCALATE_WALL_TIMEOUT = float(os.environ.get("ESCALATE_WALL_TIMEOUT", "900"))
 WORKER_CLEANUP_TIMEOUT = float(os.environ.get("WORKER_CLEANUP_TIMEOUT", "15"))
 REVIEW_RETRY_BACKOFF = float(os.environ.get("REVIEW_RETRY_BACKOFF", "300"))
+# 审核超时/异常的最大重试次数：达上限自动放行进人工复审队列（不再自动重审）。
+REVIEW_MAX_ATTEMPTS = int(os.environ.get("REVIEW_MAX_ATTEMPTS", "5"))
 TARGET_HEARTBEAT_INTERVAL = float(os.environ.get("TARGET_HEARTBEAT_INTERVAL", "30"))
 KILLSWEEP_DEDUP_SCAN_LIMIT = int(os.environ.get("KILLSWEEP_DEDUP_SCAN_LIMIT", "200"))
 # 通杀闭环：单次通杀最多把多少个「已实证受影响」的同类站点批量入队，防一次打爆队列。
@@ -391,6 +393,8 @@ class TaskRunner:
         self._review_inflight: set[str] = set()
         self._review_tasks: dict[str, asyncio.Task] = {}
         self._review_backoff: dict[str, float] = {}
+        # 审核失败尝试计数（超时/异常）：达上限自动放行进人工复审队列，防无限重试烧 LLM。
+        self._review_attempts: dict[str, int] = {}
         self._killsweep_inflight: set[str] = set()  # 正在做通杀分析的 finding_id
         self._killsweep_tasks: dict[str, asyncio.Task] = {}
         self._killsweep_cancel_events: dict[str, threading.Event] = {}
@@ -696,6 +700,18 @@ class TaskRunner:
         recovered = 0
         killed = 0
         for tgt in rows:
+            # 纯重启波及（从未失败过）不消耗 retry：容器编排连续重启很常见，
+            # 不豁免会把从未开挖的目标批量送进硬骨头库（MAX_RETRY=1，重启两次即 dead）。
+            # 真正反复失败的目标由失败路径消耗 retry；僵尸回收（_reclaim_stale）维持计数。
+            if tgt.retry_count == 0:
+                tgt.assigned_worker = ""
+                tgt.heartbeat_at = None
+                tgt.last_error = "进程重启恢复：运行中目标回队重试"
+                tgt.dead_reason = ""
+                tgt.status = "queued"
+                tgt.verdict = ""
+                recovered += 1
+                continue
             if self._queue_or_dead_after_attempt(tgt, "进程重启恢复：运行中目标回队重试"):
                 recovered += 1
             else:
@@ -3124,6 +3140,48 @@ class TaskRunner:
             self._review_inflight.add(f.id)
             self._review_tasks[f.id] = asyncio.create_task(self._run_review(task.id, f.id))
 
+    async def _review_fail_once(self, finding_id: str, task_id: str, reason: str) -> None:
+        """审核一次失败（超时/异常）：进退避并计数；达上限自动放行进人工复审队列。
+
+        此前超时/异常只退避不计数，慢 provider 下 finding 每 5 分钟重审一次永不收敛，
+        无限白烧审核 LLM 调用。放行 = 写一条 confidence=uncertain 的 accepted 审核记录
+        （severity 按 worker 自评兜底，不触发通杀/扩大危害），由人工做最终裁决。
+        """
+        loop = asyncio.get_running_loop()
+        attempts = self._review_attempts.get(finding_id, 0) + 1
+        self._review_attempts[finding_id] = attempts
+        self._review_backoff[finding_id] = loop.time() + REVIEW_RETRY_BACKOFF
+        if attempts < REVIEW_MAX_ATTEMPTS:
+            async with SessionLocal() as s:
+                await self._log(s, "reviewer", "review_deferred",
+                                f"{reason}，保留 pending_review 稍后重试"
+                                f"（第 {attempts}/{REVIEW_MAX_ATTEMPTS} 次）",
+                                level="warn", finding_id=finding_id)
+            return
+        self._review_attempts.pop(finding_id, None)
+        self._review_backoff.pop(finding_id, None)
+        async with SessionLocal() as s:
+            f = await s.get(Finding, finding_id)
+            if f is None:
+                return
+            f.status = "reviewed"
+            s.add(Review(
+                finding_id=finding_id, task_id=task_id,
+                verdict="accepted", confidence="uncertain",
+                severity_final=f.severity_claimed or None, score=0.0,
+                in_scope=True, is_duplicate=False,
+                ignore_reasons=[], downgrade_reasons=[],
+                reproduced=False,
+                reviewer_notes=(
+                    f"[系统] AI 初审连续 {attempts} 次失败（{reason}），已自动放行进人工复审队列，"
+                    "请人工核实后裁决。"
+                ),
+            ))
+            await s.commit()
+            await self._log(s, "reviewer", "review_giveup",
+                            f"审核连续 {attempts} 次失败（{reason}），已放行进人工复审队列",
+                            level="error", finding_id=finding_id)
+
     async def _run_review(self, task_id: str, finding_id: str) -> None:
         # try/finally 兜底：任何异常路径都释放 inflight，避免 finding 永久卡死不被审核
         try:
@@ -3132,11 +3190,11 @@ class TaskRunner:
             # 前置阶段(如 FindingSchema 校验)抛错不会经过 _run_review_inner 里的
             # 退避分支，这里补一份退避，否则脏数据 finding 会被每个派发周期(3s)重捞重试，
             # 错误事件无限刷屏（实测一晚堆了 1.6 万条）。
-            self._review_backoff[finding_id] = asyncio.get_running_loop().time() + REVIEW_RETRY_BACKOFF
             async with SessionLocal() as s:
                 await self._log(s, "reviewer", "error",
                                 f"审核协程异常: {traceback.format_exc()[:400]}", level="error",
                                 finding_id=finding_id)
+            await self._review_fail_once(finding_id, task_id, "审核协程异常")
         finally:
             self._review_inflight.discard(finding_id)
             self._review_tasks.pop(finding_id, None)
@@ -3198,13 +3256,11 @@ class TaskRunner:
                 timeout=REVIEW_WALL_TIMEOUT,
             )
         except asyncio.TimeoutError:
-            self._review_backoff[finding_id] = loop.time() + REVIEW_RETRY_BACKOFF
-            async with SessionLocal() as s:
-                await self._log(s, "reviewer", "review_deferred",
-                                f"审核超时(>{int(REVIEW_WALL_TIMEOUT)}s)，保留 pending_review，稍后重试",
-                                level="warn", finding_id=finding_id)
+            await self._review_fail_once(finding_id, task_id,
+                                         f"审核超时(>{int(REVIEW_WALL_TIMEOUT)}s)")
             return
         except asyncio.CancelledError:
+            # 控制面取消（暂停/停止任务）不计入失败尝试：任务重跑后应继续正常审核。
             self._review_backoff[finding_id] = loop.time() + REVIEW_RETRY_BACKOFF
             async with SessionLocal() as s:
                 await self._log(s, "reviewer", "review_cancelled",
@@ -3219,12 +3275,7 @@ class TaskRunner:
                                     f"审核阶段检测到 LLM/API 额度不足，任务已自动停止: {str(e)[:120]}",
                                     level="error", finding_id=finding_id)
                 return
-            self._review_backoff[finding_id] = loop.time() + REVIEW_RETRY_BACKOFF
-            async with SessionLocal() as s:
-                await self._log(s, "reviewer", "review_deferred",
-                                f"审核异常，保留 pending_review，稍后重试: {str(e)[:160]}",
-                                level="warn", finding_id=finding_id)
-            return
+            await self._review_fail_once(finding_id, task_id, f"审核异常: {str(e)[:160]}")
 
         # accepted 必须有最终等级；LLM 漏填时按 worker 自评兜底，避免最终列表等级空白
         if rv.get("verdict") == "accepted" and not rv.get("severity_final"):
@@ -3272,6 +3323,7 @@ class TaskRunner:
                                 f"审核「{f.title}」: {rv['verdict']} {rv.get('severity_final') or ''}{extra}",
                                 finding_id=finding_id, verdict=rv["verdict"],
                                 severity=rv.get("severity_final"), score=rv["score"])
+                self._review_attempts.pop(finding_id, None)
                 # 通杀 Hunter 不在 AI accepted 后触发；必须等人工复审 passed 后再启动。
                 # 扩大危害 Hunter：AI accepted 后自动触发（仅对有纵向升级空间的洞），
                 # 顺着已确认据点再打一层，显著升级才产出新 finding，否则丢弃。

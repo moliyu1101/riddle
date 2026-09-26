@@ -848,6 +848,9 @@ class LLMClient:
         self._auto_protocol_cache: dict[str, bool] = {}
         self._insecure_provider_refs: set[str] = set()
         self._global_insecure_tls = os.environ.get("LLM_INSECURE_TLS", "").strip() in ("1", "true", "True")
+        # TLS 自动降级默认关闭：握手遇证书错误时静默改 verify=False 等于把 API Key
+        # 换到无认证信道且静默永久生效。确为自建自签中转时显式开启。
+        self._auto_tls_downgrade = os.environ.get("LLM_TLS_AUTO_DOWNGRADE", "").strip() in ("1", "true", "True")
         self._client_cache: dict[tuple[str, bool], OpenAI] = {}
         self._sticky_provider_ref = ""
         self._provider_slot_owner = uuid.uuid4().hex
@@ -1058,10 +1061,11 @@ class LLMClient:
         )
 
     def _maybe_downgrade_tls(self, exc: Exception) -> bool:
-        """遇到 TLS 证书校验失败时自动降级为不校验并重建 client。
+        """遇到 TLS 证书校验失败时按 LLM_TLS_AUTO_DOWNGRADE 决定是否降级重建 client。
 
         仅对 https + 证书类错误生效，且只降级一次；返回 True 表示已降级、可立即重试。
-        普通 HTTPS 的安全性不受影响（只有握手因自签证书失败才会触发）。
+        默认不自动降级：降级后 API Key 走无认证信道，MITM 防线不能只剩一条日志；
+        确为自建自签中转时显式设 LLM_TLS_AUTO_DOWNGRADE=1（或 LLM_INSECURE_TLS=1）。
         """
         if self._insecure_tls or not self._is_https:
             return False
@@ -1072,6 +1076,13 @@ class LLMClient:
             "sslcertverificationerror", "ssl: certificate", "unable to get local issuer",
         )
         if any(m in text for m in tls_markers):
+            if not self._auto_tls_downgrade:
+                logger.warning(
+                    "LLM 端点 TLS 证书校验失败（%s）。出于安全考虑不再自动降级为不校验证书；"
+                    "确认是自建自签中转后，可在 .env 设 LLM_TLS_AUTO_DOWNGRADE=1 后重启生效。",
+                    self.config.base_url,
+                )
+                return False
             self._insecure_tls = True
             ref = provider_ref(
                 self.config.base_url, self.config.model, self.config.api_key, self.config.protocol

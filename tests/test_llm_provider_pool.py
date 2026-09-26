@@ -1466,6 +1466,10 @@ class LLMClientPoolTests(StateResetMixin, unittest.TestCase):
 
         with patch.object(client_module.LLMClient, "_build_client", return_value=Mock()):
             llm = client_module.LLMClient(providers=[primary, secondary])
+            # 降级机制默认关闭（安全默认）：必须显式开启后才降级
+            self.assertFalse(llm._maybe_downgrade_tls(Exception("certificate verify failed")))
+            llm._auto_tls_downgrade = True
+
             self.assertTrue(llm._maybe_downgrade_tls(Exception("certificate verify failed")))
             self.assertTrue(llm._insecure_tls)
 
