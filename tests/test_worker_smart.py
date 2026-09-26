@@ -43,11 +43,15 @@ class ReflectConstantTest(unittest.TestCase):
         self.assertIn("update_cognition", worker_mod._REFLECT_PROMPT)
 
     def test_reflect_injected_on_schedule(self):
-        # 验证复盘点判定逻辑（rounds 已自增的循环语义）
+        # 断言 worker 主循环实际使用的复盘判定（此前只断言 Python 取模恒真，测不出回归）
         for r in (8, 16, 24):
-            self.assertTrue(r > 0 and r % worker_mod.REFLECT_EVERY == 0)
-        for r in (1, 3, 7, 9):
-            self.assertFalse(r > 0 and r % worker_mod.REFLECT_EVERY == 0 and r % worker_mod.REFLECT_EVERY == worker_mod.REFLECT_EVERY - 3)
+            self.assertTrue(worker_mod._is_reflect_round(r))
+        for r in (1, 3, 7, 9, 15):
+            self.assertFalse(worker_mod._is_reflect_round(r))
+
+    def test_reflect_disabled_by_zero(self):
+        with __import__("unittest").mock.patch.object(worker_mod, "REFLECT_EVERY", 0):
+            self.assertFalse(worker_mod._is_reflect_round(8))
 
 
 class ResumeCognitionTest(unittest.TestCase):

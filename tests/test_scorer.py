@@ -87,7 +87,8 @@ class ScorerDiffTierTests(unittest.TestCase):
             src_type="enterprise",
         )
         self.assertGreaterEqual(sc, 6)
-        self.assertIn("enterprise_admin", reason) or self.assertIn("enterprise_core_business", reason)
+        # 「或」语义要用正则表达；or 串接的断言永远只测第一个关键词
+        self.assertRegex(reason, r"enterprise_admin|enterprise_core_business")
 
     def test_reason_prefix_is_tier(self):
         sc, reason = score_target(

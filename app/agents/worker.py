@@ -63,6 +63,11 @@ _WORKER_LLM_SOFT_RETRY_KINDS = {
 # 并把复盘结果写回认知卡(update_cognition)，再决定继续或收敛。避免一路钻牛角尖、
 # 或目标早已无望却空转到收尾。
 REFLECT_EVERY = int(os.environ.get("WORKER_REFLECT_EVERY", "8"))
+def _is_reflect_round(rounds: int) -> bool:
+    """第 rounds 轮是否注入复盘提示（主循环与测试共用同一判定）。"""
+    return REFLECT_EVERY > 0 and rounds > 0 and rounds % REFLECT_EVERY == 0
+
+
 _REFLECT_PROMPT = (
     "# 复盘时刻（周期性停一停，像人一样想清楚再动手）\n"
     "你已经连续打了一段，先别急着发下一个请求。对照上面的认知卡做一次结构化复盘：\n"
@@ -482,7 +487,7 @@ class Worker:
                     send_messages.append({"role": "user", "content": bb_block})
                 # 周期复盘：每 REFLECT_EVERY 轮让 worker 停下来结构化复盘并写回认知卡，
                 # 像人一样隔段时间退一步看全局，避免一路钻牛角尖或空转到收尾。
-                if REFLECT_EVERY > 0 and rounds > 0 and rounds % REFLECT_EVERY == 0:
+                if _is_reflect_round(rounds):
                     self._emit("worker_reflect", round=rounds)
                     send_messages.append({"role": "user", "content": _REFLECT_PROMPT})
                 msg = self.llm.chat(send_messages, tools=tools, tool_choice="auto")
