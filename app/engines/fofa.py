@@ -102,6 +102,8 @@ class FofaEngine(SearchEngine):
                         data = resp.json()
                     except Exception:
                         raise FofaError(f"FOFA 返回非 JSON (HTTP {resp.status_code}): {resp.text[:200]}")
+                    if not isinstance(data, dict):
+                        raise FofaError(f"FOFA 返回非对象 JSON (HTTP {resp.status_code}): {str(data)[:200]}")
             except FofaError:
                 raise
             except httpx.HTTPError as e:

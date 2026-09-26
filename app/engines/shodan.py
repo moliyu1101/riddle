@@ -23,6 +23,10 @@ class ShodanEngine(SearchEngine):
     def get_default_base_url(self) -> str:
         return "https://api.shodan.io"
 
+    def get_test_query(self) -> str:
+        # Shodan 语法用冒号；基类默认 "port=80" 是 FOFA 语法，会误报连接失败
+        return "port:80"
+
     async def search(
         self,
         api_key: str,
