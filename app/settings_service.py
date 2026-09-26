@@ -682,7 +682,8 @@ def export_settings() -> dict[str, Any]:
         },
         "engines": eff["engines"] or {},
         "defaults": eff["defaults"] or {},
-        "auth": eff.get("auth") or {},
+        # 访问令牌属于部署环境而非模型配置，不随导出走：否则拿到导出文件/只读令牌
+        # 的任何人都等于拿到 full_token 本体。换机部署请在目标机重新配置令牌。
         "ui": eff["ui"] or {},
     }
 

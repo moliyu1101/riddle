@@ -132,7 +132,10 @@ class PersistAfterFinishTests(unittest.IsolatedAsyncioTestCase):
         from types import SimpleNamespace
         from unittest.mock import AsyncMock, Mock, patch
 
-        from tests.test_agent_visibility import _SessionContext
+        try:
+            from tests.test_agent_visibility import _SessionContext
+        except ModuleNotFoundError:  # 以文件方式运行时 tests 不是包
+            from test_agent_visibility import _SessionContext
 
         runner = TaskRunner("task-vis")
         # 不在 _live → 细粒度不应落库
@@ -157,7 +160,10 @@ class PersistAfterFinishTests(unittest.IsolatedAsyncioTestCase):
         from types import SimpleNamespace
         from unittest.mock import AsyncMock, Mock, patch
 
-        from tests.test_agent_visibility import _SessionContext
+        try:
+            from tests.test_agent_visibility import _SessionContext
+        except ModuleNotFoundError:  # 以文件方式运行时 tests 不是包
+            from test_agent_visibility import _SessionContext
 
         runner = TaskRunner("task-vis")
         session = SimpleNamespace(add=Mock(), commit=AsyncMock())

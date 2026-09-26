@@ -224,3 +224,41 @@ class StagedFindingsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FinishVerdictGuardTest(unittest.TestCase):
+    """finish verdict 白名单：模型乱填枚举串不得进入 _finished（否则收尾 Verdict() 炸轮）。"""
+
+    def _worker(self):
+        w = worker_mod.Worker.__new__(worker_mod.Worker)
+        w.findings = []
+        w.deepen_context = None
+        w._js_signal_seen = False
+        w._last_js_analysis_round = 0
+        w._post_js_validation_count = 0
+        w._tool_counts = {}
+        w._finished = None
+        w._emit = Mock()
+        w._report_provider_success = Mock()
+        return w
+
+    def test_bad_verdict_rejected(self):
+        for bad in ("成功", "vuln_found", "FOUND2", "ok"):
+            w = self._worker()
+            res = w._dispatch("finish", {"verdict": bad}, rnd=3)
+            self.assertFalse(res["ok"], bad)
+            self.assertEqual(res.get("kind"), "bad_verdict", bad)
+            self.assertIsNone(w._finished)
+
+    def test_valid_verdict_accepted_and_normalized(self):
+        w = self._worker()
+        res = w._dispatch("finish", {"verdict": "FOUND"}, rnd=3)
+        self.assertTrue(res["ok"])
+        self.assertEqual(w._finished["verdict"], "found")
+
+    def test_missing_verdict_defaults_no_vuln(self):
+        w = self._worker()
+        # summary 声明目标不可达，绕开「过早结束」拦截，聚焦 verdict 默认值行为
+        res = w._dispatch("finish", {"summary": "目标连接失败不可达"}, rnd=3)
+        self.assertTrue(res["ok"])
+        self.assertEqual(w._finished["verdict"], "no_vuln")

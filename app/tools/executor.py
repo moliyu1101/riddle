@@ -30,6 +30,7 @@ from app.tools.guard import (
     NeedsConfirm,
     check_command,
     check_http_request,
+    check_rm_cwd,
     check_task_forbidden,
     normalize_guard_ops,
     parse_forbidden_ops,
@@ -387,6 +388,13 @@ class ToolExecutor:
         if not command:
             return {"ok": True, "return_code": 0, "elapsed_sec": 0.0,
                     "output": state_hint or "（shell 状态已更新）", "output_file": ""}
+
+        # rm 语义级检查：此时 cwd 已按 cd 前缀切换，用「将生效的 cwd」解析删除目标，
+        # 堵住 `cd /app && rm -rf data` 这类文本层不含保护区路径的绕过（check_command 拦不住）。
+        try:
+            check_rm_cwd(command, str(self._shell_cwd))
+        except CommandBlocked as e:
+            return {"ok": False, "blocked": True, "error": str(e)}
 
         # 命令历史去重：重复执行时提示，避免 worker 反复跑同一命令。
         self._shell_history.append(command)

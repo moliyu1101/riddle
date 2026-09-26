@@ -3,6 +3,8 @@ import asyncio
 import unittest
 from unittest import mock
 
+from fastapi import HTTPException, Request
+
 import app.api.settings as settings_mod
 from app.api.settings import (
     EngineTestRequest,
@@ -19,6 +21,11 @@ class _FakeSession:
 
     async def __aexit__(self, *a):
         pass
+
+
+def _fake_request(token: str = "") -> Request:
+    headers = [(b"x-riddle-token", token.encode())] if token else []
+    return Request({"type": "http", "method": "GET", "path": "/api/settings/export", "headers": headers})
 
 
 class EngineTestTests(unittest.TestCase):
@@ -89,14 +96,33 @@ class ExportImportTests(unittest.TestCase):
 
     def test_export_structure_with_secrets(self):
         with mock.patch("app.api.settings.refresh_cache", new_callable=mock.AsyncMock), \
+             mock.patch("app.api.settings.auth_enabled", return_value=False), \
              mock.patch("app.settings_service.effective_settings", return_value=self.FAKE_EFF):
-            res = asyncio.run(export_settings_api(_FakeSession()))
+            res = asyncio.run(export_settings_api(_fake_request(), _FakeSession()))
         self.assertEqual(res["version"], 1)
         for key in ("llm", "fofa", "engines", "defaults", "ui"):
             self.assertIn(key, res)
-        # 导出应含明文密钥（管理员主动备份）
+        # 导出应含明文密钥（管理员主动备份），但访问令牌不随导出走
         self.assertEqual(res["llm"]["api_key"], "sk-test-secret")
         self.assertEqual(res["fofa"]["key"], "fofa-key")
+        self.assertNotIn("auth", res)
+
+    def test_export_full_token_allowed(self):
+        with mock.patch("app.api.settings.refresh_cache", new_callable=mock.AsyncMock), \
+             mock.patch("app.api.settings.auth_enabled", return_value=True), \
+             mock.patch("app.api.settings.resolve_role", return_value="full"), \
+             mock.patch("app.settings_service.effective_settings", return_value=self.FAKE_EFF):
+            res = asyncio.run(export_settings_api(_fake_request("tok-full"), _FakeSession()))
+        self.assertEqual(res["version"], 1)
+
+    def test_export_readonly_forbidden(self):
+        for role in ("readonly", "observer", None):
+            with self.subTest(role=role), \
+                 mock.patch("app.api.settings.auth_enabled", return_value=True), \
+                 mock.patch("app.api.settings.resolve_role", return_value=role):
+                with self.assertRaises(HTTPException) as cm:
+                    asyncio.run(export_settings_api(_fake_request("tok-read"), _FakeSession()))
+                self.assertEqual(cm.exception.status_code, 403)
 
     def test_import_empty_400(self):
         body = SettingsImportRequest()
