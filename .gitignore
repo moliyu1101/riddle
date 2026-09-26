@@ -56,3 +56,6 @@ node_modules/
 
 # TRAE 本机技能目录（内部提示词与流水线，不入公开仓库）
 /.trae/
+
+# CI 配置仅本地保留，不入公开仓库
+.github/workflows/
