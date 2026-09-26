@@ -2172,6 +2172,15 @@ class TaskRunner:
                     self._live[target_id]["action"] = "🔁 定向深挖启动中…"
                 duplicate_history = await self._build_duplicate_history(session, task_id, tgt)
                 await session.commit()
+            if not tgt:
+                # 目标已被删除（任务删除级联 delete-orphan）：不再建 LLM 客户端/起线程
+                # 空跑整轮——结果无处落库，还白烧 token 与目标流量。
+                self._live.pop(target_id, None)
+                self._worker_last_activity.pop(target_id, None)
+                logger.info(
+                    "[worker_skip] target=%s 已不存在（任务/目标被删除），跳过本次派发", target_id[:8]
+                )
+                return
             llm = _llm_for_task(
                 task_obj,
                 on_provider_failure=self._provider_failure_callback(

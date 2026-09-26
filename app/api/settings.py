@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import os
 import re
 import time
 
@@ -24,7 +25,7 @@ from app.llm.presets import (
     pool_schedule_preview,
     recommend_temperature,
 )
-from app.tools.netguard import SsrfBlocked, assert_safe_outbound_url
+from app.tools.netguard import SsrfBlocked, assert_safe_outbound_url, pinned_outbound_request
 from app.workdir_cleanup import cleanup_workdir, get_workdir_stats
 from app.ui_prefs import (
     MAX_WALLPAPER_BYTES,
@@ -438,8 +439,9 @@ async def _test_llm_one(name: str, provider: LLMConfig) -> dict:
         result["error"] = "未配置 API Key"
         result["error_copy"] = _llm_test_error_copy(result)
         return result
+    # 解析并绑定 IP：连接目标 = 校验通过的 IP，堵住校验后二次解析的 DNS rebinding 窗口
     try:
-        assert_safe_outbound_url(url)
+        pinned = pinned_outbound_request(url)
     except SsrfBlocked as exc:
         result["error"] = f"base_url 不被允许：{exc}"
         result["error_copy"] = _llm_test_error_copy(result)
@@ -466,11 +468,12 @@ async def _test_llm_one(name: str, provider: LLMConfig) -> dict:
 
     started = time.perf_counter()
     try:
+        req_headers = {**headers, **pinned["headers"]}
         async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.post(url, headers=headers, json=payload)
+            response = await client.request("POST", pinned["url"], headers=req_headers, json=payload, extensions=pinned["extensions"])
             if response.status_code == 400 and "max_tokens" in response.text.lower():
                 payload.pop("max_tokens", None)
-                response = await client.post(url, headers=headers, json=payload)
+                response = await client.request("POST", pinned["url"], headers=req_headers, json=payload, extensions=pinned["extensions"])
         result["latency_ms"] = int((time.perf_counter() - started) * 1000)
         result["status_code"] = response.status_code
         if response.status_code >= 400:
@@ -609,6 +612,18 @@ async def test_engine(body: EngineTestRequest, session: AsyncSession = Depends(g
         return {"ok": False, "engine": body.engine, "error": "未配置 API Key", "error_type": "auth"}
     base_url = (body.base_url or "").strip() or resolve_engine_base_url(body.engine)
     result = {"ok": False, "engine": body.engine, "latency_ms": 0, "size": 0, "error": "", "error_type": "other"}
+    # 测绘引擎 base_url 接入 SSRF 校验（此前完全放行：key 随 query 出网 + 错误信息
+    # 回显内网响应）。确为自建内网镜像时设 SSRF_ALLOW_PRIVATE_ENGINES=1 豁免私有
+    # 网段；元数据/回环/链路本地无论如何都拦。
+    if base_url:
+        allow_private = os.environ.get("SSRF_ALLOW_PRIVATE_ENGINES", "").strip() in ("1", "true", "True")
+        try:
+            assert_safe_outbound_url(base_url, allow_private=allow_private)
+        except SsrfBlocked as exc:
+            hint = "（确为内网镜像可在服务端 .env 设 SSRF_ALLOW_PRIVATE_ENGINES=1）" if not allow_private else ""
+            result["error"] = f"base_url 不被允许：{exc}{hint}"
+            result["error_type"] = "ssrf"
+            return result
     try:
         ok = await engine.test_connection(key, base_url=base_url)
         result.update(ok)

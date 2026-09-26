@@ -430,14 +430,15 @@ def test_models_probe_can_reuse_masked_provider_identity():
         async def __aexit__(self, *args):
             return None
 
-        async def get(self, url, headers):
+        async def request(self, method, url, headers=None, extensions=None):
             AsyncClient.captured = (url, headers)
             return Response()
 
     with (
         patch.object(settings_service, "effective_settings", return_value=_settings()),
         patch("httpx.AsyncClient", AsyncClient),
-        patch("app.tools.netguard.assert_safe_outbound_url"),
+        patch("app.tools.netguard.pinned_outbound_request",
+              side_effect=lambda url, **kw: {"url": url, "headers": {}, "extensions": {}}),
     ):
         result = asyncio.run(settings_service.list_available_models(
             base_url=POOL_PROVIDER["base_url"],
@@ -479,7 +480,7 @@ def test_llm_connection_probe_uses_runtime_user_agent(protocol, model, expected_
         async def __aexit__(self, *args):
             return None
 
-        async def post(self, url, headers, json):
+        async def request(self, method, url, headers=None, json=None, extensions=None):
             AsyncClient.captured = (url, headers, json)
             return Response()
 
@@ -491,7 +492,8 @@ def test_llm_connection_probe_uses_runtime_user_agent(protocol, model, expected_
     )
     with (
         patch("httpx.AsyncClient", AsyncClient),
-        patch.object(settings_api, "assert_safe_outbound_url"),
+        patch.object(settings_api, "pinned_outbound_request",
+                     side_effect=lambda url, **kw: {"url": url, "headers": {}, "extensions": {}}),
         patch.object(settings_api, "_resolve_user_agent", return_value="probe-UA/1.0") as resolve_ua,
     ):
         result = asyncio.run(settings_api._test_llm_one("probe", provider))

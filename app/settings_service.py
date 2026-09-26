@@ -942,10 +942,11 @@ async def list_available_models(
         return {"ok": False, "error": "未配置 API Key，无法拉取模型列表", "models": []}
     from app.llm.client import llm_models_url
     url = llm_models_url(base)
-    from app.tools.netguard import SsrfBlocked, assert_safe_outbound_url
+    from app.tools.netguard import SsrfBlocked, pinned_outbound_request
 
+    # 解析并绑定 IP：连接目标 = 校验通过的 IP，堵 DNS rebinding（key 在 Authorization 里）
     try:
-        assert_safe_outbound_url(url)
+        pinned = pinned_outbound_request(url)
     except SsrfBlocked as e:
         return {"ok": False, "error": f"base_url 不被允许：{e}", "models": []}
     headers = {"Authorization": f"Bearer {key}"}
@@ -956,7 +957,11 @@ async def list_available_models(
         })
     try:
         async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(url, headers=headers)
+            resp = await client.request(
+                "GET", pinned["url"],
+                headers={**headers, **pinned["headers"]},
+                extensions=pinned["extensions"],
+            )
         if resp.status_code != 200:
             return {"ok": False, "error": f"模型商返回 {resp.status_code}", "models": []}
         data = resp.json()
