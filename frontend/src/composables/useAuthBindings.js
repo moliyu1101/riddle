@@ -152,7 +152,8 @@ export function useAuthBindings(manualTargetsGetter, manualTargetsSetter) {
     const parts = [];
     if (b.target && b.target !== "*") parts.push(b.target);
     if (b.username) parts.push(`${b.username} / ${b.password ? "••••" : ""}`);
-    if (b.cookie) parts.push(`Cookie ${(b.cookies && Object.keys(b.cookies).length) || 1} 项`);
+    // cookie 是整串字符串字段（无结构化项数可数），不再伪造「1 项」
+    if (b.cookie) parts.push("Cookie");
     if (b.authorization) parts.push("Bearer");
     return parts.join(" · ") || "凭据";
   }

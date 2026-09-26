@@ -1,8 +1,9 @@
 ﻿# ===== 阶段 1：构建 Vue 前端 =====
 FROM node:20-slim AS frontend
 WORKDIR /fe
-COPY frontend/package.json ./
-RUN npm install
+# npm ci 严格按 package-lock.json 安装：构建可复现，不随上游 minor/patch 浮动
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 # 产物在 /fe/../web/dist → /web/dist

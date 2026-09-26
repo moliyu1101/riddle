@@ -1904,6 +1904,10 @@ async function submit() {
                           <input v-model="form.max_pages" type="number" min="1" max="200" />
                           <small class="field-hint">引擎翻页上限，1–200，默认 20</small>
                         </label>
+                        <label v-if="!isSiteMode">每页条数
+                          <input v-model="form.page_size" type="number" min="10" max="500" />
+                          <small class="field-hint">引擎单页返回条数，10–500，默认 100</small>
+                        </label>
                         <label>worker 并发
                           <input v-model="form.concurrency" type="number" min="1" max="32" />
                           <small class="field-hint">同时打几个目标，1–32</small>
