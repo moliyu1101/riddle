@@ -193,9 +193,15 @@ const pocRequest = computed(() => {
   // 尝试从 curl 转
   const p = curlToRequest(pocText.value);
   if (p?.url) {
-    const u = new URL(p.url);
-    const head = `${p.method} ${u.pathname || "/"}${u.search} HTTP/1.1`;
-    return [head, `Host: ${u.host}`, ...p.headers.filter((h) => h.name.toLowerCase() !== "host").map((h) => `${h.name}: ${h.value}`), "", p.data].join("\n");
+    // PoC 是 worker 产出的自由文本，裸 host（无协议）会让 new URL 抛 TypeError
+    // 炸掉整个报告抽屉的渲染——失败时退回原始 PoC 文本。
+    try {
+      const u = new URL(p.url);
+      const head = `${p.method} ${u.pathname || "/"}${u.search} HTTP/1.1`;
+      return [head, `Host: ${u.host}`, ...p.headers.filter((h) => h.name.toLowerCase() !== "host").map((h) => `${h.name}: ${h.value}`), "", p.data].join("\n");
+    } catch (e) {
+      return pocText.value;
+    }
   }
   return pocText.value;
 });
