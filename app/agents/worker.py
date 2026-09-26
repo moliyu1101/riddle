@@ -786,6 +786,14 @@ class Worker:
                     path.unlink(missing_ok=True)
             except Exception:
                 pass
+            # staged 暂存洞同理：整轮正常结束时洞已随 finding_submitted 事件实时落库，
+            # 不清理会让下次续挖把旧洞灌回查重池，软匹配误拦同 host 同类型的新洞。
+            try:
+                staged = self._staged_findings_path()
+                if staged is not None and staged.exists():
+                    staged.unlink(missing_ok=True)
+            except Exception:
+                pass
         return WorkerResult(
             target=self.target,
             verdict=verdict,

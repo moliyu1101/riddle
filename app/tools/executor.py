@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -222,8 +223,12 @@ class ToolExecutor:
         self.engine = engine or "fofa"
         self.fofa_key = fofa_key or ""
         self.fofa_base_url = (fofa_base_url or "").rstrip("/")
-        # 每个目标独立工作目录
+        # 每个目标独立工作目录；超过 60 字符的长 URL 截断后前缀可能相同（String(500)），
+        # 追加内容哈希防碰撞——否则两个目标共享断点/暂存/证据文件，续挖互相认领会话态。
         safe_name = "".join(c if c.isalnum() else "_" for c in target)[:60]
+        if len(target) > 60:
+            digest = hashlib.sha1(target.encode("utf-8")).hexdigest()[:10]
+            safe_name = f"{safe_name}_{digest}"
         self.work_dir = Path(work_dir or worker_config.work_root) / safe_name
         self.work_dir.mkdir(parents=True, exist_ok=True)
         self._log_seq = 0
