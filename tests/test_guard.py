@@ -1,6 +1,6 @@
 import unittest
 
-from app.tools.guard import CommandBlocked, NeedsConfirm, check_command, check_http_request
+from app.tools.guard import CommandBlocked, NeedsConfirm, check_command, check_http_request, check_rm_cwd
 
 
 class GuardDestructiveTest(unittest.TestCase):
@@ -36,6 +36,65 @@ class GuardDestructiveTest(unittest.TestCase):
                 "https://example.edu.cn/download/notice.pdf",
                 data="tampered",
             )
+
+
+class RmCwdGuardTest(unittest.TestCase):
+    """rm 语义级检查：堵「cd 切 cwd + 相对路径」绕过文本黑名单的形态。"""
+
+    def _blocked(self, cmd: str, cwd: str):
+        with self.assertRaises(CommandBlocked):
+            check_rm_cwd(cmd, cwd)
+
+    def test_cd_then_relative_rm_blocked(self):
+        """`cd /app && rm -rf data`：文本层不含 /app，按切换后的 cwd 解析必须拦。"""
+        self._blocked("rm -rf data", "/app")
+        self._blocked("rm -rf ./data", "/app")
+
+    def test_long_option_rm_blocked(self):
+        """长选项 --recursive 不匹配旧的短选项正则，语义解析必须拦。"""
+        self._blocked("rm --recursive --force /app", "/work/t1")
+        self._blocked("rm --recursive --force /app", "/")
+
+    def test_dot_and_dotdot_blocked(self):
+        self._blocked("rm -rf .", "/app")
+        self._blocked("rm -rf ..", "/app/data")
+        self._blocked("rm -rf ../..", "/work/t1/sub")
+
+    def test_work_root_level_blocked_but_subtree_allowed(self):
+        """/work 根级删除拦；/work/<目标> 子树是 worker 工作区，允许清理。"""
+        self._blocked("rm -rf /work", "/tmp")
+        self._blocked("rm -rf /work/*", "/tmp")
+        check_rm_cwd("rm -rf /work/http_x/notes", "/tmp")
+        check_rm_cwd("rm -rf *", "/work/http_x")
+
+    def test_glob_in_protected_cwd_blocked(self):
+        self._blocked("rm -rf *", "/app")
+        self._blocked("rm -rf /app/*", "/tmp")
+        self._blocked("rm -rf data*", "/app")
+
+    def test_home_variants_blocked(self):
+        self._blocked("rm -rf ~", "/work/t1")
+        self._blocked('rm -rf "$HOME"', "/work/t1")
+        self._blocked("rm -rf /root", "/tmp")
+
+    def test_harmless_targets_pass(self):
+        check_rm_cwd("rm -rf /tmp/x", "/app")
+        check_rm_cwd("rm -rf /work/t1/cache", "/")
+        check_rm_cwd("rm data.log", "/work/t1")
+
+    def test_non_leading_rm_not_matched(self):
+        """grep/echo 参数文本里的 rm 串不误伤。"""
+        check_rm_cwd("grep 'rm -rf /app' access.log", "/work/t1")
+        check_rm_cwd("echo rm -rf /app", "/work/t1")
+
+    def test_sh_c_inner_recursed(self):
+        self._blocked('echo ok && bash -c "rm -rf data"', "/app")
+        self._blocked("sh -c 'rm -rf /app'", "/tmp")
+
+    def test_dd_and_separator_segments(self):
+        """分号/管道切分后的段首 rm 也检查。"""
+        self._blocked("echo hi; rm -rf /app", "/tmp")
+        self._blocked("curl -s http://x | tee f && rm -rf /app/data", "/tmp")
 
     def test_confirm_without_reason_still_pauses(self):
         with self.assertRaises(NeedsConfirm):

@@ -60,6 +60,111 @@ _DANGEROUS_PIP_MSG = (
 
 _COMPILED = [re.compile(p, re.IGNORECASE) for p in _SELF_DESTRUCT_PATTERNS]
 
+
+# ============ rm 语义级检查：防「cd + 相对路径」绕过文本黑名单 ============
+# 文本正则只看命令字面量，而执行器支持 cd 前缀持久切换 cwd（executor._apply_shell_state）：
+# `cd /app && rm -rf data` 的文本不含 /app，正则拦不住，执行时 cwd 已在 /app。
+# 这里在执行前用「将生效的 cwd」对 rm 目标做路径解析，落进平台保护区即拦。
+# 顺带覆盖长选项（rm --recursive --force /app）、`.` / `..` / 通配符等正则盲区。
+_PROTECTED_SUBTREES = ("/app", "/root")   # 整个子树禁删：代码+SQLite 库、容器家目录
+_PROTECTED_ROOTS_ONLY = ("/work",)        # 仅根级禁删（/work/<目标> 是 worker 工作区，允许清理）
+
+# rm 出现在命令段首（段 = 按 ; & | 换行/命令替换切分），避免误伤 grep 'rm -rf /app' 这类参数文本；
+# xargs 间接目标属静态解析局限，由文本正则与 sh -c 递归兜一部分。
+_RM_SEGMENT = re.compile(r"(?:^|[;&|\n]|\$\()\s*rm\s+([^;&|\n]*)", re.IGNORECASE)
+_SH_C = re.compile(r"\bb?a?sh\s+-c\s+([\"'])(.*?)\1", re.IGNORECASE | re.DOTALL)
+
+
+def _norm_posix(path: str) -> str:
+    """POSIX 路径规范化（PurePosixPath 不归并 ..，手写；输入须为绝对路径）。"""
+    parts: list[str] = []
+    for seg in path.split("/"):
+        if seg in ("", "."):
+            continue
+        if seg == "..":
+            if parts:
+                parts.pop()
+            # 绝对路径在根处 .. 停留，无需保留 ..
+        else:
+            parts.append(seg)
+    return "/" + "/".join(parts)
+
+
+def _rm_target_abs(target: str, cwd: str) -> str | None:
+    """把一个 rm 目标解析为受影响的绝对路径；非路径 token（选项/空）返回 None。
+
+    glob 目标按其目录前缀判定（`*` → cwd 本身、`/app/*` → /app、`data*` → cwd），
+    宁拦勿放：/app 下 `rm data*` 可能命中 data/ 目录，按 cwd 归属拦截。
+    """
+    t = target.strip().strip("\"'")
+    if not t or t.startswith("-"):
+        return None
+    if t.startswith("~"):
+        t = "/root" + t[1:]
+    elif t.startswith("$HOME"):
+        t = "/root" + t[len("$HOME"):]
+    base = t
+    if any(ch in base for ch in "*?["):
+        base = re.split(r"[*?\[]", base, 1)[0]
+        if not base:
+            return _norm_posix(cwd)                       # 纯 `*`：cwd 全部内容
+        if base.endswith("/"):
+            base = base.rstrip("/") or "/"
+        elif "/" in base:
+            base = base.rsplit("/", 1)[0]
+        else:
+            return _norm_posix(cwd)                       # 纯文件名前缀：归属 cwd
+    if base.startswith("/"):
+        return _norm_posix(base)
+    return _norm_posix(cwd.rstrip("/") + "/" + base)
+
+
+def _hits_protected(abs_path: str) -> bool:
+    if abs_path in ("/", ""):
+        return True
+    for root in _PROTECTED_SUBTREES:
+        if abs_path == root or abs_path.startswith(root + "/"):
+            return True
+    for root in _PROTECTED_ROOTS_ONLY:
+        if abs_path == root:
+            return True
+    return False
+
+
+def _rm_targets(cmd_tail: str) -> list[str]:
+    targets: list[str] = []
+    end_of_opts = False
+    for tok in cmd_tail.split():
+        if not end_of_opts and tok == "--":
+            end_of_opts = True
+            continue
+        if not end_of_opts and tok.startswith("-"):
+            continue
+        targets.append(tok)
+    return targets
+
+
+def check_rm_cwd(command: str, cwd: str) -> None:
+    """rm 目标按将生效的 cwd 解析，命中平台保护区（/app、/work 根、/root、/）即拦。
+
+    局限（静态解析边界）：经 base64/变量展开等二次解释执行的命令、xargs 间接目标
+    不在检查范围；`sh -c "..."` 内层命令做一次递归近似。
+    """
+    if not command:
+        return
+    work_cwd = (cwd or "/").strip() or "/"
+    for m in _SH_C.finditer(command):
+        check_rm_cwd(m.group(2), work_cwd)
+    for m in _RM_SEGMENT.finditer(command):
+        for target in _rm_targets(m.group(1)):
+            abs_path = _rm_target_abs(target, work_cwd)
+            if abs_path and _hits_protected(abs_path):
+                raise CommandBlocked(
+                    f"命令被安全防护拦截：rm 目标 `{target}` 在当前工作目录 {work_cwd} 下"
+                    f"解析为 {abs_path}，属于平台保护区（/app、/work 根、/root），"
+                    "禁止删除平台自身代码/数据/证据。清理工作区只允许删除 /work/<目标>/ 下的内容。"
+                )
+
 # 企业模式专属：拦截对【目标生产环境】的破坏性/不可逆操作。
 # 企业是真实生产资产，证明漏洞存在即可，绝不实际造成数据/业务/服务损害。
 # 仅在 src_type=enterprise 时启用；edu/靶场不受此限。

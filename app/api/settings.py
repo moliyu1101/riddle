@@ -7,7 +7,7 @@ import re
 import time
 
 import httpx
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +16,7 @@ from app.api.dto import SettingsUpdateRequest
 from app.config import LLMConfig
 from app.db.models import Task
 from app.db.session import get_session
+from app.security import auth_enabled, resolve_role, token_from_headers
 from app.engines.base import get_engine
 from app.llm.client import _is_kimi_coding_endpoint, _resolve_user_agent, llm_request_url
 from app.llm.presets import (
@@ -643,8 +644,19 @@ async def put_settings(
 
 
 @router.get("/export")
-async def export_settings_api(session: AsyncSession = Depends(get_session)):
-    """导出完整配置（含密钥明文），供备份/迁移。仅管理员主动调用。"""
+async def export_settings_api(request: Request, session: AsyncSession = Depends(get_session)):
+    """导出完整配置（含密钥明文），供备份/迁移。仅全权限令牌可用。
+
+    只读/观摩令牌一律 403：导出含全部明文密钥，若对 readonly 放行，
+    只读令牌持有者可借本端点拿到 full_token 完成提权。
+    """
+    if auth_enabled():
+        role = resolve_role(token_from_headers(request.headers))
+        if role != "full":
+            raise HTTPException(
+                status_code=403,
+                detail="配置导出包含密钥明文，仅全权限令牌可用",
+            )
     await refresh_cache(session)
     return export_settings()
 

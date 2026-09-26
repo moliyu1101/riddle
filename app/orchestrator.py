@@ -1264,12 +1264,17 @@ class TaskRunner:
         return any(marker in reason for marker in ("无可利用", "无果", "自动收敛", "打不穿", "timeout", "超时"))
 
     def _spawn_worker(self, task: Task, target: Target) -> None:
-        cancel_event = threading.Event()
-        self._cancelled_targets.discard(target.id)
         prev = self._active_workers.get(target.id)
         if prev is not None and not prev.done():
-            # 关键诊断：同一 target 已有未结束的协程，却又被派发 → 双协程！
-            logger.error("[double_spawn] target=%s 已有未结束协程仍被重复派发！", target.id[:8])
+            # 同一 target 已有未结束协程：跳过本次派发并保留旧协程。
+            # 若继续 spawn 会覆盖 _active_workers 引用与 cancel_event，
+            # 新旧协程竞写目标状态 + 双倍烧 LLM token（旧事件未被 set，旧协程不会自行退出）。
+            logger.error(
+                "[double_spawn] target=%s 已有未结束协程，跳过本次重复派发。", target.id[:8]
+            )
+            return
+        cancel_event = threading.Event()
+        self._cancelled_targets.discard(target.id)
         self._worker_cancel_events[target.id] = cancel_event
         t = asyncio.create_task(self._run_worker(task.id, target.id, target.url, cancel_event))
         self._active_workers[target.id] = t

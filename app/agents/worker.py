@@ -1693,6 +1693,17 @@ class Worker:
             return self._check_duplicate(args)
 
         if name == "finish":
+            # verdict 白名单校验：模型乱填（如中文/"vuln_found"）若放进来，
+            # 收尾时 Verdict() 强转抛 ValueError → 整轮异常 → 目标被误判 error/dead。
+            raw_verdict = str(args.get("verdict") or "no_vuln").strip().lower()
+            if raw_verdict not in {v.value for v in Verdict}:
+                return {
+                    "ok": False,
+                    "kind": "bad_verdict",
+                    "error": f"verdict 非法: {raw_verdict[:60]}",
+                    "guidance": "verdict 只能是 found / no_vuln / error 之一，请修正后重新 finish。",
+                }
+            args = dict(args, verdict=raw_verdict)
             premature = self._premature_finish_reason(args, rnd)
             if premature:
                 self._emit("finish_blocked", round=rnd, reason=premature[:300])
@@ -1706,7 +1717,7 @@ class Worker:
                     ),
                 }
             self._finished = {
-                "verdict": args.get("verdict", "no_vuln"),
+                "verdict": raw_verdict,
                 "summary": args.get("summary", ""),
                 "deepen_lead": (args.get("deepen_lead") or "").strip(),
             }
