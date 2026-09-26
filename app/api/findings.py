@@ -1081,9 +1081,38 @@ _ASSISTANT_SYSTEM_PROMPT = (
 )
 
 
+from urllib.parse import urlparse
+
 _ASSISTANT_MAX_ROUNDS = int(os.environ.get("REPORT_ASSISTANT_MAX_ROUNDS", "10"))
 _MD_URL_RE = re.compile(r"\[([^\]]+)\]\((https?://[^)\s]+)\)")
 _URL_RE = re.compile(r"https?://[^\s<>()'\"]+")
+
+
+def _assistant_target_host(f: "Finding") -> str:
+    """报告助手出网边界的目标 host（finding 所属目标）。"""
+    try:
+        return (urlparse(f.target_url or "").hostname or "").strip().lower()
+    except Exception:
+        return ""
+
+
+def _assistant_url_allowed(url: str, target_host: str) -> bool:
+    """助手 http_request/run_shell 的目标域白名单：仅放行目标 host 及其子域。
+
+    finding 的 poc/raw_response 是目标站可控文本，进入助手上下文后可能注入指令
+    （把助手当内网跳板）。与 browser_action 的 _url_allowed 同一套判定口径。
+    局限：run_shell 里的 URL 靠静态提取，经变量间接/二次解释的不在检查范围。
+    """
+    if not target_host:
+        return True  # finding 无目标 host（如手工构造/遗留数据）时不限制
+    try:
+        u = urlparse(url)
+    except Exception:
+        return False
+    if (u.scheme or "").lower() not in ("http", "https"):
+        return False
+    host = (u.hostname or "").strip().lower()
+    return bool(host) and (host == target_host or host.endswith("." + target_host))
 
 
 def _clean_assistant_url(value: str) -> str:
@@ -1275,7 +1304,10 @@ def _run_report_assistant(
         llm = _llm_for_task(task)
         executor = ToolExecutor(f"report_assistant_{f.target_url or f.id}", cancel_event=cancel_event)
         messages = _build_assistant_messages(f, r, req, task)
-        return _run_report_assistant_loop(llm, executor, messages, tool_logs, cancel_event, _emit)
+        return _run_report_assistant_loop(
+            llm, executor, messages, tool_logs, cancel_event, _emit,
+            target_host=_assistant_target_host(f),
+        )
     except (LLMError, RuntimeError) as e:
         msg = _assistant_unavailable_message(e)
         _emit({"type": "final", "text": msg})
@@ -1292,7 +1324,12 @@ def _run_report_assistant_loop(
     tool_logs: list[dict],
     cancel_event: threading.Event,
     emit,
+    target_host: str = "",
 ) -> dict:
+    """target_host：出网边界（http_request/run_shell 仅允许该 host 及其子域）。
+
+    空 = 不限制（兼容旧调用方/无目标 finding）。"""
+
     suggested_edits: dict | None = None
     for round_idx in range(_ASSISTANT_MAX_ROUNDS):
         if cancel_event.is_set():
@@ -1372,6 +1409,12 @@ def _run_report_assistant_loop(
                 args["url"] = url
                 if not url:
                     result = {"ok": False, "error": "http_request 缺少 url"}
+                elif not _assistant_url_allowed(url, target_host):
+                    result = {
+                        "ok": False,
+                        "error": (f"http_request 仅允许访问目标 {target_host} 及其子域。"
+                                  "助手只做本 finding 的定向复核，不要请求其他主机。"),
+                    }
                 else:
                     result = executor.http_request(
                         url=url, method=args.get("method", "GET"),
@@ -1389,11 +1432,21 @@ def _run_report_assistant_loop(
                 if not command:
                     result = {"ok": False, "error": "run_shell 缺少 command"}
                 else:
-                    result = executor.run_shell(
-                        command, timeout=timeout,
-                        confirm_destructive=args.get("confirm_destructive", False),
-                        confirm_reason=args.get("confirm_reason") or "",
-                    )
+                    _bad_urls = [u for u in _URL_RE.findall(command)
+                                 if not _assistant_url_allowed(u, target_host)]
+                    if _bad_urls:
+                        result = {
+                            "ok": False,
+                            "error": (f"run_shell 中含目标 {target_host} 之外的出网地址"
+                                      f"（{_bad_urls[0][:120]}）。助手只允许访问该 finding "
+                                      "的目标及其子域，防止被目标内容注入后当内网跳板。"),
+                        }
+                    else:
+                        result = executor.run_shell(
+                            command, timeout=timeout,
+                            confirm_destructive=args.get("confirm_destructive", False),
+                            confirm_reason=args.get("confirm_reason") or "",
+                        )
             elif tc.function.name == "propose_report_edits":
                 result = _normalize_proposed_edits(args)
                 if result.get("ok") and result.get("edits"):
