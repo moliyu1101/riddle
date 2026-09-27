@@ -29,11 +29,11 @@ def test_session_set_success_marks_injected_and_emits_auth_status():
     auth_events = [e for e in w.emits if e[0] == "auth_status"]
     assert auth_events, "应 emit 一次 auth_status"
     data = auth_events[-1][1]
-    assert data["status"] == "injected"
+    assert data["status"] == "registered", "session_set 后只标已登记未验证，结论由 LLM 上报"
     assert data["cookie_names"] == ["JSESSIONID"]
     assert "value" not in str(data), "不应落 cookie 明文"
     # target_meta 已更新，供续挖复用
-    assert (w.target_meta.get("auth_attempt") or {}).get("status") == "injected"
+    assert (w.target_meta.get("auth_attempt") or {}).get("status") == "registered"
 
 
 def test_passive_site_cookie_not_marked():
@@ -50,7 +50,7 @@ def test_resume_marks_with_source_label():
     w.executor._session_cookies["TWFID"] = "restored"
     w._autotag_injected_if_session(from_resume=True)
     events = [e for e in w.emits if e[0] == "auth_status"]
-    assert events and events[-1][1]["status"] == "injected"
+    assert events and events[-1][1]["status"] == "registered"
     assert "恢复" in events[-1][1]["reason"]
 
 
