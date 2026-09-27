@@ -85,7 +85,7 @@ class OrchestratorCooldownTests(unittest.IsolatedAsyncioTestCase):
             "retry_after_seconds": 17,
         }
 
-        with patch("app.orchestrator.SessionLocal", return_value=_SessionContext(session)):
+        with patch("app.orchestrator.persistence.SessionLocal", return_value=_SessionContext(session)):
             await runner._persist_worker_result("task-1", "target-1", result)
 
         self.assertEqual(target.status, "queued")
@@ -117,7 +117,7 @@ class OrchestratorCooldownTests(unittest.IsolatedAsyncioTestCase):
         runner._harvest_intel = AsyncMock()
         runner._log = AsyncMock()
 
-        with patch("app.orchestrator.SessionLocal", return_value=_SessionContext(session)):
+        with patch("app.orchestrator.persistence.SessionLocal", return_value=_SessionContext(session)):
             await runner._persist_worker_result("task-1", "target-1", {
                 "verdict": Verdict.error.value,
                 "findings": [],

@@ -149,7 +149,7 @@ class PersistAfterFinishTests(unittest.IsolatedAsyncioTestCase):
 
         # 在 _live → 可以落库（经缓冲批量刷盘）
         runner._live["t1"] = {"target_id": "t1"}
-        with patch("app.orchestrator.SessionLocal", return_value=_SessionContext(session)):
+        with patch("app.orchestrator.persistence.SessionLocal", return_value=_SessionContext(session)):
             runner._persist_worker_trace(
                 "task-vis", "t1", "tool_http",
                 {"method": "GET", "url": "https://example.edu/api"},
@@ -173,7 +173,7 @@ class PersistAfterFinishTests(unittest.IsolatedAsyncioTestCase):
             {"verdict": "found"},
         )
         self.assertEqual(len(runner._trace_buffer), 1, "摘要事件不在细粒度名单，收尾后仍保留")
-        with patch("app.orchestrator.SessionLocal", return_value=_SessionContext(session)):
+        with patch("app.orchestrator.persistence.SessionLocal", return_value=_SessionContext(session)):
             await runner._flush_trace_buffer()
         session.add_all.assert_called_once()
         events = session.add_all.call_args[0][0]

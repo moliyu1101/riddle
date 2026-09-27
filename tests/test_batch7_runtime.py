@@ -35,7 +35,7 @@ class TraceBufferTest(unittest.IsolatedAsyncioTestCase):
     async def test_buffer_then_batch_flush(self):
         runner = self._runner()
         sess = SimpleNamespace(add_all=Mock(), commit=AsyncMock())
-        with patch("app.orchestrator.SessionLocal", return_value=_fake_session_ctx(sess)):
+        with patch("app.orchestrator.persistence.SessionLocal", return_value=_fake_session_ctx(sess)):
             runner._persist_worker_trace("t1", "tgt1", "tool_http",
                                          {"method": "GET", "url": "https://x.example.edu/a"})
             self.assertEqual(len(runner._trace_buffer), 1, "缓冲阶段不碰 DB")
@@ -70,7 +70,7 @@ class CancelKeepsRefsTest(unittest.IsolatedAsyncioTestCase):
         sess = SimpleNamespace(execute=AsyncMock(return_value=empty), commit=AsyncMock(),
                                add=Mock())
         try:
-            with patch("app.orchestrator.SessionLocal", return_value=_fake_session_ctx(sess)), \
+            with patch("app.orchestrator.dispatch.SessionLocal", return_value=_fake_session_ctx(sess)), \
                  patch.object(runner, "_log", new=AsyncMock()):
                 await runner._cancel_active_workers("测试取消")
             self.assertIn("tid1", runner._active_workers,

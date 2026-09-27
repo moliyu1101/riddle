@@ -23,7 +23,7 @@ class ReviewBackoffTests(unittest.IsolatedAsyncioTestCase):
         runner._review_inflight.add("f1")
         t0 = asyncio.get_running_loop().time()
         with mock.patch.object(runner, "_run_review_inner", side_effect=ValueError("boom")), \
-             mock.patch("app.orchestrator.SessionLocal", _FakeSessionCtx), \
+             mock.patch("app.orchestrator.review.SessionLocal", _FakeSessionCtx), \
              mock.patch.object(runner, "_log", new=mock.AsyncMock()):
             await runner._run_review("t1", "f1")
 
@@ -52,7 +52,7 @@ class ReviewGiveupTests(unittest.IsolatedAsyncioTestCase):
 
         runner = orch.TaskRunner("t1")
         finding = SimpleNamespace(id="f1", status="pending_review", severity_claimed="中危")
-        with mock.patch.object(runner, "_run_review_inner", side_effect=ValueError("boom")),              mock.patch("app.orchestrator.SessionLocal", _FakeSessionCtx),              mock.patch("app.orchestrator.asyncio.sleep", new=AsyncMock()),              mock.patch.object(orch, "REVIEW_MAX_ATTEMPTS", 3),              mock.patch("app.orchestrator.SessionLocal") as sl,              mock.patch.object(runner, "_log", new=AsyncMock()):
+        with mock.patch.object(runner, "_run_review_inner", side_effect=ValueError("boom")),              mock.patch("app.orchestrator.review.SessionLocal", _FakeSessionCtx),              mock.patch("app.orchestrator.review.asyncio.sleep", new=AsyncMock()),              mock.patch("app.orchestrator.review.REVIEW_MAX_ATTEMPTS", 3),              mock.patch("app.orchestrator.review.SessionLocal") as sl,              mock.patch.object(runner, "_log", new=AsyncMock()):
             # SessionLocal 返回需要支持 get 的会话
             sess = Mock()
             sess.get = AsyncMock(return_value=finding)
@@ -71,7 +71,7 @@ class ReviewGiveupTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_attempts_below_max_stay_pending(self):
         runner = orch.TaskRunner("t1")
-        with mock.patch.object(runner, "_run_review_inner", side_effect=ValueError("boom")),              mock.patch("app.orchestrator.SessionLocal", _FakeSessionCtx),              mock.patch.object(runner, "_log", new=AsyncMock()):
+        with mock.patch.object(runner, "_run_review_inner", side_effect=ValueError("boom")),              mock.patch("app.orchestrator.review.SessionLocal", _FakeSessionCtx),              mock.patch.object(runner, "_log", new=AsyncMock()):
             await runner._run_review("t1", "f2")
         self.assertEqual(runner._review_attempts.get("f2"), 1)
         self.assertIn("f2", runner._review_backoff)
