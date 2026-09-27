@@ -59,7 +59,9 @@ _SIGNATURES: tuple[WafSignature, ...] = (
     ),
     WafSignature(
         "f5_bigip",
-        body_keywords=("the requested url was rejected", "f5"),
+        # 裸 "f5" 两个字符会误伤任何含该子串的正常页面（webpack 哈希/类名），
+        # 只保留 F5 拦截页的完整文案特征。
+        body_keywords=("the requested url was rejected", "support.f5.com", "f5 bigip"),
         header_keys=("x-cnection",),
         priorities=("space", "keyword", "encoding"),
     ),
