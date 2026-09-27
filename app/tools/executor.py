@@ -215,6 +215,8 @@ class ToolExecutor:
         self.cancel_event = cancel_event or threading.Event()
         # 企业模式：对目标生产环境的破坏性命令做额外硬拦截。
         self.enterprise = enterprise
+        # WAF 拦截记忆：URL 曾被拦 → LLM 后续手动变形拿到正常响应时标记 llm_manual 闭环。
+        self._waf_blocked_urls: dict[str, str] = {}
         # 任务级禁止操作：任务界面勾选的八大类拦截 + 额外规则文本解析的禁止操作，合并生效（保序去重）。
         # 勾了什么拦什么；未勾选的类别一律放行，避免全局硬拦导致合法漏洞验证被挡、洞被忽略。
         self._forbidden_ops = _merge_forbidden_ops(src_rules, guard_ops)
@@ -624,9 +626,12 @@ class ToolExecutor:
         except CommandBlocked as e:
             return {"ok": False, "blocked": True, "error": str(e), "url": url}
         result = self._http_request_once(url, method, headers, data, json_body, follow_redirects, timeout)
-        # 自动 WAF 绕过：仅当本次响应确实被 WAF/拦截页阻断时，用无害变体自动重试有限次。
-        if result.get("ok") and _AUTO_WAF_BYPASS:
-            result = self._maybe_auto_waf_bypass(result, url, method, headers, data, json_body, follow_redirects, timeout)
+        # WAF 感知层总是执行：检测拦截（记忆）+ LLM 手动变形闭环。
+        if result.get("ok"):
+            result = self._waf_perceive(result, url)
+            # 自动变体层（开关可关）：只做无害变形重试，结论留给 LLM。
+            if _AUTO_WAF_BYPASS:
+                result = self._maybe_auto_waf_bypass(result, url, method, headers, data, json_body, follow_redirects, timeout)
         # 真实请求/响应证据落盘：与 LLM 解耦，即使后续 submit_finding 被慢中转超时丢弃，
         # 已发生的攻击与取证仍在盘上，可确定性重建 Finding（见 worker 的证据恢复逻辑）。
         _append_evidence_trail(
@@ -803,6 +808,43 @@ class ToolExecutor:
         except Exception:
             return data
 
+    @staticmethod
+    def _waf_url_key(url: str) -> str:
+        """WAF 拦截记忆的 URL 归一化键（去掉 query——变形重试的 query 变化不应算新目标）。"""
+        try:
+            parts = urllib.parse.urlsplit(str(url or ""))
+            return f"{parts.scheme}://{parts.netloc}{parts.path or '/'}"
+        except Exception:
+            return str(url or "")
+
+    def _waf_perceive(self, result: dict[str, Any], url: str) -> dict[str, Any]:
+        """WAF 感知层（独立于自动变体开关，http_request 每次执行）：
+        - 响应命中拦截特征：指纹识别 + 记住该 URL 被拦；
+        - 响应正常但 URL 此前被拦：LLM 手动变形奏效，标记 llm_manual 绕过闭环；
+        - 其余原样返回（无 waf 字段）。
+        """
+        status = result.get("status_code", 0)
+        resp_headers = result.get("response_headers") or {}
+        body = result.get("body") or ""
+        if not self._is_waf_blocked(status, resp_headers, body):
+            prev = self._waf_blocked_urls.pop(self._waf_url_key(url), None)
+            if prev:
+                result["waf"] = {
+                    "detected": True, "type": prev, "bypassed": True,
+                    "technique": "llm_manual",
+                    "original_status": None,
+                }
+            return result
+        sig, evidence = _waf_detect(int(status or 0), _waf_norm_headers(resp_headers), body)
+        self._waf_blocked_urls[self._waf_url_key(url)] = sig.name
+        result["waf"] = {
+            "detected": True,
+            "type": sig.name,
+            "evidence": evidence,
+            "bypassed": False,
+        }
+        return result
+
     def _maybe_auto_waf_bypass(
         self,
         result: dict[str, Any],
@@ -814,26 +856,23 @@ class ToolExecutor:
         follow_redirects: bool,
         timeout: int,
     ) -> dict[str, Any]:
-        """检测到 WAF 拦截时自动重试无害变体；绕过成功返回绕过结果并标记 waf.bypassed。"""
-        status = result.get("status_code", 0)
-        resp_headers = result.get("response_headers") or {}
-        body = result.get("body") or ""
-        if not self._is_waf_blocked(status, resp_headers, body):
+        """自动变体层：对 _waf_perceive 已判定拦截的响应重试无害变形（最多 _AUTO_WAF_MAX_TRIES）。
+
+        绕没绕过的最终结论不由本层下——变体未突破时只报告「已试 N 种」，
+        由 LLM 接手继续尝试（手动变形成功会在 _waf_perceive 标记 llm_manual）。
+        """
+        waf_info = result.get("waf")
+        if not (isinstance(waf_info, dict) and waf_info.get("detected") and not waf_info.get("bypassed")):
             return result
-        sig, evidence = _waf_detect(int(status or 0), _waf_norm_headers(resp_headers), body)
-        waf_info: dict[str, Any] = {
-            "detected": True,
-            "type": sig.name,
-            "evidence": evidence,
-            "bypassed": False,
-        }
+        resp_headers = result.get("response_headers") or {}
+        original_body = result.get("body") or ""
         variants = self._waf_bypass_variants(url, method, headers, data, json_body)
         if variants:
-            original_status = status
-            original_body = body
+            original_body = result.get("body") or ""
             tried: list[str] = []
             tried_detail: list[dict[str, Any]] = []
             original_ct = str((resp_headers or {}).get("content-type") or "").split(";")[0].lower()
+            original_status = result.get("status_code", 0)
             for v in variants[:_AUTO_WAF_MAX_TRIES]:
                 tried.append(v.get("technique", ""))
                 v_result = self._http_request_once(

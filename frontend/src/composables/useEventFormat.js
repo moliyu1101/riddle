@@ -286,8 +286,9 @@ export function useEventFormat(engineRef) {
       case "tool_decode": return `解码：${_DECODE_MODE_CN[d.mode] || d.mode || "自动"}`;
       case "tool_waf_advice": return `WAF 建议：${_WAF_CTX_CN[d.context] || d.context || "通用"}`;
       case "tool_waf_auto": {
+        if (d.bypassed && d.technique === "llm_manual") return `WAF 绕过成功（LLM 变形）：${cap(d.url, 90)}（${d.waf_type || "未知"}）`;
         if (d.bypassed) return `WAF 自动绕过：${cap(d.url, 90)}（${d.waf_type || "未知"}，用 ${d.technique || "变体"}，原 HTTP ${d.original_status ?? ""}）`;
-        return `WAF 拦截未绕过：${cap(d.url, 90)}（${d.waf_type || "未知"}，HTTP ${d.original_status ?? ""}）`;
+        return `WAF 自动变体未突破（待 LLM 继续尝试）：${cap(d.url, 90)}（${d.waf_type || "未知"}，已试 ${d.tried_count ?? ""} 种，HTTP ${d.original_status ?? ""}）`;
       }
       case "tool_fofa_lookup": {
         const eng = ({

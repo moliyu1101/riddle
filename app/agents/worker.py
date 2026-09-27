@@ -1286,7 +1286,23 @@ class Worker:
                         + f" 已自动绕过 WAF（{waf.get('type')}，用 {waf.get('technique')}），"
                         f"原响应 HTTP {waf.get('original_status')} 被拦截；这是绕过后的真实响应，继续按业务逻辑验证危害。"
                     ).strip()
+                elif waf.get("technique") == "llm_manual":
+                    # LLM 自己变形后拿到了正常响应：绕没绕过由 LLM 的实际尝试下结论。
+                    self._emit(
+                        "tool_waf_auto",
+                        round=rnd,
+                        url=url,
+                        waf_type=waf.get("type", ""),
+                        technique="llm_manual",
+                        bypassed=True,
+                    )
+                    result["guidance"] = (
+                        (result.get("guidance") or "")
+                        + f" 此 URL 此前被 WAF（{waf.get('type')}）拦截，本次变形请求拿到了正常响应——"
+                        "绕过已生效，基于当前真实响应继续验证危害。"
+                    ).strip()
                 else:
+                    # 自动变体只是第一轮，结论留给 LLM：它思考并实际尝试之后才算数。
                     self._emit(
                         "tool_waf_auto",
                         round=rnd,
@@ -1294,11 +1310,14 @@ class Worker:
                         waf_type=waf.get("type", ""),
                         original_status=result.get("status_code"),
                         bypassed=False,
+                        tried_count=len(waf.get("tried") or []),
                     )
                     result["guidance"] = (
                         (result.get("guidance") or "")
-                        + f" 检测到 WAF（{waf.get('type')}）拦截，自动绕过未成功（已试 {len(waf.get('tried') or [])} 种变体）。"
-                        "仅对已有明确可控点的验证链用 suggest_waf_bypass 取候选变形复测；别泛试 payload。"
+                        + f" 检测到 WAF（{waf.get('type')}）拦截，自动变体（{len(waf.get('tried') or [])} 种常规变形）未突破——"
+                        "这只是机械第一轮，不代表绕不过：请继续尝试（换 UA/头组合、参数编码与污染、路径变换、"
+                        "带 Cookie/Referer、换 HTTP 方法、降速重试等），或调 suggest_waf_bypass 取针对该 WAF 的候选变形。"
+                        "拿到正常业务响应（非拦截页）即视为绕过成功；多角度试过确认是硬拦再放弃，并把结论写进认知卡。"
                     ).strip()
             return result
 
