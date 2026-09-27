@@ -28,6 +28,10 @@ LOGIN_HTML = (
     '<button>登录</button></form></body></html>'
 )
 
+HOME_HTML = (
+    '<html><body>管理控制台 欢迎回来</body></html>'
+)
+
 CAPTCHA_HTML = (
     '<html><body><form action="/login" method="post">'
     '<input name="username" type="text">'
@@ -45,6 +49,7 @@ class MockExecutor:
         self.default_get_body = default_get_body
         self._session_cookies: dict[str, str] = {}
         self._session_headers: dict[str, str] = {}
+        self._explicit_session_keys: set[str] = set()
         self.calls: list[dict] = []
         self.cleared = 0
 
@@ -52,20 +57,39 @@ class MockExecutor:
         self.calls.append({"url": url, "method": method, **kwargs})
         key = (url, method)
         if key in self.responses:
-            return self.responses[key]
-        # 通配：任何 URL 的 GET 都返回默认页
+            resp = dict(self.responses[key])
+            # 模拟真 executor 的 Set-Cookie 吸收（显式语义，供登录判定复验）
+            sc = resp.get("set_cookie")
+            if sc and "=" in sc:
+                name, _, val = sc.partition("=")
+                self._session_cookies[name.strip()] = val.strip()
+                self._explicit_session_keys.add(f"c:{name.strip()}")
+            return resp
+        # 通配 GET：有显式登记凭据时返回已登录首页（模拟服务器会话校验），
+        # 否则返回登录页——与登录判定复验探针的语义配套。
         if method == "GET":
-            return {"ok": True, "status_code": 200, "body": self.default_get_body, "url": url}
+            logged_in = bool(self._explicit_session_keys) and bool(self._session_cookies)
+            return {
+                "ok": True, "status_code": 200,
+                "final_url": "http://example.edu.cn/home" if logged_in else url,
+                "body": HOME_HTML if logged_in else self.default_get_body,
+                "url": url,
+            }
         return {"ok": False, "error": "no mock", "status_code": 0}
 
     def session_set(self, clear=False, **kwargs):
         if clear:
             self._session_cookies = {}
             self._session_headers = {}
+            self._explicit_session_keys.clear()
             self.cleared += 1
         else:
             self._session_cookies.update(kwargs.get("cookies") or {})
             self._session_headers.update(kwargs.get("headers") or {})
+            for k in (kwargs.get("cookies") or {}):
+                self._explicit_session_keys.add(f"c:{k}")
+            for k in (kwargs.get("headers") or {}):
+                self._explicit_session_keys.add(f"h:{k}")
 
     def snapshot_session(self):
         return {

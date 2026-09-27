@@ -237,8 +237,10 @@ def upload_probe(
         body = resp.get("body") or ""
         low = body.lower()
         uploaded = any(k in low for k in (
-            "upload success", "uploaded", "上传成功", "上传成功", "文件已上传",
-            "success", "ok", "saved", "stored",
+            "upload success", "上传成功", "文件已上传", "文件上传成功",
+            "uploaded successfully", "file saved", "file stored", "save_success",
+            # 裸 "ok"/"success"/"saved"/"stored" 子串会命中任何含 token/successfully
+            # 的正常 JSON（实测 '{"msg":"ok","token":"abc"}' 误报），已移除。
         )) and st in (200, 201, 204)
         path_hint = re.search(r"(?:/upload[s]?/|/files?/|/static/)[^\"'\s<>]+", body)
         size_limit = any(k in low for k in ("too large", "大小超", "文件过大", "exceeds", "limit"))
@@ -458,7 +460,10 @@ def injection_probe(
         for payload in ("{{7*7}}", "${7*7}", "<%= 7*7 %>", "#{7*7}"):
             resp = _send(payload)
             if resp and resp.get("ok"):
-                if "49" in (resp.get("body") or ""):
+                _b = resp.get("body") or ""
+                # 执行证据 = 响应含 49 且模板原文消失；原样回显说明模板未被求值
+                # （此前裸 "49" in body 会让任何含数字 49 的响应误报）。
+                if "49" in _b and payload not in _b:
                     signals.append(f"SSTI 信号：注入 {payload} 后响应包含 49（模板表达式被求值）")
                     results.append({"type": "ssti", "signal": True, "payload": payload})
                 else:

@@ -320,7 +320,14 @@ class KillsweepMixin:
                 hunter.executor.kill_processes()
 
         killsweep_sem = agent_semaphore("killsweep")
-        await killsweep_sem.acquire()
+        try:
+            await asyncio.wait_for(killsweep_sem.acquire(), timeout=AGENT_SEM_ACQUIRE_TIMEOUT)
+        except asyncio.TimeoutError:
+            async with SessionLocal() as s:
+                await self._log(s, "orchestrator", "killsweep_deferred",
+                                f"通杀并发位等待超时(>{int(AGENT_SEM_ACQUIRE_TIMEOUT)}s)，稍后重试",
+                                level="warn", finding_id=finding_id)
+            return
         try:
             hunt_future = loop.run_in_executor(AGENT_EXECUTOR, do_hunt)
         except BaseException:
@@ -689,7 +696,14 @@ class KillsweepMixin:
                 hunter.executor.kill_processes()
 
         escalate_sem = agent_semaphore("escalation")
-        await escalate_sem.acquire()
+        try:
+            await asyncio.wait_for(escalate_sem.acquire(), timeout=AGENT_SEM_ACQUIRE_TIMEOUT)
+        except asyncio.TimeoutError:
+            async with SessionLocal() as s:
+                await self._log(s, "orchestrator", "escalate_deferred",
+                                f"扩大危害并发位等待超时(>{int(AGENT_SEM_ACQUIRE_TIMEOUT)}s)，稍后重试",
+                                level="warn", finding_id=finding_id)
+            return
         try:
             hunt_future = loop.run_in_executor(AGENT_EXECUTOR, do_hunt)
         except BaseException:

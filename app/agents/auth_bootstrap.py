@@ -597,12 +597,46 @@ def _extract_login_form(html: str, page_url: str) -> Optional[dict[str, Any]]:
     return None
 
 
+def _verify_session_alive(executor: Any, origin: str) -> bool | None:
+    """登录态复验：带当前会话 GET 站点首页。
+
+    未登录时站点通常 302 回登录页或渲染含密码框的登录表单——这能消除
+    「失败登录也下发 session cookie」造成的假阳性。返回 True=已登录 /
+    False=未登录 / None=站点结构特殊无法判断（此时退回基于会话 Cookie 的弱判定）。
+    """
+    try:
+        r = executor.http_request(
+            origin.rstrip("/") + "/", method="GET", follow_redirects=True, timeout=10,
+        )
+        if not r.get("ok"):
+            return None
+        final = str(r.get("final_url") or r.get("url") or "").lower()
+        body = r.get("body") or r.get("response_body") or ""
+        if isinstance(body, bytes):
+            body = body.decode("utf-8", "ignore")
+        if "login" in final and "logout" not in final:
+            return False
+        if re.search(r"<input[^>]+type=[\"']?password", body or "", re.I):
+            return False
+        return True
+    except Exception:
+        return None
+
+
 def _judge_login_success(
     executor: Any,
     post_result: dict,
     origin: str,
     form_url: str = "",
+    pre_cookies: frozenset | set | None = None,
 ) -> dict[str, Any]:
+    """登录成功判定（POST 前传 pre_cookies=当时的 cookie 键集合做差分）。
+
+    此前 `(status in (200,302) and cookies)` 的兜底把「失败登录也刷新 session
+    cookie」判成成功——credential_brute 对任何发 Cookie 的站点第一次尝试即
+    误报弱口令。现在的证据链：失败特征文案 → 会话 Cookie **键差分** → 疑似
+    成功后强制首页复验（未登录站点会 302 回 login 或渲染密码框）。
+    """
     if not post_result.get("ok"):
         return {"ok": False, "reason": f"登录请求失败: {post_result.get('error') or post_result.get('status_code')}"}
     status = int(post_result.get("status_code") or 0)
@@ -616,20 +650,41 @@ def _judge_login_success(
         return {"ok": False, "reason": "登录失败：可能需要验证码或账号被锁定"}
     if status in (401, 403):
         return {"ok": False, "reason": f"登录失败：HTTP {status}"}
-    if re.search(r"(密码错误|用户名或密码|login failed|invalid (user|password)|认证失败)", body_l):
+    # 失败特征文案扩充：覆盖更多中文系统的失败措辞
+    if re.search(r"(密码错误|密码不正确|用户名或密码|账号或密码|登录失败|login fail|"
+                 r"invalid (?:user(?:name)?|password|credentials)|认证失败|用户不存在|账号不存在)", body_l):
         return {"ok": False, "reason": "登录失败：用户名或密码错误"}
 
     cookies = getattr(executor, "_session_cookies", {}) or {}
-    sessionish = any(re.search(r"(?i)session|token|castgc|jwt|auth", k) for k in cookies)
-    left_login = final_url and ("login" not in final_url.lower()) and (not form_url or final_url.rstrip("/") != form_url.rstrip("/"))
-    json_ok = bool(re.search(r'"(code|status|success)"\s*:\s*(200|0|true|"ok")', body_l))
+    pre = set(pre_cookies or ())
+    new_cookies = {k for k in cookies if k not in pre}
+    sessionish_new = any(re.search(r"(?i)session|token|castgc|jwt|auth|sid", k) for k in new_cookies)
+    left_login = bool(final_url) and ("login" not in final_url.lower()) and (
+        not form_url or final_url.rstrip("/") != form_url.rstrip("/"))
+    # 明确成功码（code:0 在大量框架里是失败，不算成功）
+    json_ok = bool(re.search(r'"(?:code|status|errcode)"\s*:\s*"?200"?(?![0-9])|'
+                             r'"success"\s*:\s*true|"ok"\s*:\s*true', body_l))
 
-    if sessionish or left_login or json_ok or (status in (200, 302) and cookies):
-        return {
-            "ok": True,
-            "reason": f"登录成功（cookies={len(cookies)}, final={final_url[:80] or origin}）",
-        }
-    return {"ok": False, "reason": "登录后未观察到有效会话 Cookie 或跳转，判定失败"}
+    suspected_reason = ""
+    if sessionish_new:
+        suspected_reason = f"POST 后新增会话 Cookie（{sorted(new_cookies)[:3]}）"
+    elif left_login:
+        suspected_reason = f"跳转离开登录页（final={final_url[:60] or origin}）"
+    elif json_ok:
+        suspected_reason = "响应 JSON 明确成功码"
+    if not suspected_reason:
+        return {"ok": False, "reason": "登录后未观察到新会话 Cookie/跳转/成功码，判定失败"}
+
+    # 疑似成功 → 复验确认：消除「失败登录也下发 session cookie」的假阳性
+    verified = _verify_session_alive(executor, origin)
+    if verified is False:
+        return {"ok": False,
+                "reason": f"疑似登录但复验未通过（首页仍要求登录；{suspected_reason}）"}
+    suffix = "复验通过" if verified else "复验不可判，基于会话 Cookie 判定"
+    return {
+        "ok": True,
+        "reason": f"登录成功（{suffix}；{suspected_reason}，final={final_url[:60] or origin}）",
+    }
 
 
 def format_auth_status_message(result: AuthAttemptResult | dict) -> str:

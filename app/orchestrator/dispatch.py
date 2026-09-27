@@ -182,16 +182,22 @@ class DispatchMixin:
                 # 参数里的 leaked_creds 明文暴露到前端看板。
                 logger.warning("TaskRunner[%s] tick error:\n%s", self.task_id, tb)
                 summary = self._summarize_exc(exc)
-                async with SessionLocal() as s:
-                    if self._is_quota_error(tb):
-                        await self._stop_task_for_quota(s, tb)
-                        await self._log(s, "orchestrator", "quota_stop",
-                                        "LLM/API 额度不足，任务已自动停止", level="error")
-                    else:
-                        # 只记可读的异常摘要（类名+消息），不糊整条 SQL/参数。
-                        await self._log(s, "orchestrator", "error",
-                                        f"主循环异常: {summary}", level="error")
-            await asyncio.sleep(LOOP_INTERVAL)
+                # 异常处理块自身必须再兜一层：这里再抛错（SQLite 锁忙/池超时）会
+                # 逸出 while 杀死主循环——任务从此假活（DB 状态 running，无人收尸）。
+                try:
+                    async with SessionLocal() as s:
+                        if self._is_quota_error(tb):
+                            await self._stop_task_for_quota(s, tb)
+                            await self._log(s, "orchestrator", "quota_stop",
+                                            "LLM/API 额度不足，任务已自动停止", level="error")
+                        else:
+                            # 只记可读的异常摘要（类名+消息），不糊整条 SQL/参数。
+                            await self._log(s, "orchestrator", "error",
+                                            f"主循环异常: {summary}", level="error")
+                except Exception:
+                    logger.error("TaskRunner[%s] tick error handler failed:\n%s",
+                                 self.task_id, traceback.format_exc())
+                await asyncio.sleep(LOOP_INTERVAL)
 
     async def _tick(self) -> None:
         async with SessionLocal() as session:

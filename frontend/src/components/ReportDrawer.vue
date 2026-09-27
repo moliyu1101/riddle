@@ -472,7 +472,11 @@ function applySuggestedEdits(edits) {
   if (edits.title) edit.value.title = edits.title;
   if (edits.description) edit.value.description = edits.description;
   if (edits.affected_scope) edit.value.affected_scope = edits.affected_scope;
-  if (Array.isArray(edits.steps)) edit.value.steps = edits.steps.join("\n");
+  if (Array.isArray(edits.steps)) {
+    // 助手改稿的 steps 是 [{desc,poc,poc_http}] 对象数组——直接 join 会变成
+    // 字面 "[object Object]" 并随保存污染 user_edits.steps；取 desc 描述行。
+    edit.value.steps = normalizeSteps(edits.steps).map((s) => s.desc).join("\n");
+  }
   if (edits.poc) edit.value.poc = edits.poc;
   if (edits.poc_http) edit.value.poc_http = edits.poc_http;
   if (edits.severity) userSeverity.value = edits.severity;

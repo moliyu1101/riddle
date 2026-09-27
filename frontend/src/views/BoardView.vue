@@ -110,7 +110,11 @@ async function loadTask() {
 }
 async function loadQueue() {
   const id = props.id;
-  const rows = await api.reviewQueue(id);
+  // compact + 分页：复审队列是每条 WS 事件/轮询都会重拉的列表，全量全字段
+  // （raw_response/evidence/assistant_messages）会成为事件风暴的带宽放大器；
+  // 列表渲染只需标题/等级/分数，打开抽屉时按 id 拉全量详情。
+  const res = await api.reviewQueue(id, undefined, { compact: true, limit: 300 });
+  const rows = Array.isArray(res) ? res : (res.items || []);
   if (id === props.id) queue.value = rows.map(withSearchCache);
 }
 async function loadSubmit(opts = {}) {

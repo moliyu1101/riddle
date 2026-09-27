@@ -242,7 +242,17 @@ class ReviewMixin:
             return reviewer.review(finding_schema).model_dump(mode="json")
 
         review_sem = agent_semaphore("review")
-        await review_sem.acquire()
+        try:
+            # acquire 超时兜底：一个 wedge 死的 Reviewer 线程此前可永久吃掉并发位
+            # （review 并发小机器=1，即全任务审核停摆）——超时走退避而非无限等。
+            await asyncio.wait_for(review_sem.acquire(), timeout=AGENT_SEM_ACQUIRE_TIMEOUT)
+        except asyncio.TimeoutError:
+            self._review_backoff[finding_id] = loop.time() + REVIEW_RETRY_BACKOFF
+            async with SessionLocal() as s:
+                await self._log(s, "reviewer", "review_deferred",
+                                f"审核并发位等待超时(>{int(AGENT_SEM_ACQUIRE_TIMEOUT)}s)，稍后重试",
+                                level="warn", finding_id=finding_id)
+            return
         try:
             review_future = loop.run_in_executor(AGENT_EXECUTOR, do_review)
         except BaseException:
@@ -281,6 +291,7 @@ class ReviewMixin:
                                     level="error", finding_id=finding_id)
                 return
             await self._review_fail_once(finding_id, task_id, f"审核异常: {str(e)[:160]}")
+            return  # 缺了这行会落到下方使用 rv 的代码 → UnboundLocalError → 外层再记一次失败（计数双倍）
 
         # accepted 必须有最终等级；LLM 漏填时按 worker 自评兜底，避免最终列表等级空白
         if rv.get("verdict") == "accepted" and not rv.get("severity_final"):

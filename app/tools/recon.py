@@ -13,13 +13,31 @@ from __future__ import annotations
 
 import re
 import socket
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, wait as _fut_wait
 from typing import Any, Optional
 from urllib.parse import urlparse
 
 import httpx
 
 from app.agents.intel import detect_fingerprints
+
+
+def _harvest_done(futs: dict, timeout: float) -> list:
+    """收割已完成的 futures：超时只丢未完成部分，已完成结果全保留。
+
+    as_completed(timeout=) 抛 TimeoutError 会连已完成结果一起丢（实测 DNS
+    一个 straggler 丢掉 30/30 条），且 with 块退出仍阻塞等慢任务——这里用
+    wait() 分离 done/not_done，超时后取消未完成项（避免 with 退出再阻塞）。
+    """
+    try:
+        done, _pending = _fut_wait(futs, timeout=timeout)
+    except Exception:
+        done = set()
+    for fut in futs:
+        if fut not in done:
+            fut.cancel()
+    return list(done)
+
 from app.tools.verify_chain import render_verify_plan
 from app.tools.waf_advisor import _detect_waf, _normalize_headers as _norm_waf_headers
 
@@ -495,7 +513,7 @@ def discover_subdomains(
             resolved: dict[str, list[str]] = {}
             with ThreadPoolExecutor(max_workers=_DNS_WORKERS) as pool:
                 futs = {pool.submit(_dns_resolve, c): c for c in candidates}
-                for fut in as_completed(futs, timeout=_DNS_TIMEOUT * 4 + 5):
+                for fut in _harvest_done(futs, timeout=_DNS_TIMEOUT * 4 + 5):
                     c = futs[fut]
                     try:
                         ips = fut.result()
@@ -511,7 +529,7 @@ def discover_subdomains(
                     pool.submit(_http_get, client, f"http://{h}", 3.0): h
                     for h in hosts
                 }
-                for fut in as_completed(futs, timeout=20):
+                for fut in _harvest_done(futs, timeout=20):
                     h = futs[fut]
                     try:
                         status, _, body = fut.result()
@@ -566,7 +584,7 @@ def enumerate_paths(
                 pool.submit(_http_get, client, base_url + path, _PROBE_TIMEOUT): path
                 for path, _ in _HIGH_VALUE_PATHS
             }
-            for fut in as_completed(futs, timeout=_PROBE_TIMEOUT * 2 + 10):
+            for fut in _harvest_done(futs, timeout=_PROBE_TIMEOUT * 2 + 10):
                 path = futs[fut]
                 try:
                     status, _, body = fut.result()
@@ -647,7 +665,7 @@ def discover_same_ip(
         open_ports: list[int] = []
         with ThreadPoolExecutor(max_workers=16) as pool:
             futs = {pool.submit(_tcp_open, ip, p): p for p in _COMMON_PORTS}
-            for fut in as_completed(futs, timeout=_TCP_TIMEOUT * 2 + 5):
+            for fut in _harvest_done(futs, timeout=_TCP_TIMEOUT * 2 + 5):
                 p = futs[fut]
                 try:
                     if fut.result():

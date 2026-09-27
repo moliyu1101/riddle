@@ -266,7 +266,7 @@ export const api = {
   start: (id) => req("POST", `/api/tasks/${id}/start`),
   pause: (id) => req("POST", `/api/tasks/${id}/pause`),
   stop: (id) => req("POST", `/api/tasks/${id}/stop`),
-  reviewQueue: (id, q) => req("GET", `/api/tasks/${id}/review-queue${qs({ q })}`),
+  reviewQueue: (id, q, opts = {}) => req("GET", `/api/tasks/${id}/review-queue${qs({ q, ...opts })}`),
   submitList: (id, submitted, q, opts = {}) =>
     req("GET", `/api/tasks/${id}/submit-list${qs({ submitted, q, ...opts })}`),
   rejectedList: (id, q) => req("GET", `/api/tasks/${id}/rejected${qs({ q })}`),

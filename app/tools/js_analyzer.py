@@ -129,22 +129,37 @@ _STATUS_ENUM_RE = re.compile(
 _STATE_MACHINE_MIN_SIGNALS = 2
 
 
-def _iter_matches(pattern: re.Pattern[str], text: str, limit: int = _MAX_MATCHES) -> Iterator[re.Match[str]]:
-    """带全局匹配数上限 + 挂钟预算的 finditer。
+_SCAN_CHUNK = 256 * 1024      # 分片扫描窗口：预算检查点间隔（窗口内 finditer 无法被中断）
+_SCAN_OVERLAP = 1024          # 窗口重叠：容忍跨窗口边界的匹配（按 start 去重）
 
-    双保险：匹配数封顶防"海量成功匹配"，挂钟预算防"海量失败尝试"（如超长单
-    token 上每个位置都尝试匹配再回退），两者都会长时间持 GIL 饿死事件循环。
+
+def _iter_matches(pattern: re.Pattern[str], text: str, limit: int = _MAX_MATCHES) -> Iterator[re.Match[str]]:
+    """带全局匹配数上限 + 挂钟预算的 finditer（分片扫描版）。
+
+    双保险：匹配数封顶防"海量成功匹配"，挂钟预算防"海量失败尝试"。此前预算
+    检查在 yield 之后——零匹配的长文本会让 finditer 在 C 层一路扫到底（实测
+    1.5MB 文本 5.3s 持 GIL，正是历史看门狗重启事故的同类根因），现在预算
+    检查在分片窗口之间，零匹配也受保护。
     """
     count = 0
     deadline = time.monotonic() + _FINDER_TIME_BUDGET
-    for m in pattern.finditer(text):
-        count += 1
-        if count > limit:
-            break
-        # 每 256 次检查一次挂钟，避免频繁系统调用拖慢正常路径。
-        if (count & 0xFF) == 0 and time.monotonic() > deadline:
-            break
-        yield m
+    total = len(text)
+    pos = 0
+    while pos < total:
+        if time.monotonic() > deadline:
+            return
+        end = min(pos + _SCAN_CHUNK, total)
+        window_start = max(0, pos - _SCAN_OVERLAP) if pos else 0
+        last_yielded = pos - _SCAN_OVERLAP if pos else -1
+        for m in pattern.finditer(text, window_start, end):
+            if m.start() <= last_yielded:
+                continue  # 重叠区去重
+            count += 1
+            if count > limit:
+                return
+            yield m
+        last_yielded = end - 1
+        pos = end
 
 
 class _ScriptParser(HTMLParser):
@@ -611,11 +626,20 @@ def _find_crypto_client_auth(text: str, base_url: str, source: str) -> list[JsFi
             ))
         elif ref:
             # 回溯同名赋值，抓混淆变量上的硬编码口令（如 ykeesa="12345678cgg54321"）
-            assign = re.search(
-                rf"""(?:const|let|var)?\s*{re.escape(ref)}\s*[:=]\s*(['"`])([^'"`]{{4,64}})\1""",
-                text,
-                re.I,
-            )
+            # 先 find 定位再局部小窗正则：此前每个 ref 都对全文 re.search，5000 个
+            # 无赋值 ref 实测 2.7s 持 GIL。
+            assign = None
+            _pos = text.find(ref)
+            while _pos != -1:
+                _win = text[max(0, _pos - 40):_pos + len(ref) + 200]
+                assign = re.search(
+                    rf"""(?:const|let|var)?\s*{re.escape(ref)}\s*[:=]\s*(['"`])([^'"`]{{4,64}})\1""",
+                    _win,
+                    re.I,
+                )
+                if assign:
+                    break
+                _pos = text.find(ref, _pos + 1)
             if assign:
                 val = _unescape(assign.group(2)).strip()
                 if _AES_PASSPHRASE_RE.match(val):

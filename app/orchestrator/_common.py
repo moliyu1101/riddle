@@ -72,6 +72,7 @@ __all__ = [
     "WORKER_MAX_WALL_TIMEOUT",
     "WORKER_WAIT_POLL_INTERVAL",
     "WORKER_SEM_ACQUIRE_TIMEOUT",
+    "AGENT_SEM_ACQUIRE_TIMEOUT",
     "REVIEW_WALL_TIMEOUT",
     "KILLSWEEP_WALL_TIMEOUT",
     "ESCALATE_WALL_TIMEOUT",
@@ -189,6 +190,9 @@ WORKER_MAX_WALL_TIMEOUT = float(os.environ.get("WORKER_MAX_WALL_TIMEOUT", str(ma
 WORKER_WAIT_POLL_INTERVAL = float(os.environ.get("WORKER_WAIT_POLL_INTERVAL", "10"))
 
 WORKER_SEM_ACQUIRE_TIMEOUT = float(os.environ.get("WORKER_SEM_ACQUIRE_TIMEOUT", "120"))
+# review/killsweep/escalation 共用：并发位 acquire 超时（worker 侧「并发位永久
+# 丢失」事故的同类防护——一个 wedge 死线程此前可永久吃掉小配额的全部并发位）。
+AGENT_SEM_ACQUIRE_TIMEOUT = float(os.environ.get("AGENT_SEM_ACQUIRE_TIMEOUT", "180"))
 
 REVIEW_WALL_TIMEOUT = float(os.environ.get("REVIEW_WALL_TIMEOUT", "600"))
 
