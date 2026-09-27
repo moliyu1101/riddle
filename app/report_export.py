@@ -168,8 +168,12 @@ def _screenshot_base64(p: Path) -> str:
         return ""
 
 
+
+
 def _docx_image_para(path: Path, r_id: str, max_width_px: int = 560) -> str:
+    _docx_image_para.img_seq += 1  # OOXML docPr id must be unique across the document
     """生成 docx 内联图片段落 XML（OOXML drawing）。按 PNG 实际尺寸等比缩放。"""
+    _docx_image_para.img_seq += 1  # OOXML 要求文档内 docPr id 唯一，多截图自增
     try:
         data = path.read_bytes()
     except Exception:
@@ -183,9 +187,9 @@ def _docx_image_para(path: Path, r_id: str, max_width_px: int = 560) -> str:
     return (
         f'<w:p><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">'
         f'<wp:extent cx="{cx}" cy="{cy}"/>'
-        f'<wp:docPr id="1" name="screenshot.png"/>'
+        f'<wp:docPr id="{_docx_image_para.img_seq}" name="screenshot.png"/>'
         f'<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
-        f'<pic:pic><pic:nvPicPr><pic:cNvPr id="1" name="screenshot.png"/><pic:cNvPicPr/></pic:nvPicPr>'
+        f'<pic:pic><pic:nvPicPr><pic:cNvPr id="{_docx_image_para.img_seq}" name="screenshot.png"/><pic:cNvPicPr/></pic:nvPicPr>'
         f'<pic:blipFill><a:blip r:embed="{r_id}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
         f'<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm>'
         f'<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>'
@@ -332,30 +336,26 @@ def build_report_markdown(f: Finding, r: Review | None, src_type: str = "edusrc"
             lines.append(f"{i}. **{st['desc']}**")
             if st["poc"]:
                 lines.append("")
-                lines.append("   ```bash")
-                lines.append("   " + st["poc"])
-                lines.append("   ```")
+                lines += _fence(st["poc"], "bash", indent="   ")
             if st["poc_http"]:
                 lines.append("")
                 lines.append("   **请求包（yakit / Burp）**")
                 lines.append("")
-                lines.append("   ```http")
-                lines.append("   " + st["poc_http"])
-                lines.append("   ```")
+                lines += _fence(st["poc_http"], "http", indent="   ")
             lines.append("")
     else:
         lines.append("-")
-    lines += ["## 验证 PoC", "", "**curl 命令**", "", "```bash", d["poc"] or "-", "```"]
+    lines += ["## 验证 PoC", "", "**curl 命令**", ""]
+    lines += _fence(d["poc"] or "-", "bash")
     if d["poc_http"]:
-        lines += ["", "**原始请求包（yakit / Burp 可直接导入）**", "", "```http", d["poc_http"], "```"]
+        lines += ["", "**原始请求包（yakit / Burp 可直接导入）**", ""]
+        lines += _fence(d["poc_http"], "http")
     lines += ["", "## 证据链", ""]
     for item in d["evidence"]:
         lines.append(f"**{item['label']}**")
         lines.append("")
         if item["kind"] in ("code", "snapshot"):
-            lines.append("```")
-            lines.append(item["content"])
-            lines.append("```")
+            lines += _fence(item["content"])
         else:
             lines.append(item["content"])
         if item.get("screenshot_ref"):
@@ -383,10 +383,23 @@ def build_report_markdown(f: Finding, r: Review | None, src_type: str = "edusrc"
     return "\n".join(lines)
 
 
+def _fence(content: str, lang: str = "", indent: str = "") -> list[str]:
+    """生成 markdown 代码围栏：内容含 ``` 时自动加长围栏，防止提前闭合击穿。"""
+    fences = re.findall(r"^(`{3,})", content or "", re.M)
+    fence = "`" * (max((len(f) for f in fences), default=2) + 1)
+    head = f"{indent}{fence}{lang}"
+    return [head, (content or ""), f"{indent}{fence}"]
+
+
+_XML_CTRL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+
+
+
 def _xml_escape(text: str) -> str:
-    return str(text or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
-
-
+    # XML 1.0 禁止大部分控制字符：raw_request/raw_response 抓的是任意站点响应，
+    # 含二进制字节时 document.xml 非法、Word 直接拒开。
+    return _XML_CTRL_RE.sub("", str(text or "")).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 def build_docx_bytes(f: Finding, r: Review | None, src_type: str = "edusrc") -> bytes:
     """纯标准库生成最小 .docx（zip + word/document.xml），零第三方依赖。"""
     sec = build_report_sections(f, r, src_type)

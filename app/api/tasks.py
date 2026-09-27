@@ -1196,6 +1196,9 @@ async def task_board(
             **({} if observer else {k: payload.get(k) for k in (
                 "url", "method", "command", "text", "title", "verdict", "round", "tool", "error",
                 "target", "mode", "prompt_version",
+                # 凭据分类回显（auth_status）与 WAF 绕过（tool_waf_auto）的展示字段
+                "kinds", "status", "cookie_names", "header_names", "reason",
+                "waf_type", "technique", "bypassed", "original_status", "tried_count",
             ) if k in payload}),
         })
         if len(events) >= event_cap:

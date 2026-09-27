@@ -217,6 +217,7 @@ def _finding_dict(f: Finding, r: Review | None, *, compact: bool = False) -> dic
         "description": f.description,
         "steps": f.steps,
         "poc": f.poc,
+        "poc_http": f.poc_http,
         "raw_request": f.raw_request,
         "raw_response": f.raw_response,
         "evidence": _enrich_evidence(f.evidence, f.target_url),
@@ -435,20 +436,24 @@ async def task_reports_export(task_id: str, format: str = Query("md", pattern="^
 
     base = f"riddle-reports-{task_id[:8]}"
     disposition = 'attachment; filename="{}"' if download else 'inline; filename="{}"'
+
+    # 归属反查并发预解析：串行 await 时每条带 3s 超时 DNS，几十条报告会
+    # 卡死事件循环分钟级。gather 并发解析后纯 CPU 拼装。
+    async def _school(f):
+        return await _resolve_edu_school_async(f.target_url) or _edu_school_fast(f.target_url)
+
+    schools = await asyncio.gather(*[_school(f) for f, _ in rows])
+    for (f, _), school in zip(rows, schools):
+        f.edu_school = school
+
     if format == "edusrc":
-        items = []
-        for f, r in rows:
-            f.edu_school = await _resolve_edu_school_async(f.target_url) or _edu_school_fast(f.target_url)
-            items.append(build_edusrc_report_json(f, r, build_report_markdown(f, r, src_type)))
+        items = [build_edusrc_report_json(f, r, build_report_markdown(f, r, src_type))
+                 for f, r in rows]
         payload = json.dumps(items, ensure_ascii=False, indent=2)
         media = "application/json; charset=utf-8"
         filename = f"{base}-edusrc.json"
     else:
-        parts = []
-        for f, r in rows:
-            f.edu_school = await _resolve_edu_school_async(f.target_url) or _edu_school_fast(f.target_url)
-            parts.append(build_report_markdown(f, r, src_type))
-        payload = "\n\n---\n\n".join(parts)
+        payload = "\n\n---\n\n".join(build_report_markdown(f, r, src_type) for f, r in rows)
         media = "text/markdown; charset=utf-8"
         filename = f"{base}.md"
     return Response(payload, media_type=media,
