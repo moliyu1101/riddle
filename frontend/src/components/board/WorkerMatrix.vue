@@ -39,6 +39,7 @@ function authBadge(w) {
     .split(",").map((k) => k.trim()).filter(Boolean)
     .map((k) => KIND_CN[k.toLowerCase()] || k);
   const tag = kinds.length ? `${kinds.join("+")}·` : "凭据·";
+  if (st === "registered") return `${tag}已登记待验证`;
   if (st === "injected") return `${tag}已注入`;
   if (st === "login_ok") return `${tag}登录成功`;
   if (st === "login_fail") return `${tag}登录失败`;

@@ -263,19 +263,21 @@ class Worker:
             if not cookies and not headers:
                 return
             cur = (self.target_meta or {}).get("auth_attempt") or {}
-            if cur.get("status") in ("injected", "login_ok"):
+            if cur.get("status") == "login_ok":
                 return
             names = sorted(cookies.keys())
             hnames = sorted(headers.keys())
             payload = {
                 "used": True,
                 "matched": True,
-                "status": "injected",
+                # registered = 已登记未验证：是否真登录态由 LLM 验证后经
+                # report_session_state 上报结论（login_ok/injected/expired/invalid）。
+                "status": "registered",
                 "kinds": (["cookie"] if cookies else []) + (["bearer"] if headers else []),
                 "matched_by": "自动捕获",
                 "binding_target": self.target,
-                "reason": ("恢复断点保存的历史会话，后续请求自动携带" if from_resume
-                           else "session_set 显式登记凭据，后续请求自动携带"),
+                "reason": ("恢复断点保存的历史会话，待验证有效性" if from_resume
+                           else "session_set 显式登记凭据，待你请求需登录接口验证后上报结论"),
                 "cookie_names": names[:20],
                 "header_names": hnames[:20],
             }
@@ -286,11 +288,56 @@ class Worker:
             src = "恢复历史会话" if from_resume else "session_set 登记"
             self._emit(
                 "auth_status",
-                message=f"凭据注入[{kinds_cn}]：{src}（{fields}），后续请求自动携带。",
+                message=f"凭据已登记[{kinds_cn}]：{src}（{fields}），是否有效登录态待验证上报。",
                 **payload,
             )
         except Exception:
             pass
+
+    def _report_session_state(self, args: dict) -> dict:
+        """LLM 上报会话态验证结论：看板凭据状态由 LLM 的实际验证决定（非登记即生效）。"""
+        status = str(args.get("status") or "").strip().lower()
+        evidence = str(args.get("evidence") or "").strip()
+        if status not in ("login_ok", "injected", "expired", "invalid"):
+            return {
+                "ok": False,
+                "error": f"status 非法: {status}",
+                "guidance": "status 只能是 login_ok / injected / expired / invalid，"
+                            "且必须真实验证过（请求需登录接口看响应）后再上报。",
+            }
+        if not evidence:
+            return {"ok": False, "error": "缺少 evidence：说明你怎么验证的（请求了什么、看到什么响应），不要凭感觉上报。"}
+        cookies, headers = self.executor.explicit_session_snapshot()
+        cur = dict((self.target_meta or {}).get("auth_attempt") or {})
+        if not cookies and not headers and status in ("login_ok", "injected"):
+            return {
+                "ok": False,
+                "error": "当前会话没有显式登记的凭据，无法上报 login_ok/injected。"
+                         "先 session_set 登记凭据，或确认你验证用的登录态来自哪里。",
+            }
+        payload = {
+            **cur,
+            "used": True,
+            "matched": True,
+            "status": status,
+            "matched_by": "LLM 验证",
+            "reason": evidence[:300],
+        }
+        self.target_meta["auth_attempt"] = payload
+        kind_cn = {"cookie": "Cookie", "bearer": "Bearer", "password": "账密"}
+        kinds_cn = "+".join(kind_cn.get(k, k) for k in (payload.get("kinds") or [])) or "凭据"
+        verdict = {"login_ok": "登录态验证有效", "injected": "已携带会话",
+                   "expired": "登录态已过期", "invalid": "凭据无效"}.get(status, status)
+        self._emit(
+            "auth_status",
+            message=f"凭据状态上报[{kinds_cn}]：{verdict} — {evidence[:120]}",
+            **payload,
+        )
+        return {
+            "ok": True,
+            "status": status,
+            "message": f"已上报：{verdict}。看板凭据状态已更新，继续按当前登录态深挖或换凭据。",
+        }
 
     def _playbook_block(self) -> str:
         """目标打法路由：编排层生成的短路线块。"""
@@ -1690,11 +1737,21 @@ class Worker:
                 headers=args.get("headers"),
                 clear=bool(args.get("clear", False)),
             )
-            # 登记成功后若已持有可用 cookie/header 凭据，自动标记为「已注入会话」，
-            # 前端看板即显示「凭据·已注入」，供同目标断点续挖复用（不落明文）。
+            # 登记成功标记「已登记（未验证）」中间态：是否构成有效登录态由 LLM
+            # 请求需登录接口验证后调 report_session_state 上报结论。
             if result.get("ok") and (result.get("active_cookies") or result.get("active_headers")):
                 self._autotag_injected_if_session()
+                result["guidance"] = (
+                    (result.get("guidance") or "")
+                    + " 凭据已登记进会话（状态=已登记未验证）。请请求一个需要登录的接口"
+                    "（用户信息/管理列表等）验证登录态是否真实有效，然后调 report_session_state "
+                    "上报结论（login_ok/injected/expired/invalid）——看板凭据状态由你的验证结论决定。"
+                ).strip()
             return result
+
+        if name == "report_session_state":
+            self._mark_tool_used(name, rnd)
+            return self._report_session_state(args)
 
         if name == "update_notes":
             self._mark_tool_used(name, rnd)

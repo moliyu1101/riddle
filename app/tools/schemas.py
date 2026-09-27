@@ -655,6 +655,28 @@ SESSION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "report_session_state",
+            "description": "上报你对当前会话态的验证结论（看板凭据状态由你的实际验证决定，不是登记即生效）。session_set 只是把凭据登记进会话，是否构成有效登录态要你验证：请求一个需要登录的接口（如用户信息/管理列表），凭响应判断后上报。login_ok=验证过登录态有效；expired/invalid=凭据无效或已过期。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "enum": ["login_ok", "injected", "expired", "invalid"],
+                        "description": "login_ok=验证过登录态有效（最有力）；injected=已携带会话但未深度验证；expired=登录态已过期；invalid=凭据无效",
+                    },
+                    "evidence": {
+                        "type": "string",
+                        "description": "验证证据：怎么判断的（如「GET /admin/api/user 返回 200 且含 username 字段」），一句话，不要贴明文 token",
+                    },
+                },
+                "required": ["status", "evidence"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "update_notes",
             "description": "更新你的工作笔记（跨轮持久，不会被历史压缩丢掉，每轮自动注入给你）。发现关键信息就立刻记：已确认的端点/凭据/token/cookie、已试过但失败的方向、当前突破口、下一步计划。这是你跨轮'记得自己干了什么'的关键——不记就会重复扫同一条路。",
             "parameters": {

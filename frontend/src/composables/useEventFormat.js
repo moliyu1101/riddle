@@ -383,6 +383,9 @@ export function useEventFormat(engineRef) {
         const fields = [...(d.cookie_names || []), ...(d.header_names || [])]
           .slice(0, 4).join("/");
         const tag = kinds ? `[${kinds}]` : "";
+        if (st === "registered") {
+          return `凭据已登记${tag}：待验证（${fields ? fields : "会话已携带"}）— ${cap(d.reason || d.message || "", 80)}`;
+        }
         if (st === "injected") {
           return `凭据注入${tag}：会话已生效${fields ? `（${fields}）` : ""} — ${cap(d.reason || d.message || "", 80)}`;
         }
