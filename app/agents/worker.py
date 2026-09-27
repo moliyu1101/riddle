@@ -470,6 +470,11 @@ class Worker:
             try:
                 self._emit("llm_round_start", round=rounds)
                 tools = list(TOOL_SCHEMAS)
+                if getattr(self, "blackboard", None) is None:
+                    # 单站协作专属工具不在普通任务下发：工具描述里「动手前先查黑板」
+                    # 的文案会诱导 LLM 在非协作任务上做无谓的黑板思考与调用。
+                    tools = [t for t in tools
+                             if not str(t.get("name") or "").startswith("blackboard_")]
                 # 会话保持工具全模式开放：拿到泄露/用户凭证登录后固化登录态再深挖。
                 tools += SESSION_TOOL_SCHEMAS
                 if self._js_tool_enabled:
