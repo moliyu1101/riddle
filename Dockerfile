@@ -87,8 +87,9 @@ RUN useradd --create-home --uid 10001 riddle
 RUN su riddle -s /bin/sh -c "HOME=/home/riddle nuclei -update-templates -silent" || true
 
 COPY . .
-# Windows 检出/解压可能带 CRLF；入口脚本带 \r 时容器会报 no such file or directory。
-RUN find /app/scripts -type f -name '*.sh' -exec sed -i 's/\r$//' {} +
+# Windows 检出/解压可能带 CRLF；入口脚本带 \r 时容器会报 no such file or directory，
+# 带 UTF-8 BOM 时 shebang 行会被 sh 当命令报 not found。两者都清掉（防御未来）。
+RUN find /app/scripts -type f -name '*.sh' -exec sed -i '1s/^\xEF\xBB\xBF//;s/\r$//' {} +
 
 # 拷入前端构建产物（覆盖空的 web/dist）
 COPY --from=frontend /web/dist /app/web/dist
