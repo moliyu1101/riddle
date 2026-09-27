@@ -22,6 +22,23 @@ services:
       - ah_data:/app/data        # SQLite + 证据持久化（重启恢复依赖，勿删）
       - ah_work:/work            # worker 临时工作区
     restart: unless-stopped      # 崩溃自动重启，从 DB 恢复任务状态
+    # 资源上限：README 建议 2C4G 起；cgroup 上限防 worker 失控把宿主机拖死。
+    # 机器富余可调大，但请始终保留上限——LLM 驱动的真实工具链行为不可完全预测。
+    mem_limit: 4g
+    cpus: 2.0
+    # 7×24 运行，json-file 日志驱动默认无上限会吃满宿主机磁盘
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+    # 容器内端口固定 18800（与 RIDDLE_HOST_PORT 无关）
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:18800/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
 volumes:
   ah_data:

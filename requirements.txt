@@ -1,16 +1,18 @@
-openai>=1.40.0
-httpx>=0.27.0
-pydantic>=2.0.0
-fastapi>=0.110.0
-uvicorn[standard]>=0.27.0
-# uvicorn 0.51+ 的 ws_sansio_impl 需要 websockets>=13.0，只设下限即可。
+# 运行时依赖。下限 = 已验证可用的最低版本；上界 = 下一 major（跨 major 常含
+# 破坏性变更，升级需跑 tests/ 全量回归后再放开）。构建可复现由镜像层缓存保障。
+openai>=1.40.0,<3.0.0
+httpx>=0.27.0,<1.0.0
+pydantic>=2.0.0,<3.0.0
+fastapi>=0.110.0,<1.0.0
+uvicorn[standard]>=0.27.0,<1.0.0
+# uvicorn 0.51+ 的 ws_sansio_impl 需要 websockets>=13.0。
 # 警告：pyppeteer/undetected-chromedriver 等包会无约束拉旧版 websockets，
 # 切勿在容器内安装这些包，否则会降级 websockets 到 <13 导致 uvicorn 崩溃。
-websockets>=13.0
-sqlalchemy>=2.0.0
-greenlet>=3.0.0
-aiosqlite>=0.19.0
-python-multipart>=0.0.9
+websockets>=13.0,<16.0
+sqlalchemy>=2.0.0,<3.0.0
+greenlet>=3.0.0,<4.0.0
+aiosqlite>=0.19.0,<1.0.0
+python-multipart>=0.0.9,<0.1.0
 # 真实浏览器截图（capture_evidence screenshot 开关）。容器内需 playwright install chromium。
 # 注意：不要装 pyppeteer/selenium/undetected-chromedriver，它们会降级 websockets 导致 uvicorn 崩溃。
-playwright>=1.40.0
+playwright>=1.40.0,<2.0.0
