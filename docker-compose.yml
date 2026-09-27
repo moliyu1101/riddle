@@ -19,8 +19,8 @@ services:
       - WORKER_WORK_ROOT=/work
       - LLM_REQUEST_TIMEOUT=300
     volumes:
-      - ah_data:/app/data        # SQLite + 证据持久化（重启恢复依赖，勿删）
-      - ah_work:/work            # worker 临时工作区
+      - riddle_data:/app/data        # SQLite + 证据持久化（重启恢复依赖，勿删）
+      - riddle_work:/work            # worker 临时工作区
     restart: unless-stopped      # 崩溃自动重启，从 DB 恢复任务状态
     # 资源上限：README 建议 2C4G 起；cgroup 上限防 worker 失控把宿主机拖死。
     # 机器富余可调大，但请始终保留上限——LLM 驱动的真实工具链行为不可完全预测。
@@ -41,5 +41,5 @@ services:
       start_period: 60s
 
 volumes:
-  ah_data:
-  ah_work:
+  riddle_data:
+  riddle_work:

@@ -1,21 +1,14 @@
-﻿# Contributors
+# Contributors
 
 感谢所有为知蠹 Riddle 贡献代码、文档、设计与反馈的人。
 
-**知蠹 Riddle** 是 [AutoHunter](https://github.com/StanleyNull/AutoHunter)（作者 StanleyNull，CC BY-NC 4.0）的二次开发项目，已获原作者授权，原署名保留。本项目在保留上游全部贡献的同时，追加了协作、工具、质量、安全与前端五层能力。
+**知蠹 Riddle** 是一个独立的 AI 自主漏洞挖掘平台项目，由 [@moliyu1101](https://github.com/moliyu1101) 开发与维护，采用 CC BY-NC 4.0 许可协议发布。
 
 ## 项目作者
 
 | Avatar | GitHub | 角色 / 贡献 |
 |--------|--------|-------------|
-| <img src="https://avatars.githubusercontent.com/u/121541453?v=4&s=64" width="40" height="40" alt="moliyu1101" /> | [@moliyu1101](https://github.com/moliyu1101) | Author · 知蠹 Riddle 作者与维护者（二次开发：协作黑板 / 多模型灾备 / 工具增强 / 差异化评分 / 安全防护等） |
-
-## 上游致谢
-
-知蠹 Riddle 基于 **AutoHunter** 二次开发，项目作者 **StanleyNull** 及上游所有贡献者为整个平台奠定了坚实的基础，在此致以诚挚感谢：
-
-- [@StanleyNull](https://github.com/StanleyNull) — AutoHunter 原作者，授权本项目二次开发
-- 上游 AutoHunter 的全部贡献者（见 [AutoHunter Contributors](https://github.com/StanleyNull/AutoHunter/graphs/contributors)）
+| <img src="https://avatars.githubusercontent.com/u/121541453?v=4&s=64" width="40" height="40" alt="moliyu1101" /> | [@moliyu1101](https://github.com/moliyu1101) | Author · 知蠹 Riddle 作者与维护者（协作黑板 / 多模型灾备 / 工具增强 / 差异化评分 / 安全防护等） |
 
 ## 如何出现在署名名单上
 
@@ -45,6 +38,6 @@
 
 - 仅限授权安全测试相关改进；遵守 [LICENSE](./LICENSE)（CC BY-NC 4.0）
 - PR 尽量小而清晰，附上「改了什么 / 怎么验证」
-- 二次分发请保留 `Powered By moliyu1101` 署名与 StanleyNull 原署名
+- 二次分发请保留 `Powered By moliyu1101` 署名
 
 回到 [README](./README.md)

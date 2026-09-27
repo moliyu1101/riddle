@@ -77,15 +77,15 @@ class WorkfilesAuthTest(unittest.TestCase):
 
     def test_full_readonly_allow_observer_denied(self):
         security.set_db_tokens(full="FULL", read="READ", observer="OBS")
-        allowed, role = request_allowed(_req("/workfiles/shot.png", "ah_api_token=FULL"))
+        allowed, role = request_allowed(_req("/workfiles/shot.png", "riddle_token=FULL"))
         self.assertTrue(allowed)
         self.assertEqual(role, "full")
 
-        allowed, role = request_allowed(_req("/workfiles/shot.png", "ah_api_token=READ"))
+        allowed, role = request_allowed(_req("/workfiles/shot.png", "riddle_token=READ"))
         self.assertTrue(allowed)
         self.assertEqual(role, "readonly")
 
-        allowed, role = request_allowed(_req("/workfiles/shot.png", "ah_api_token=OBS"))
+        allowed, role = request_allowed(_req("/workfiles/shot.png", "riddle_token=OBS"))
         self.assertFalse(allowed)
         self.assertEqual(role, "observer")
         # observer 路径白名单也明确拒绝

@@ -148,13 +148,13 @@ onMounted(async () => {
   const prefs = await applyUi(loadUiPrefs());
   theme.value = prefs.theme;
   window.addEventListener("riddle-auth-expired", onAuthExpired);
-  window.addEventListener("ah-ui-changed", onUiChanged);
+  window.addEventListener("riddle-ui-changed", onUiChanged);
   await loadAuthRole();
   await hydrateUiFromServer();
 });
 onUnmounted(() => {
   window.removeEventListener("riddle-auth-expired", onAuthExpired);
-  window.removeEventListener("ah-ui-changed", onUiChanged);
+  window.removeEventListener("riddle-ui-changed", onUiChanged);
 });
 </script>
 

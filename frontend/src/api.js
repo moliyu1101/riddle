@@ -11,7 +11,7 @@ export const authRequiredRef = ref(true); // 服务端是否开启了访问令�
 
 function bootstrapTokenFromCookie() {
   if (localStorage.getItem(TOKEN_KEY)) return;
-  const m = document.cookie.match(/(?:^|;\s*)ah_api_token=([^;]+)/);
+  const m = document.cookie.match(/(?:^|;\s*)riddle_token=([^;]+)/);
   if (m) localStorage.setItem(TOKEN_KEY, decodeURIComponent(m[1]));
 }
 bootstrapTokenFromCookie();
@@ -42,12 +42,12 @@ function setApiToken(token) {
   if (!cleaned) return;
   localStorage.setItem(TOKEN_KEY, cleaned);
   const secure = location.protocol === "https:" ? "; Secure" : "";
-  document.cookie = `ah_api_token=${encodeURIComponent(cleaned)}; Path=/; SameSite=Strict${secure}`;
+  document.cookie = `riddle_token=${encodeURIComponent(cleaned)}; Path=/; SameSite=Strict${secure}`;
 }
 
 export function clearAccessToken() {
   localStorage.removeItem(TOKEN_KEY);
-  document.cookie = "ah_api_token=; Path=/; Max-Age=0; SameSite=Strict";
+  document.cookie = "riddle_token=; Path=/; Max-Age=0; SameSite=Strict";
 }
 
 /** 会话失效：清令牌、复位鉴权态，并通知应用跳转登录页。 */

@@ -496,7 +496,7 @@ const update = useUpdate({ toast, pollHealth, load });
 
 onMounted(async () => {
   appearance.uiPrefs.value = loadUiPrefs();
-  window.addEventListener("ah-ui-changed", appearance.onUiChanged);
+  window.addEventListener("riddle-ui-changed", appearance.onUiChanged);
   await load();
   llm.refreshProviderHealth().catch(() => {});
   healthPoll = setInterval(() => llm.refreshProviderHealth().catch(() => {}), 10000);
@@ -507,7 +507,7 @@ onMounted(async () => {
   loadHealthOverview();
 });
 onUnmounted(() => {
-  window.removeEventListener("ah-ui-changed", appearance.onUiChanged);
+  window.removeEventListener("riddle-ui-changed", appearance.onUiChanged);
   appearance.disposeAppearance();
   clearInterval(healthPoll);
   clearInterval(restartPoll);

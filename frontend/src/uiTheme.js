@@ -1,8 +1,8 @@
 /** 外观偏好：服务端持久化，localStorage 只做启动缓存。 */
 
-export const UI_STORAGE_KEY = "ah-ui";
-export const THEME_STORAGE_KEY = "ah-theme";
-const MIGRATED_KEY = "ah-ui-migrated";
+export const UI_STORAGE_KEY = "riddle-ui";
+export const THEME_STORAGE_KEY = "riddle-theme";
+const MIGRATED_KEY = "riddle-ui-migrated";
 
 export const ACCENT_PRESETS = [
   { h: 330, name: "品红" },
@@ -197,7 +197,7 @@ export function applyWallpaper(prefs) {
 export async function applyUi(prefs) {
   applyChrome(prefs);
   applyWallpaper(prefs);
-  window.dispatchEvent(new CustomEvent("ah-ui-changed", { detail: prefs }));
+  window.dispatchEvent(new CustomEvent("riddle-ui-changed", { detail: prefs }));
   return prefs;
 }
 

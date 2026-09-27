@@ -1,4 +1,4 @@
-﻿"""HTTP/WS 访问保护与安全响应头。
+"""HTTP/WS 访问保护与安全响应头。
 
 多令牌模式：
 - RIDDLE_API_TOKEN：全权限（读写、启停任务、复审、助手等）
@@ -106,7 +106,7 @@ def token_from_headers(headers: Mapping[str, str]) -> str:
     return (
         headers.get("x-riddle-token")
         or _bearer_token(headers.get("authorization"))
-        or (cookie.get("ah_api_token").value if cookie.get("ah_api_token") else "")
+        or (cookie.get("riddle_token").value if cookie.get("riddle_token") else "")
         or ""
     ).strip()
 

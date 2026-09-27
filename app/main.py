@@ -1,4 +1,4 @@
-﻿"""FastAPI 入口。lifespan 启动时初始化 DB + 恢复 24x7 任务。
+"""FastAPI 入口。lifespan 启动时初始化 DB + 恢复 24x7 任务。
 
 知蠹 Riddle — AI 自主漏洞挖掘平台
 Powered By moliyu1101
@@ -168,7 +168,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="知蠹 Riddle", version="0.1", lifespan=lifespan)
 # 真实浏览器截图静态目录：/workfiles/<任务目录>/evidence/screenshots/*.png。
 # 安全静态服务：/workfiles 已纳入 security_middleware 鉴权（full/readonly 可访问，
-# observer 与未认证拒绝）；<img> 为同源请求自动携带 ah_api_token cookie，无需
+# observer 与未认证拒绝）；<img> 为同源请求自动携带 riddle_token cookie，无需
 # Authorization 头。内容安全（路径穿越防护 + HTML/SVG 强制下载）见 app/workfiles.py。
 _work_root = Path(worker_config.work_root)
 
