@@ -273,9 +273,11 @@ class Worker:
                 "header_names": hnames[:20],
             }
             self.target_meta["auth_attempt"] = payload
+            kind_cn = {"cookie": "Cookie", "bearer": "Bearer", "password": "账密"}
+            kinds_cn = "+".join(kind_cn.get(k, k) for k in payload["kinds"]) or "凭据"
             self._emit(
                 "auth_status",
-                message="已注入会话（session_set 自动捕获），后续请求自动携带。",
+                message=f"凭据注入[{kinds_cn}]：session_set 自动捕获会话（{names[:3]} 或 {hnames[:2]}），后续请求自动携带。",
                 **payload,
             )
         except Exception:

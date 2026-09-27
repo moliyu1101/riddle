@@ -34,9 +34,14 @@ function elapsed(iso) {
 function authBadge(w) {
   const st = w?.auth || "";
   if (!st) return "";
-  if (st === "injected") return "凭据·已注入";
-  if (st === "login_ok") return "凭据·登录成功";
-  if (st === "login_fail") return "凭据·登录失败";
+  const KIND_CN = { cookie: "Cookie", bearer: "Bearer", password: "账密" };
+  const kinds = String(w?.auth_kinds || "")
+    .split(",").map((k) => k.trim()).filter(Boolean)
+    .map((k) => KIND_CN[k.toLowerCase()] || k);
+  const tag = kinds.length ? `${kinds.join("+")}·` : "凭据·";
+  if (st === "injected") return `${tag}已注入`;
+  if (st === "login_ok") return `${tag}登录成功`;
+  if (st === "login_fail") return `${tag}登录失败`;
   if (st === "unused") return "凭据·未匹配";
   return `凭据·${st}`;
 }

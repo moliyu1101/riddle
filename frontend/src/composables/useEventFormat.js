@@ -376,13 +376,26 @@ export function useEventFormat(engineRef) {
       case "cluster_cooldown_skip": return `集群冷却跳过`;
       case "skip": return `跳过`;
       case "auth_status": {
-        const kinds = (d.kinds || []).join(",") || "-";
+        // 分类回显：凭据种类（Cookie/Bearer/账密）+ 已注入的具体字段名，不再千篇一律「凭据注入」。
+        const KIND_CN = { cookie: "Cookie", bearer: "Bearer", password: "账密" };
+        const kinds = (d.kinds || []).map((k) => KIND_CN[String(k).toLowerCase()] || k).join("+");
         const st = d.status || "?";
-        if (d.message) return d.message;
-        if (st === "injected") return `凭据[${kinds}] 已注入`;
-        if (st === "login_ok") return `凭据[${kinds}] 登录成功`;
-        if (st === "login_fail") return `凭据[${kinds}] 登录失败：${cap(d.reason, 100)}`;
-        return `凭据未使用：${cap(d.reason, 100)}`;
+        const fields = [...(d.cookie_names || []), ...(d.header_names || [])]
+          .slice(0, 4).join("/");
+        const tag = kinds ? `[${kinds}]` : "";
+        if (st === "injected") {
+          return `凭据注入${tag}：会话已生效${fields ? `（${fields}）` : ""} — ${cap(d.reason || d.message || "", 80)}`;
+        }
+        if (st === "login_ok") {
+          return `账密登录成功${tag || "[账密]"}：已建立会话 — ${cap(d.reason || d.message || "", 80)}`;
+        }
+        if (st === "login_fail") {
+          return `账密登录失败${tag || "[账密]"}：${cap(d.reason || d.message || "", 100)}`;
+        }
+        if (st === "unused") {
+          return `凭据未匹配：${cap(d.reason || d.message || "", 100)}`;
+        }
+        return d.message || `凭据${tag}：${st}`;
       }
       case "ping": return null;
       default: return ev.message || `${ev.kind || ""}`;
