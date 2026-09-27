@@ -295,8 +295,17 @@ export const api = {
     downloadFile("GET", `/api/tasks/${taskId}/killsweeps/export${qs({ format })}`),
   finding: (id) => req("GET", `/api/findings/${id}`),
   findingReport: (id, srcType) => req("GET", `/api/findings/${id}/report${qs({ src_type: srcType })}`),
+  // 报告 Markdown 内联文本（download=0 不触发下载）：抽屉预览与「复制 Markdown」共用，
+  // 与导出文件同源——报告拼装只维护后端这一份实现。
+  findingReportMd: (id, srcType) =>
+    req("GET", `/api/findings/${id}/export${qs({ format: "md", download: 0, src_type: srcType })}`),
   exportReport: (id, format, srcType) =>
     downloadFile("GET", `/api/findings/${id}/export${qs({ format, src_type: srcType })}`),
+  // 任务级批量报告（复审通过全量）：md / edusrc
+  reportsExportMd: (id, submitted, format = "md") =>
+    req("GET", `/api/tasks/${id}/reports-export${qs({ format, download: 0, submitted })}`),
+  reportsExportDownload: (id, format, submitted) =>
+    downloadFile("GET", `/api/tasks/${id}/reports-export${qs({ format, submitted })}`),
   reportVersions: (id) => req("GET", `/api/findings/${id}/versions`),
   restoreVersion: (id, version, note) =>
     req("POST", `/api/findings/${id}/versions/${version}/restore`, { note }),

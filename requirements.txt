@@ -12,6 +12,8 @@ websockets>=13.0,<16.0
 sqlalchemy>=2.0.0,<3.0.0
 greenlet>=3.0.0,<4.0.0
 aiosqlite>=0.19.0,<1.0.0
+# schema 版本化迁移（init_db 末尾 stamp/upgrade 对齐；存量库自动 stamp 到基线，零风险）
+alembic>=1.13.0,<2.0.0
 python-multipart>=0.0.9,<0.1.0
 # 真实浏览器截图（capture_evidence screenshot 开关）。容器内需 playwright install chromium。
 # 注意：不要装 pyppeteer/selenium/undetected-chromedriver，它们会降级 websockets 导致 uvicorn 崩溃。

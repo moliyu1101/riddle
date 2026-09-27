@@ -4,7 +4,7 @@ import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { api, canWrite, isReadonly } from "../api.js";
 import { copyText } from "../clipboard.js";
-import { CONF, buildReportMd, effectiveSeverity, severityToCn, normalizeSteps } from "../report.js";
+import { CONF, effectiveSeverity, severityToCn, normalizeSteps } from "../report.js";
 import { fmtLocalTime } from "../format.js";
 
 const props = defineProps({ findingId: String, mode: String, srcType: String }); // mode: view | review | submit | rejected | archived
@@ -77,6 +77,7 @@ async function loadFinding() {
   editing.value = false;
   deepenOpen.value = false;
   deepenText.value = "";
+  await _loadReportMd();
   assistantText.value = "";
   assistantBusy.value = false;
   if (assistantAbort.value) {
@@ -115,7 +116,23 @@ function fmtFindingTime(value) {
   return fmtLocalTime(value) || "-";
 }
 
-const html = computed(() => f.value ? renderSafeMd(buildReportMd(f.value)) : "");
+// 报告正文单一来源 = 后端 /export?format=md（与导出文件同一份拼装实现，杜绝前后端双份漂移）。
+// 加载失败显示占位提示；重新打开/编辑保存（loadFinding）都会重拉。
+const html = ref("");
+let _reportMdToken = 0;
+async function _loadReportMd() {
+  const id = props.findingId;
+  const token = ++_reportMdToken;
+  if (!id) { html.value = ""; return; }
+  try {
+    const md = await api.findingReportMd(id, props.srcType);
+    if (token === _reportMdToken) html.value = renderSafeMd(typeof md === "string" ? md : "");
+  } catch (e) {
+    if (token === _reportMdToken) {
+      html.value = "> 报告正文加载失败，可点击右上角导出按钮重试。\n\n`" + String(e.message || e) + "`";
+    }
+  }
+}
 const effSev = computed(() => {
   if (!f.value) return "-";
   return severityToCn(effectiveSeverity(f.value));
@@ -368,12 +385,17 @@ async function restoreArchived() {
   }
 }
 
-function copyMd() {
-  copyText(buildReportMd(f.value)).then(() => {
+async function copyMd() {
+  try {
+    const md = await api.findingReportMd(f.value.id, props.srcType);
+    if (typeof md !== "string" || !md.trim()) throw new Error("empty");
+    await copyText(md);
     mdCopied.value = true;
     emit("toast", "报告已复制（Markdown）");
     setTimeout(() => { mdCopied.value = false; }, 2000);
-  }).catch(() => emit("toast", "复制失败，请使用导出按钮"));
+  } catch (e) {
+    emit("toast", "复制失败：" + String(e.message || e).replace(/^\d+\s*/, ""));
+  }
 }
 
 async function exportReport(format) {

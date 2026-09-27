@@ -25,7 +25,14 @@ from app.db.session import get_session
 from app.events import bus
 from app.killsweep_status import killsweep_retryable
 from app.llm.client import LLMClient, LLMError
-from app.report_export import build_docx_bytes, build_report_html, build_report_markdown, build_report_sections, score_breakdown
+from app.report_export import (
+    build_docx_bytes,
+    build_edusrc_report_json,
+    build_report_html,
+    build_report_markdown,
+    build_report_sections,
+    score_breakdown,
+)
 from app.tools.executor import ToolExecutor
 
 
@@ -360,8 +367,12 @@ async def finding_report(finding_id: str, src_type: Optional[str] = Query(None),
 @router.get("/findings/{finding_id}/export")
 async def export_report(finding_id: str, format: str = Query("md", pattern="^(md|json|docx|html)$"),
                         src_type: Optional[str] = Query(None),
+                        download: bool = Query(True),
                         session: AsyncSession = Depends(get_session)):
-    """报告导出增强：md / json(EduSRC) / docx / html(可打印 PDF)。"""
+    """报告导出增强：md / json(EduSRC) / docx / html(可打印 PDF)。
+
+    download=0 时（前端「复制 Markdown」/ 抽屉预览）返回内联文本，不带 attachment 头。
+    """
     f = await session.get(Finding, finding_id)
     if not f:
         raise HTTPException(404, "漏洞不存在")
@@ -371,11 +382,12 @@ async def export_report(finding_id: str, format: str = Query("md", pattern="^(md
         src_type = (getattr(task, "src_type", None) or "edusrc") if task else "edusrc"
     f.edu_school = await _resolve_edu_school_async(f.target_url) or _edu_school_fast(f.target_url)
     base = f"riddle-report-{f.id[:8]}"
+    disposition = 'attachment; filename="{}"' if download else 'inline; filename="{}"'
     if format == "md":
         return Response(
             build_report_markdown(f, r, src_type),
             media_type="text/markdown; charset=utf-8",
-            headers={"Content-Disposition": f'attachment; filename="{base}.md"'},
+            headers={"Content-Disposition": disposition.format(f"{base}.md")},
         )
     if format == "json":
         from app.report_export import build_report_sections as _sections
@@ -383,19 +395,64 @@ async def export_report(finding_id: str, format: str = Query("md", pattern="^(md
         return Response(
             json.dumps(data, ensure_ascii=False, indent=2),
             media_type="application/json; charset=utf-8",
-            headers={"Content-Disposition": f'attachment; filename="{base}.json"'},
+            headers={"Content-Disposition": disposition.format(f"{base}.json")},
         )
     if format == "docx":
         return Response(
             build_docx_bytes(f, r, src_type),
             media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            headers={"Content-Disposition": f'attachment; filename="{base}.docx"'},
+            headers={"Content-Disposition": disposition.format(f"{base}.docx")},
         )
     return Response(
         build_report_html(f, r, src_type),
         media_type="text/html; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{base}.html"'},
+        headers={"Content-Disposition": disposition.format(f"{base}.html")},
     )
+
+
+@router.get("/tasks/{task_id}/reports-export")
+async def task_reports_export(task_id: str, format: str = Query("md", pattern="^(md|edusrc)$"),
+                              submitted: Optional[bool] = None,
+                              download: bool = Query(True),
+                              session: AsyncSession = Depends(get_session)):
+    """任务级批量报告导出（复审通过的全量，与单份导出同一套拼装实现）。
+
+    format=md：全部报告以 --- 分隔拼成一份 Markdown；
+    format=edusrc：EduSRC 平台提交 JSON 数组。
+    download=0 返回内联文本（前端「复制全部」场景）。
+    """
+    task = await session.get(Task, task_id)
+    src_type = (getattr(task, "src_type", None) or "edusrc") if task else "edusrc"
+    q = select(Finding, Review).join(Review, Review.finding_id == Finding.id).where(
+        Finding.task_id == task_id, Review.user_status == "passed"
+    )
+    if submitted is not None:
+        q = q.where(Review.submitted == submitted)
+    q = q.order_by(Review.submitted, Review.score.desc())
+    rows = (await session.execute(q)).all()
+    if not rows:
+        raise HTTPException(404, "没有可导出的报告（复审通过列表为空）")
+
+    base = f"riddle-reports-{task_id[:8]}"
+    disposition = 'attachment; filename="{}"' if download else 'inline; filename="{}"'
+    if format == "edusrc":
+        items = []
+        for f, r in rows:
+            f.edu_school = await _resolve_edu_school_async(f.target_url) or _edu_school_fast(f.target_url)
+            items.append(build_edusrc_report_json(f, r, build_report_markdown(f, r, src_type)))
+        payload = json.dumps(items, ensure_ascii=False, indent=2)
+        media = "application/json; charset=utf-8"
+        filename = f"{base}-edusrc.json"
+    else:
+        parts = []
+        for f, r in rows:
+            f.edu_school = await _resolve_edu_school_async(f.target_url) or _edu_school_fast(f.target_url)
+            parts.append(build_report_markdown(f, r, src_type))
+        payload = "\n\n---\n\n".join(parts)
+        media = "text/markdown; charset=utf-8"
+        filename = f"{base}.md"
+    return Response(payload, media_type=media,
+                    headers={"Content-Disposition": disposition.format(filename)})
 
 
 @router.get("/tasks/{task_id}/review-queue")

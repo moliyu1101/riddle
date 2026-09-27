@@ -1,15 +1,19 @@
 ﻿"""异步数据库会话管理（SQLite + aiosqlite）。"""
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
 import re
 from pathlib import Path
 from typing import AsyncGenerator
 
-from sqlalchemy import event
+from sqlalchemy import event, inspect
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.db.models import Base
+
+logger = logging.getLogger(__name__)
 
 DB_PATH = os.environ.get("DB_PATH", str(Path(__file__).resolve().parent.parent.parent / "data" / "riddle.db"))
 Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
@@ -193,6 +197,38 @@ async def init_db() -> None:
     async with engine.begin() as conn:
         await _ensure_unique_indexes(conn)
         await _ensure_secondary_indexes(conn)
+    # alembic 对齐：历史迁移完成后 stamp 到基线；此后 schema 变更走 migrations/versions
+    await asyncio.to_thread(_alembic_align)
+
+
+def _alembic_align() -> None:
+    """alembic 版本对齐（同步操作，由 init_db 在线程里跑）。
+
+    - 库里无 alembic_version 表（存量老库 / 全新建库）：schema 已由上方
+      create_all + 历史幂等迁移就绪，stamp 到 head 即可，零数据风险；
+    - 已有 version 表：执行增量 upgrade head。
+    之后 schema 变更一律写 migrations/versions/ 新 revision，_MIGRATIONS 冻结为历史。
+    """
+    from alembic import command
+    from alembic.config import Config
+
+    ini = Path(__file__).resolve().parents[2] / "alembic.ini"
+    if not ini.exists():
+        logger.warning("alembic.ini 不存在，跳过迁移对齐（异常部署形态）")
+        return
+    cfg = Config(str(ini))
+    # 独立同步引擎只做一次存在性检查（async 引擎的 sync 镜像池不能混用；
+    # alembic upgrade 自身在 env.py 里建同步引擎，互不干扰）
+    from sqlalchemy import create_engine
+    sync_engine = create_engine(f"sqlite:///{DB_PATH}")
+    try:
+        has_version = inspect(sync_engine).has_table("alembic_version")
+    finally:
+        sync_engine.dispose()
+    if has_version:
+        command.upgrade(cfg, "head")
+    else:
+        command.stamp(cfg, "head")
 
 
 async def _ensure_unique_indexes(conn) -> None:

@@ -5,6 +5,8 @@
 """
 from __future__ import annotations
 
+import re
+
 import base64
 import html as _html
 import io
@@ -589,3 +591,93 @@ def build_report_html(f: Finding, r: Review | None, src_type: str = "edusrc") ->
         "ol{{padding-left:22px}}li{{margin:4px 0}}"
         "@media print{{body{{margin:0}}pre{{white-space:pre-wrap}}}}</style></head><body>{}</body></html>"
     ).format(esc(ov["title"]), "".join(parts))
+
+# ============ EduSRC 平台提交 JSON（原前端 buildEdusrcReportJson，收敛到后端单源） ============
+_EDUSRC_CATEGORY_MAP = {
+    "SQL注入漏洞": 1, "文件上传漏洞": 2, "代码执行漏洞": 3, "命令执行漏洞": 4,
+    "XSS漏洞": 5, "CSRF漏洞": 6, "SSRF漏洞": 7, "点击劫持漏洞": 8,
+    "弱口令": 9, "敏感信息泄露": 10, "其他漏洞": 13, "任意文件读取": 14,
+    "任意文件下载": 15, "未授权访问": 16, "逻辑缺陷": 17,
+    "疑似被黑/存在后门": 18, "AI漏洞": 19,
+}
+_EDUSRC_LEVEL_MAP = {"严重": "grave", "高危": "high", "中危": "medium", "低危": "low"}
+
+
+def _edusrc_infer_category(f) -> str:
+    text = f"{f.vuln_type or ''} {(f.title or '')}".lower()
+    rules = (
+        (r"sql|sqli|注入", "SQL注入漏洞"),
+        (r"upload|file_upload|文件上传", "文件上传漏洞"),
+        (r"command|cmd|命令执行", "命令执行漏洞"),
+        (r"rce|code|ssti|deserialize|反序列化|代码执行", "代码执行漏洞"),
+        (r"xss|跨站", "XSS漏洞"),
+        (r"csrf", "CSRF漏洞"),
+        (r"ssrf", "SSRF漏洞"),
+        (r"clickjacking|点击劫持", "点击劫持漏洞"),
+        (r"weak|password|弱口令|默认口令", "弱口令"),
+        (r"download|任意文件下载", "任意文件下载"),
+        (r"read|lfi|path|traversal|任意文件读取|路径穿越", "任意文件读取"),
+        (r"info|leak|disclosure|sensitive|data|数据|泄露", "敏感信息泄露"),
+        (r"logic|payment|captcha|业务|逻辑|验证码", "逻辑缺陷"),
+        (r"ai|prompt|llm", "AI漏洞"),
+    )
+    for pattern, name in rules:
+        if re.search(pattern, text):
+            return name
+    return "未授权访问"
+
+
+def _edusrc_slug(value) -> str:
+    s = re.sub(r"[^a-z0-9一-鿿]+", "-", str(value or "").strip().lower())
+    return s.strip("-") or "target"
+
+
+def _edusrc_short_hash(value) -> str:
+    h = 2166136261
+    for ch in str(value or ""):
+        h ^= ord(ch)
+        h = (h * 16777619) & 0xFFFFFFFF
+    return format(h, "08x")
+
+
+def build_edusrc_report_json(f: Finding, r: Review | None, content_md: str) -> dict:
+    """EduSRC 平台提交格式（含用户编辑覆盖与等级/分类推断）。"""
+    edits = (r.user_edits if r else None) or {}
+
+    def eff(key, default=""):
+        v = edits.get(key)
+        if v is not None and v != "":
+            return v
+        return getattr(f, key, None) or default
+
+    def first_number(values, fallback):
+        for v in values:
+            try:
+                n = int(v)
+            except (TypeError, ValueError):
+                continue
+            if n > 0:
+                return n
+        return fallback
+
+    review_sev = (r.user_severity if r else None) or (r.severity_final if r else None) or "-"
+    edu_school = (getattr(f, "edu_school", "") or "").strip()
+    owner = (edu_school or f.owner or str(edits.get("owner") or "")).strip()
+    firm_name = owner if owner and owner != "-" else "待填写单位"
+    title = firm_name if firm_name != "待填写单位" else (str(eff("title")) or "知蠹 Riddle 漏洞报告")
+    edusrc_meta = (f.evidence or {}).get("edusrc") if isinstance(f.evidence, dict) else {}
+    edusrc_meta = edusrc_meta or {}
+    category_name = _edusrc_infer_category(f)
+    return {
+        "id": f"riddle-{_edusrc_slug(f.vuln_type)}-{_edusrc_short_hash(f'{f.id or ""}|{f.target_url or ""}|{title}')}",
+        "vuln_type": f.vuln_type or "custom",
+        "title": title,
+        "category": _EDUSRC_CATEGORY_MAP.get(category_name, _EDUSRC_CATEGORY_MAP["未授权访问"]),
+        "level": _EDUSRC_LEVEL_MAP.get(review_sev, "medium"),
+        "firm_id": first_number([edits.get("firm_id"), edusrc_meta.get("firm_id"), getattr(f, "firm_id", None)], 0),
+        "firm_name": firm_name,
+        "company_id": first_number([edits.get("company_id"), edusrc_meta.get("company_id"), getattr(f, "company_id", None)], 3),
+        "credentials": "False",
+        "url": f.target_url or "",
+        "content": content_md,
+    }

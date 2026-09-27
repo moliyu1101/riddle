@@ -2,7 +2,6 @@
 import { ref, onMounted, onUnmounted, computed, watch, nextTick } from "vue";
 import { api, wsUrl, authRoleRef, authReadyRef, loadAuthRole } from "../api.js";
 import { copyText, formatLlmErrorCopy } from "../clipboard.js";
-import { buildReportMd, buildEdusrcToolReport } from "../report.js";
 import { useEventFormat, TRACE_KINDS, DETAIL_KINDS } from "../composables/useEventFormat.js";
 import { openEditTask } from "../composables/useCreateTask.js";
 import ReportDrawer from "../components/ReportDrawer.vue";
@@ -72,7 +71,6 @@ const submitLoading = ref(false);
 const archivedHasMore = ref(false);
 const archivedLoading = ref(false);
 const bulkWorking = ref(false);
-const EXPORT_PAGE_SIZE = 80;
 const STREAM_DETAIL_CAP = 40;
 let ws = null, poll = null, boardPoll = null, searchTimer = null;
 let collectRefreshTimer = null;
@@ -779,35 +777,18 @@ async function loadMoreSubmit() {
   await loadSubmit({ reset: false });
 }
 
-async function fetchAllSubmitReports() {
-  const reports = [];
-  let offset = 0;
-  for (;;) {
-    const res = await api.submitList(props.id, submittedFilter.value, undefined, {
-      compact: false,
-      limit: EXPORT_PAGE_SIZE,
-      offset,
-    });
-    const rows = Array.isArray(res) ? res : (res.items || []);
-    reports.push(...rows);
-    if (Array.isArray(res) || !res.has_more) break;
-    offset += rows.length;
-    await new Promise((resolve) => requestAnimationFrame(resolve));
-  }
-  return reports;
-}
+// 批量复制/导出全部走后端 /reports-export（与单份导出同一实现，前端不再本地拼装报告）。
+const submittedParam = () => (submittedFilter.value === false ? false : undefined);
 
 async function copyAll() {
   if (bulkWorking.value) return;
   bulkWorking.value = true;
   try {
-    toast("正在生成全部 Markdown...");
-    const reports = await fetchAllSubmitReports();
-    const md = reports.map((f) => buildReportMd(f)).join("\n\n---\n\n");
+    const md = await api.reportsExportMd(props.id, submittedParam());
     await copyText(md);
-    toast(`已复制 ${reports.length} 份报告`);
-  } catch {
-    toast("复制失败，请使用导出按钮");
+    toast("全部报告已复制（Markdown）");
+  } catch (e) {
+    toast("复制失败：" + String(e.message || e).replace(/^\d+\s*/, ""));
   } finally {
     bulkWorking.value = false;
   }
@@ -816,35 +797,23 @@ async function exportAll() {
   if (bulkWorking.value) return;
   bulkWorking.value = true;
   try {
-    toast("正在生成 Markdown 文件...");
-    const reports = await fetchAllSubmitReports();
-    const md = reports.map((f) => buildReportMd(f)).join("\n\n---\n\n");
-    const blob = new Blob([md], { type: "text/markdown" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `riddle-${props.id.slice(0, 8)}-submit.md`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 0);   // 释放 object URL，避免内存泄漏
-    toast(`已导出 ${reports.length} 份报告`);
+    await api.reportsExportDownload(props.id, "md", submittedParam());
+    toast("已导出全部报告（Markdown）");
+  } catch (e) {
+    toast("导出失败：" + String(e.message || e).replace(/^\d+\s*/, ""));
   } finally {
     bulkWorking.value = false;
   }
-}
-function edusrcReports(reports) {
-  return reports.map((f) => buildEdusrcToolReport(f));
 }
 async function copyEdusrcAll() {
   if (bulkWorking.value) return;
   bulkWorking.value = true;
   try {
-    toast("正在生成全部 EduSRC JSON...");
-    const reports = await fetchAllSubmitReports();
-    const text = JSON.stringify(edusrcReports(reports), null, 2);
+    const text = await api.reportsExportMd(props.id, submittedParam(), "edusrc");
     await copyText(text);
-    toast(`已复制 ${reports.length} 份 EduSRC JSON`);
-  } catch {
-    toast("复制失败，请使用导出 reports.json");
+    toast("全部 EduSRC JSON 已复制");
+  } catch (e) {
+    toast("复制失败：" + String(e.message || e).replace(/^\d+\s*/, ""));
   } finally {
     bulkWorking.value = false;
   }
@@ -853,17 +822,10 @@ async function exportEdusrcAll() {
   if (bulkWorking.value) return;
   bulkWorking.value = true;
   try {
-    toast("正在生成 reports.json...");
-    const reports = await fetchAllSubmitReports();
-    const text = JSON.stringify(edusrcReports(reports), null, 2);
-    const blob = new Blob([text], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `riddle-${props.id.slice(0, 8)}-edusrc-reports.json`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 0);   // 释放 object URL，避免内存泄漏
-    toast(`已导出 ${reports.length} 份 EduSRC JSON`);
+    await api.reportsExportDownload(props.id, "edusrc", submittedParam());
+    toast("已导出 reports.json（EduSRC）");
+  } catch (e) {
+    toast("导出失败：" + String(e.message || e).replace(/^\d+\s*/, ""));
   } finally {
     bulkWorking.value = false;
   }
