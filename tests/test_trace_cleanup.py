@@ -139,22 +139,23 @@ class PersistAfterFinishTests(unittest.IsolatedAsyncioTestCase):
 
         runner = TaskRunner("task-vis")
         # 不在 _live → 细粒度不应落库
-        session = SimpleNamespace(add=Mock(), commit=AsyncMock())
-        with patch("app.orchestrator.SessionLocal", return_value=_SessionContext(session)):
-            await runner._persist_worker_trace(
-                "task-vis", "t1", "tool_http",
-                {"method": "GET", "url": "https://example.edu/api"},
-            )
+        session = SimpleNamespace(add=Mock(), add_all=Mock(), commit=AsyncMock())
+        runner._persist_worker_trace(
+            "task-vis", "t1", "tool_http",
+            {"method": "GET", "url": "https://example.edu/api"},
+        )
+        self.assertEqual(runner._trace_buffer, [])
         session.add.assert_not_called()
 
-        # 在 _live → 可以落库
+        # 在 _live → 可以落库（经缓冲批量刷盘）
         runner._live["t1"] = {"target_id": "t1"}
         with patch("app.orchestrator.SessionLocal", return_value=_SessionContext(session)):
-            await runner._persist_worker_trace(
+            runner._persist_worker_trace(
                 "task-vis", "t1", "tool_http",
                 {"method": "GET", "url": "https://example.edu/api"},
             )
-        session.add.assert_called_once()
+            await runner._flush_trace_buffer()
+        session.add_all.assert_called_once()
 
     async def test_summary_persist_even_when_not_live(self):
         from types import SimpleNamespace
@@ -166,14 +167,17 @@ class PersistAfterFinishTests(unittest.IsolatedAsyncioTestCase):
             from test_agent_visibility import _SessionContext
 
         runner = TaskRunner("task-vis")
-        session = SimpleNamespace(add=Mock(), commit=AsyncMock())
+        session = SimpleNamespace(add=Mock(), add_all=Mock(), commit=AsyncMock())
+        runner._persist_worker_trace(
+            "task-vis", "t1", "worker_finish",
+            {"verdict": "found"},
+        )
+        self.assertEqual(len(runner._trace_buffer), 1, "摘要事件不在细粒度名单，收尾后仍保留")
         with patch("app.orchestrator.SessionLocal", return_value=_SessionContext(session)):
-            await runner._persist_worker_trace(
-                "task-vis", "t1", "worker_finish",
-                {"verdict": "found"},
-            )
-        session.add.assert_called_once()
-        self.assertEqual(session.add.call_args[0][0].kind, "worker_finish")
+            await runner._flush_trace_buffer()
+        session.add_all.assert_called_once()
+        events = session.add_all.call_args[0][0]
+        self.assertEqual(events[0].kind, "worker_finish")
 
 
 if __name__ == "__main__":

@@ -171,22 +171,25 @@ class _SessionContext:
 class PersistTraceTests(unittest.IsolatedAsyncioTestCase):
     async def test_persist_skips_non_trace_kinds(self):
         runner = TaskRunner("task-vis")
-        session = SimpleNamespace(add=Mock(), commit=AsyncMock())
-        with patch("app.orchestrator.SessionLocal", return_value=_SessionContext(session)):
-            await runner._persist_worker_trace("task-vis", "t1", "ping", {"x": 1})
-        session.add.assert_not_called()
+        runner._persist_worker_trace("task-vis", "t1", "ping", {"x": 1})
+        self.assertEqual(runner._trace_buffer, [])
 
     async def test_persist_writes_task_event(self):
+        """trace 事件先进缓冲，批量刷盘时一次落库（不再每事件一个 session+commit）。"""
         runner = TaskRunner("task-vis")
         runner._live["t1"] = {"target_id": "t1"}  # 细粒度仅在活态中落库
-        session = SimpleNamespace(add=Mock(), commit=AsyncMock())
+        session = SimpleNamespace(add_all=Mock(), commit=AsyncMock())
         with patch("app.orchestrator.SessionLocal", return_value=_SessionContext(session)):
-            await runner._persist_worker_trace(
+            runner._persist_worker_trace(
                 "task-vis", "t1", "tool_http",
                 {"method": "GET", "url": "https://example.edu/api", "round": 2},
             )
-        session.add.assert_called_once()
-        event = session.add.call_args[0][0]
+            self.assertEqual(len(runner._trace_buffer), 1)
+            await runner._flush_trace_buffer()
+        session.add_all.assert_called_once()
+        events = session.add_all.call_args[0][0]
+        self.assertEqual(len(events), 1)
+        event = events[0]
         self.assertEqual(event.agent, "worker")
         self.assertEqual(event.kind, "tool_http")
         self.assertEqual(event.payload.get("target_id"), "t1")

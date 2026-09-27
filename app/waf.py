@@ -52,11 +52,14 @@ _QUERY_RULES: list[tuple[str, re.Pattern[str]]] = [
     ("path_traversal_query", re.compile(r"(?:\.\./|\.\.\\|%2e%2e|%252e%252e)", re.I)),
     ("encoded_scheme_query", re.compile(r"(?:file|gopher|dict|ldap|jar|php|data):/{0,2}", re.I)),
     ("sqli_union", re.compile(r"(?:\bunion\b.{0,80}\bselect\b|\bselect\b.{0,80}\bfrom\b)", re.I | re.S)),
-    ("sqli_boolean", re.compile(r"(?:\bor\b|\band\b)\s+[\w'\"()]+\s*=\s*[\w'\"()]+", re.I)),
+    # token 限长：无界贪心 token 在长 query 上有 O(n²) 回溯空间（中间件每请求执行，可放大 CPU）
+    ("sqli_boolean", re.compile(r"(?:\bor\b|\band\b)\s+[\w'\"()]{1,64}\s*=\s*[\w'\"()]{1,64}", re.I)),
     ("sqli_time", re.compile(r"(?:sleep\s*\(|benchmark\s*\(|pg_sleep\s*\(|waitfor\s+delay)", re.I)),
     ("xss_probe", re.compile(r"(?:<\s*script\b|onerror\s*=|onload\s*=|javascript:|data:text/html)", re.I)),
     ("rce_probe", re.compile(r"(?:\b(?:cat|bash|sh|curl|wget|nc|python|perl)\b.{0,60}(?:/etc/passwd|bash -i|/bin/sh)|\$\{jndi:)", re.I | re.S)),
-    ("template_probe", re.compile(r"(?:\{\{.*(?:config|class|constructor|self).*\}\}|\$\{.*(?:T\(|Runtime|jndi).*\})", re.I | re.S)),
+    # 无界 .*（re.S）在 8KB 无闭合 {{ 上最坏指数级回溯；改否定字符类 + 表达式限长。
+    # WAF 只是纵深，超长模板表达式漏检可接受（真正防线是参数化与出口转义）。
+    ("template_probe", re.compile(r"\{\{[^{}]{0,200}?(?:config|class|constructor|self)[^{}]{0,200}?\}\}|\$\{[^${}]{0,200}?(?:T\(|Runtime|jndi)[^${}]{0,200}?\}", re.I)),
 ]
 
 _HEADER_RULES: list[tuple[str, re.Pattern[str]]] = [
@@ -82,10 +85,19 @@ def _client_ip(request: Request) -> str:
 
 def _normalized_path(request: Request) -> str:
     raw = request.url.path
-    # 双解码覆盖常见二次编码绕过。
-    once = unquote(raw)
-    twice = unquote(once)
-    return twice[:_MAX_PATH_LEN]
+    return _multi_unquote(raw)[:_MAX_PATH_LEN]
+
+
+def _multi_unquote(text: str, rounds: int = 5) -> str:
+    """循环百分号解码直到稳定（上限 5 层）：固定两层解码会让三层及以上的
+    编码 payload（如 %25253Cscript）穿透规则匹配。"""
+    out = text
+    for _ in range(rounds):
+        dec = unquote(out)
+        if dec == out:
+            break
+        out = dec
+    return out
 
 
 def _query_for_inspection(request: Request) -> str:
@@ -97,7 +109,7 @@ def _query_for_inspection(request: Request) -> str:
         # 报告搜索是正常业务入口，用户经常搜索 SQLi/XSS/RCE payload。
         # 只跳过 q 本身，其它控制参数仍接受 WAF 检查。
         pairs = [(k, v) for k, v in pairs if k != "q"]
-    return unquote(unquote(urlencode(pairs)))[:8192]
+    return _multi_unquote(urlencode(pairs))[:8192]
 
 
 def inspect_request(request: Request) -> WAFDecision:

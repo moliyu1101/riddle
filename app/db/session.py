@@ -18,12 +18,12 @@ DATABASE_URL = f"sqlite+aiosqlite:///{DB_PATH}"
 
 engine = create_async_engine(
     DATABASE_URL, echo=False, future=True,
-    # 默认 QueuePool 只有 pool_size=5 + max_overflow=10 = 15 条连接。
-    # orchestrator 高并发时（多 worker × 心跳/落库/情报 + reviewer +
-    # killsweep + escalate + API/WebSocket），同时存活的 session 远超 15，
-    # 导致连接获取超时。SQLite 是文件级 DB，连接创建开销极低，可以放心调大。
-    pool_size=20,
-    max_overflow=40,
+    # SQLite 是单写者：连接池越大，并发写竞争越激烈（busy_timeout 等锁的连接越多）。
+    # WAL 下读并发不吃写锁，20 条峰值足够覆盖多 worker 心跳/落库 + reviewer/killsweep
+    # + API/WS 的读场景；高频小写入已改为 trace 缓冲批量刷盘（TaskRunner._flush_trace_buffer），
+    # 写入次数大幅下降后无需用大池硬扛。
+    pool_size=8,
+    max_overflow=12,
     pool_timeout=60,
 )
 SessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

@@ -140,6 +140,9 @@ WORKER_CLEANUP_TIMEOUT = float(os.environ.get("WORKER_CLEANUP_TIMEOUT", "15"))
 REVIEW_RETRY_BACKOFF = float(os.environ.get("REVIEW_RETRY_BACKOFF", "300"))
 # 审核超时/异常的最大重试次数：达上限自动放行进人工复审队列（不再自动重审）。
 REVIEW_MAX_ATTEMPTS = int(os.environ.get("REVIEW_MAX_ATTEMPTS", "5"))
+# worker trace 事件批量刷盘：缓冲达到条数立即踢刷，否则每 INTERVAL 秒刷一次。
+TRACE_FLUSH_BATCH = int(os.environ.get("TRACE_FLUSH_BATCH", "50"))
+TRACE_FLUSH_INTERVAL = float(os.environ.get("TRACE_FLUSH_INTERVAL", "3"))
 TARGET_HEARTBEAT_INTERVAL = float(os.environ.get("TARGET_HEARTBEAT_INTERVAL", "30"))
 KILLSWEEP_DEDUP_SCAN_LIMIT = int(os.environ.get("KILLSWEEP_DEDUP_SCAN_LIMIT", "200"))
 # 通杀闭环：单次通杀最多把多少个「已实证受影响」的同类站点批量入队，防一次打爆队列。
@@ -395,6 +398,10 @@ class TaskRunner:
         self._review_backoff: dict[str, float] = {}
         # 审核失败尝试计数（超时/异常）：达上限自动放行进人工复审队列，防无限重试烧 LLM。
         self._review_attempts: dict[str, int] = {}
+        # worker trace 事件批量刷盘（见 _persist_worker_trace 注释）
+        self._trace_buffer: list[TaskEvent] = []
+        self._trace_flush_inflight = False
+        self._trace_flush_task: asyncio.Task | None = None
         self._killsweep_inflight: set[str] = set()  # 正在做通杀分析的 finding_id
         self._killsweep_tasks: dict[str, asyncio.Task] = {}
         self._killsweep_cancel_events: dict[str, threading.Event] = {}
@@ -531,8 +538,14 @@ class TaskRunner:
         except RuntimeError:
             pass
 
-    async def _persist_worker_trace(self, task_id: str, target_id: str, kind: str, payload: dict) -> None:
-        """选择性落库 worker 细粒度事件，刷新后可回看。"""
+    def _persist_worker_trace(self, task_id: str, target_id: str, kind: str, payload: dict) -> None:
+        """选择性缓冲 worker 细粒度事件，由 _trace_flush_loop 批量落库。
+
+        此前每个事件独立 session+commit 打单写者 SQLite：多 worker × 每轮多个工具
+        调用 × 3s tick 全部互斥等写锁，锁竞争失败只留 debug 日志静默丢。改为内存
+        缓冲 + 周期批量刷盘（trace 是辅助轨迹，崩溃丢缓冲可接受；finding/auth_status
+        落库不走此路径，仍实时）。
+        """
         if kind not in _WORKER_TRACE_KINDS:
             return
         # 细粒度：活态已摘掉说明 worker 已收尾，跳过迟到的落库，避免清完又写回。
@@ -554,16 +567,39 @@ class TaskRunner:
             # 无 message 的事件（worker_start / llm_round_start / worker_finish 等）不落库英文
             # kind 作为 message，否则前端 fmtEvent 会优先返回英文；留空让前端走中文 case。
             msg = str(safe.get("message") or "")[:200]
+        self._trace_buffer.append(TaskEvent(
+            task_id=task_id, agent="worker", kind=kind, level="info",
+            message=msg,
+            payload={"target_id": target_id, **safe},
+        ))
+        if len(self._trace_buffer) >= TRACE_FLUSH_BATCH:
+            # 不在 emit 回调里等 DB：踢一个后台刷盘，缓冲继续接收。
+            self._spawn_trace_flush()
+
+    def _spawn_trace_flush(self) -> None:
+        if self._trace_flush_inflight:
+            return
+        self._trace_flush_inflight = True
+        ft = asyncio.create_task(self._flush_trace_buffer())
+        ft.add_done_callback(lambda f: _log_bg_task_exc(f, "flush_trace_buffer"))
+
+    async def _flush_trace_buffer(self) -> None:
+        batch, self._trace_buffer = self._trace_buffer, []
+        self._trace_flush_inflight = False
+        if not batch:
+            return
         try:
             async with SessionLocal() as session:
-                session.add(TaskEvent(
-                    task_id=task_id, agent="worker", kind=kind, level="info",
-                    message=msg,
-                    payload={"target_id": target_id, **safe},
-                ))
+                session.add_all(batch)
                 await session.commit()
         except Exception:
-            logger.debug("persist worker trace failed task=%s kind=%s", task_id[:8], kind, exc_info=True)
+            logger.debug("trace flush failed (%d events dropped)", len(batch), exc_info=True)
+
+    async def _trace_flush_loop(self) -> None:
+        """周期批量刷盘缓冲的 worker 事件；停止后由 stop() 做最后一次 flush。"""
+        while not self._stop.is_set():
+            await asyncio.sleep(TRACE_FLUSH_INTERVAL)
+            await self._flush_trace_buffer()
 
     def diagnostic_snapshot(self) -> dict:
         return {
@@ -726,6 +762,7 @@ class TaskRunner:
     async def run_forever(self) -> None:
         async with SessionLocal() as session:
             await self.recover(session)
+        self._trace_flush_task = asyncio.create_task(self._trace_flush_loop())
         while not self._stop.is_set():
             try:
                 await self._tick()
@@ -1373,10 +1410,15 @@ class TaskRunner:
     async def stop(self, reason: str = "任务停止") -> None:
         """停止 runner，并取消 worker/reviewer/killsweep 的后续落库。"""
         self._stop.set()
+        if self._trace_flush_task is not None:
+            self._trace_flush_task.cancel()
+            self._trace_flush_task = None
         await self._cancel_active_workers(f"{reason}：运行中 worker 已取消并回队")
         self._cancel_review_tasks(reason)
         self._cancel_killsweep_tasks(reason)
         self._cancel_escalation_tasks(reason)
+        # 停止前的最后一次批量落库，缓冲里的事件不留死角。
+        await self._flush_trace_buffer()
 
     async def _cancel_active_workers(self, reason: str) -> None:
         target_ids = list(self._active_workers.keys())
@@ -1409,9 +1451,11 @@ class TaskRunner:
                 level="warn", count=len(rows),
             )
 
-        self._active_workers.clear()
-        for tid in target_ids:
-            self._worker_cancel_events.pop(tid, None)
+        # 不 clear _active_workers / _worker_cancel_events：被取消协程的引用保留到
+        # _reap_workers 回收（event 由 _run_worker 的 finally 自行清理）。
+        # 若在此清空，目标已回 queued 而旧协程（含 executor 里的不可中断线程）仍在
+        # 跑当前轮，下一 tick 重派会绕过 double_spawn 守卫 → 新旧协程并行打同一目标。
+        # 保留引用后，重派会被 _spawn_worker 的守卫挡住，直到旧协程真正结束。
 
     async def skip_target(self, target_id: str, reason: str = "用户手动删除该目标") -> dict:
         """人工从看板删除某个目标：取消其在跑 worker（若有），并把目标标记 skipped——
@@ -2008,10 +2052,7 @@ class TaskRunner:
                         at = asyncio.create_task(self._persist_auth_status(target_id, dict(payload)))
                         at.add_done_callback(lambda f: _log_bg_task_exc(f, "persist_auth_status"))
                     if kind in _WORKER_TRACE_KINDS:
-                        tr = asyncio.create_task(
-                            self._persist_worker_trace(task_id, target_id, kind, dict(payload))
-                        )
-                        tr.add_done_callback(lambda f: _log_bg_task_exc(f, "persist_worker_trace"))
+                        self._persist_worker_trace(task_id, target_id, kind, dict(payload))
                     _update_live(kind, payload)
                     pt = asyncio.create_task(bus.publish(
                         task_id, {"agent": "worker", "kind": kind, "target_id": target_id,
