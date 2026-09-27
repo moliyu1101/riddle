@@ -66,6 +66,7 @@ class OrchestratorManager:
     def __init__(self) -> None:
         self._runners: dict[str, TaskRunner] = {}
         self._tasks: dict[str, asyncio.Task] = {}
+        self._ensure_lock = asyncio.Lock()
 
     def get_runner(self, task_id: str) -> "TaskRunner | None":
         return self._runners.get(task_id)
@@ -136,17 +137,20 @@ class OrchestratorManager:
         return await runner.trigger_killsweep(task_id, finding_id)
 
     async def ensure_running(self, task_id: str) -> None:
-        existing_task = self._tasks.get(task_id)
-        if task_id in self._runners and existing_task and not existing_task.done():
-            return
-        if existing_task and existing_task.done():
-            self._tasks.pop(task_id, None)
-        runner = self._runners.get(task_id)
-        if not runner or runner._stop.is_set():
-            runner = TaskRunner(task_id)
+        # 并发调用互斥：恢复启动与用户点「启动」同时到达时，无锁会产生双主循环
+        # （双倍烧 token + 同目标状态竞写）。
+        async with self._ensure_lock:
+            existing_task = self._tasks.get(task_id)
+            if task_id in self._runners and existing_task and not existing_task.done():
+                return
+            if existing_task and existing_task.done():
+                self._tasks.pop(task_id, None)
+            runner = self._runners.get(task_id)
+            if not runner or runner._stop.is_set():
+                runner = TaskRunner(task_id)
+                self._runners[task_id] = runner
             self._runners[task_id] = runner
-        self._runners[task_id] = runner
-        self._tasks[task_id] = asyncio.create_task(runner.run_forever())
+            self._tasks[task_id] = asyncio.create_task(runner.run_forever())
 
     async def stop(self, task_id: str) -> None:
         runner = self._runners.pop(task_id, None)

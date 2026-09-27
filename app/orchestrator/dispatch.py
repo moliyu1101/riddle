@@ -444,7 +444,7 @@ class DispatchMixin:
                 ).where(
                     Target.task_id == self.task_id,
                     Target.status.in_(["queued", "assigned", "scanning", "dead", "skipped"]),
-                )
+                ).order_by(Target.updated_at.desc()).limit(5000)
             )).all()
             cluster_state = self._cluster_state(all_targets)
             active_clusters = {

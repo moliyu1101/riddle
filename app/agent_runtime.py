@@ -211,8 +211,9 @@ DEFAULT_THREAD_POOL_SIZE = _int_env(
 
 
 # 每类 agent 的并发信号量（在事件循环里 acquire，再提交线程池）。
-# 注意：必须在有事件循环时惰性创建，避免模块导入期无 loop 报错。
-_SEMAPHORES: dict[str, asyncio.Semaphore] = {}
+# 键为 (kind, loop_id)：Semaphore 首次 await 绑定事件循环，跨 loop 复用会报
+# bound-to-different-loop 或残留 waiter 永占并发位（pytest/热重载场景）。
+_SEMAPHORES: dict[tuple[str, int], asyncio.Semaphore] = {}
 _SEM_LIMITS = {
     "worker": WORKER_MAX_CONCURRENCY,
     "review": REVIEW_MAX_CONCURRENCY,
@@ -224,10 +225,11 @@ _SEM_LIMITS = {
 
 def agent_semaphore(kind: str) -> asyncio.Semaphore:
     """返回某类 agent 的并发信号量（惰性创建，绑定当前事件循环）。"""
-    sem = _SEMAPHORES.get(kind)
+    key = (kind, id(asyncio.get_running_loop()))
+    sem = _SEMAPHORES.get(key)
     if sem is None:
         sem = asyncio.Semaphore(_SEM_LIMITS.get(kind, 1))
-        _SEMAPHORES[kind] = sem
+        _SEMAPHORES[key] = sem
     return sem
 
 

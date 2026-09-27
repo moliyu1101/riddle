@@ -17,7 +17,7 @@ def _observer_event(event: dict) -> dict:
         "agent": event.get("agent", ""),
         "kind": event.get("kind", ""),
         "level": event.get("level", "info"),
-        "message": event.get("message", ""),
+        "message": "",  # 与 HTTP 看板口径一致：观摩者不透出 message（含标题/URL/命令片段）
         "ts": event.get("ts"),
     }
 
