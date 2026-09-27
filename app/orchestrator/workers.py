@@ -639,8 +639,11 @@ class WorkersMixin:
                     "user_auth": tgt.auth_context or None,
                 }
                 if tgt.auth_status:
-                    self._live[target_id]["auth"] = (tgt.auth_status or {}).get("status") or ""
-                    self._live[target_id]["auth_label"] = (tgt.auth_status or {}).get("reason") or ""
+                    _as = tgt.auth_status or {}
+                    self._live[target_id]["auth"] = _as.get("status") or ""
+                    self._live[target_id]["auth_label"] = _as.get("reason") or ""
+                    # 种类一并回填（前端徽章「Cookie·已注入」需要）；老数据无 kinds 则留空
+                    self._live[target_id]["auth_kinds"] = ",".join(_as.get("kinds") or [])
                 # 业务上下文画像：按站点标题/归属/来源推断业务类型，引导 worker 按业务逻辑挖。
                 biz = None
                 try:

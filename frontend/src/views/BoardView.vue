@@ -450,7 +450,7 @@ function connectWs() {
     const k = ev.kind || "";
     if (k.includes("finding") || k.includes("review") || k.includes("target_done")
         || k.includes("submit") || k.includes("killsweep") || k.includes("worker")
-        || k.includes("escalate")) {
+        || k.includes("escalate") || k.includes("auth_")) {
       scheduleEventRefresh(ev);
     }
   };
