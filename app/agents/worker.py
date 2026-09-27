@@ -243,17 +243,23 @@ class Worker:
             **payload,
         )
 
-    def _autotag_injected_if_session(self) -> None:
-        """session_set 成功 / 续挖恢复会话后，若已持有可用 cookie/header 凭据，自动标记为
-        『已在当前会话注入』并上报看板（只暴露字段名，绝不落会话明文）。
+    def _autotag_injected_if_session(self, *, from_resume: bool = False) -> None:
+        """标记「凭据已注入会话」。只认**显式登记**的凭据（session_set / 用户凭据注入），
+        被动吸收的站点普通 cookie（设备会话 TWFID、CSRF token 等）不算凭据——
+        否则访问一个页面就宣称「凭据注入」，看板与 LLM 都会被误导。
 
+        from_resume=True：断点恢复的历史会话（此前显式标记过），保留标记但文案区分。
         幂等：auth 已是更高的 login_ok 或本就在 injected 则不重复标记，避免看板闪变。
-        供同目标断点续挖复用：后续轮次/续挖 worker 看到已注入会话，直接带登录态深入。
         """
         try:
             ex = self.executor
-            cookies = dict(getattr(ex, "_session_cookies", {}) or {})
-            headers = dict(getattr(ex, "_session_headers", {}) or {})
+            if from_resume:
+                # 恢复的历史会话无法区分显式/被动（断点只存了全量 jar），
+                # 沿用旧行为全量判定，但文案标注来源。
+                cookies = dict(getattr(ex, "_session_cookies", {}) or {})
+                headers = dict(getattr(ex, "_session_headers", {}) or {})
+            else:
+                cookies, headers = ex.explicit_session_snapshot()
             if not cookies and not headers:
                 return
             cur = (self.target_meta or {}).get("auth_attempt") or {}
@@ -268,16 +274,19 @@ class Worker:
                 "kinds": (["cookie"] if cookies else []) + (["bearer"] if headers else []),
                 "matched_by": "自动捕获",
                 "binding_target": self.target,
-                "reason": "挖掘中 session_set 成功，已注入会话，后续请求自动携带",
+                "reason": ("恢复断点保存的历史会话，后续请求自动携带" if from_resume
+                           else "session_set 显式登记凭据，后续请求自动携带"),
                 "cookie_names": names[:20],
                 "header_names": hnames[:20],
             }
             self.target_meta["auth_attempt"] = payload
             kind_cn = {"cookie": "Cookie", "bearer": "Bearer", "password": "账密"}
             kinds_cn = "+".join(kind_cn.get(k, k) for k in payload["kinds"]) or "凭据"
+            fields = "/".join((names[:3] + hnames[:2])) or ""
+            src = "恢复历史会话" if from_resume else "session_set 登记"
             self._emit(
                 "auth_status",
-                message=f"凭据注入[{kinds_cn}]：session_set 自动捕获会话（{names[:3]} 或 {hnames[:2]}），后续请求自动携带。",
+                message=f"凭据注入[{kinds_cn}]：{src}（{fields}），后续请求自动携带。",
                 **payload,
             )
         except Exception:
@@ -1113,7 +1122,7 @@ class Worker:
             if isinstance(u, str) and u.strip():
                 self._probed_urls.add(u.strip())
         # 续挖恢复成功后若已携带会话凭据，同样自动标记「已注入」（供看板显示 + 同目标复用）
-        self._autotag_injected_if_session()
+        self._autotag_injected_if_session(from_resume=True)
         self._emit(
             "worker_resume",
             notes_len=len(notes),

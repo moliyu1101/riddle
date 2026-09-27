@@ -217,6 +217,9 @@ class ToolExecutor:
         self.enterprise = enterprise
         # WAF 拦截记忆：URL 曾被拦 → LLM 后续手动变形拿到正常响应时标记 llm_manual 闭环。
         self._waf_blocked_urls: dict[str, str] = {}
+        # 显式登记的凭据键（session_set/凭据注入写入）：被动吸收的站点普通 cookie
+        # （如设备会话 TWFID、CSRF token）不进这里——「凭据注入」状态只认显式凭据。
+        self._explicit_session_keys: set[str] = set()
         # 任务级禁止操作：任务界面勾选的八大类拦截 + 额外规则文本解析的禁止操作，合并生效（保序去重）。
         # 勾了什么拦什么；未勾选的类别一律放行，避免全局硬拦导致合法漏洞验证被挡、洞被忽略。
         self._forbidden_ops = _merge_forbidden_ops(src_rules, guard_ops)
@@ -1002,18 +1005,21 @@ class ToolExecutor:
             if clear:
                 self._session_cookies.clear()
                 self._session_headers.clear()
+                self._explicit_session_keys.clear()
             if isinstance(cookies, dict):
                 for k, v in cookies.items():
                     if not isinstance(k, str):
                         continue
                     if k in self._session_cookies or len(self._session_cookies) < _SESSION_MAX_COOKIES:
                         self._session_cookies[k] = str(v)[:4096]
+                        self._explicit_session_keys.add(f"c:{k}")
             if isinstance(headers, dict):
                 for k, v in headers.items():
                     if not isinstance(k, str):
                         continue
                     if k in self._session_headers or len(self._session_headers) < _SESSION_MAX_HEADERS:
                         self._session_headers[k] = str(v)[:4096]
+                        self._explicit_session_keys.add(f"h:{k}")
             return {
                 "ok": True,
                 "active_cookies": sorted(self._session_cookies.keys()),
@@ -1022,6 +1028,14 @@ class ToolExecutor:
             }
         except Exception as e:
             return {"ok": False, "error": f"session_set 异常: {type(e).__name__}: {e}"}
+
+    def explicit_session_snapshot(self) -> tuple[dict[str, str], dict[str, str]]:
+        """只取「显式登记」的凭据（session_set / 凭据注入写入），排除被动吸收的站点普通 cookie。"""
+        ck = {k[2:]: self._session_cookies[k[2:]] for k in self._explicit_session_keys
+              if k.startswith("c:") and k[2:] in self._session_cookies}
+        hd = {k[2:]: self._session_headers[k[2:]] for k in self._explicit_session_keys
+              if k.startswith("h:") and k[2:] in self._session_headers}
+        return ck, hd
 
     def snapshot_session(self) -> dict[str, dict[str, str]]:
         """深拷贝当前会话状态（cookies + headers），供操作后恢复用。"""
