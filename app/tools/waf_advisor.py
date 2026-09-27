@@ -148,6 +148,9 @@ def _detect_waf(status: int, headers: dict[str, str], body: str) -> tuple[WafSig
                 if status in sig.status_codes or any(k in body_lower for k in sig.body_keywords):
                     return sig, f"响应头 `{header}: {hv[:80]}` + HTTP {status}"
         for keyword in sig.body_keywords:
+            if len(keyword.strip()) < 4:
+                # 过短关键词（如裸 "f5"）与正常页面子串碰撞率过高，不单独命中
+                continue
             if keyword.lower() in body_lower:
                 return sig, f"命中响应体关键词 `{keyword}`"
         if sig.name != "generic" and status in sig.status_codes and body:
@@ -243,6 +246,10 @@ def _header_variants(priorities: tuple[str, ...]) -> list[dict[str, str]]:
         {"X-Originating-IP": "127.0.0.1"},
         {"X-Forwarded-Proto": "https"},
         {"X-Requested-With": "XMLHttpRequest"},
+        # 常见白名单形态的无害头：部分 WAF/网关只放行「浏览器形态」请求
+        {"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"},
+        {"Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"},
+        {"Referer": "https://www.google.com/"},
     ]
     return variants
 

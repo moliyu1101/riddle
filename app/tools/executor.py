@@ -832,6 +832,8 @@ class ToolExecutor:
             original_status = status
             original_body = body
             tried: list[str] = []
+            tried_detail: list[dict[str, Any]] = []
+            original_ct = str((resp_headers or {}).get("content-type") or "").split(";")[0].lower()
             for v in variants[:_AUTO_WAF_MAX_TRIES]:
                 tried.append(v.get("technique", ""))
                 v_result = self._http_request_once(
@@ -844,21 +846,33 @@ class ToolExecutor:
                     timeout,
                 )
                 if not v_result.get("ok"):
+                    tried_detail.append({"technique": v.get("technique", ""), "status": None,
+                                         "error": str(v_result.get("error") or "")[:120]})
                     continue
                 v_status = v_result.get("status_code", 0)
                 v_headers = v_result.get("response_headers") or {}
                 v_body = v_result.get("body") or ""
+                tried_detail.append({"technique": v.get("technique", ""), "status": v_status,
+                                     "body_len": len(v_body)})
                 if self._is_waf_blocked(v_status, v_headers, v_body):
                     continue
-                # 状态码或响应体有明显差异才算真正绕过（不是同一拦截页换皮）。
-                if v_status != original_status or abs(len(v_body) - len(original_body)) > 50:
+                # 真绕过判定（三信号任一）：状态码不同 / Content-Type 差异（拦截页必是
+                # text/html，API 正常响应常是 application/json——这是最强信号）/ 响应体
+                # 长度差明显。仅靠长度阈值会把「拦截页与正常响应体积接近」的真绕过漏掉。
+                v_ct = str(v_headers.get("content-type") or "").split(";")[0].lower()
+                ct_differs = bool(original_ct and v_ct and original_ct != v_ct)
+                if v_status != original_status or ct_differs or abs(len(v_body) - len(original_body)) > 50:
                     waf_info["bypassed"] = True
                     waf_info["technique"] = v.get("technique", "")
                     waf_info["original_status"] = original_status
+                    waf_info["original_content_type"] = original_ct
+                    waf_info["bypassed_content_type"] = v_ct
                     waf_info["original_body"] = _truncate(original_body, 500)
+                    waf_info["tried_detail"] = tried_detail
                     v_result["waf"] = waf_info
                     return v_result
             waf_info["tried"] = tried
+            waf_info["tried_detail"] = tried_detail
         result["waf"] = waf_info
         return result
 
