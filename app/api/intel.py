@@ -154,7 +154,11 @@ async def list_intel(
         stmt = stmt.where(Intel.confidence == confidence)
     stmt = stmt.order_by(
         Intel.confidence.desc(), Intel.hit_count.desc(), Intel.last_seen.desc()
-    ).limit(limit)
+    )
+    # 有搜索词时不截断：先 limit 后内存过滤会让排序靠后的情报永远搜不到
+    # （hit_count 累积后必然超限）。无搜索词才用 limit 控制返回量。
+    if not (q or "").strip():
+        stmt = stmt.limit(limit)
     rows = (await session.execute(stmt)).scalars().all()
     out = [_intel_to_dict(it) for it in rows]
     # 关键词在内存过滤（覆盖 match_key/summary/source_host/payload 全字段；

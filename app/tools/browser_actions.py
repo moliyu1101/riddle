@@ -18,6 +18,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -313,12 +314,15 @@ def browser_action(
                 page.locator("form").first.press("Enter")
             page.wait_for_timeout(1200)
         elif action == "wait":
-            page.wait_for_timeout(int(wait_ms or 0))
+            # 硬钳制 30s：LLM 参数不可信，无上限时 wait_ms=1e9 可挂起 worker 线程 11 天
+            page.wait_for_timeout(min(int(wait_ms or 0), 30_000))
         elif action == "screenshot":
             base = Path(executor.work_dir) / "evidence" / "screenshots"
             base.mkdir(parents=True, exist_ok=True)
             ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-            name = f"browser_{ts}_{abs(hash(page.url)) % 10000}.png"
+            # md5 替代 hash()：字符串 hash 受 PYTHONHASHSEED 随机化，证据文件名
+            # 跨进程不可复现，且仅 1 万桶易冲突覆盖
+            name = f"browser_{ts}_{hashlib.md5(str(page.url).encode()).hexdigest()[:8]}.png"
             path = base / name
             page.screenshot(path=str(path), full_page=False)
             n_cookies = _sync_cookies(executor, session._context)

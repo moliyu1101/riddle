@@ -13,6 +13,8 @@
 """
 from __future__ import annotations
 
+import re
+
 from dataclasses import dataclass
 
 
@@ -329,7 +331,15 @@ def profile_business(
     low = combined.lower()
     scored: list[tuple[float, _BizDef, list[str]]] = []
     for biz in _BUSINESS_PROFILES:
-        hits = [kw for kw in biz.keywords if kw.lower() in low]
+        # 短英文关键词（如 "oa"、"oa."）要求词边界：子串匹配会让 /upload/ 命中
+        # "oa"（l**oa**d 同理），把新闻站画成 OA 办公系统。
+        def _kw_hit(kw: str) -> bool:
+            kl = kw.lower()
+            if kl.isascii() and len(kl) <= 3 and kl.isalpha():
+                return re.search(rf"\b{re.escape(kl)}\b", low) is not None
+            return kl in low
+
+        hits = [kw for kw in biz.keywords if _kw_hit(kw)]
         if hits:
             score = min(3.0, len(hits) * biz.weight)
             scored.append((score, biz, hits))

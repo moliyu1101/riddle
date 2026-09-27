@@ -1057,6 +1057,9 @@ def _fetch_local_file(url: str) -> tuple[str, str]:
     ]
     if not any(path == root or root in path.parents for root in allowed_roots):
         raise ValueError("file:// 只允许读取当前工作区或临时目录内文件")
+    # 敏感文件排除：file:// 内容会进入 LLM 上下文，.env/密钥类文件不在此通道暴露
+    if re.search(r"(?:^|/)(?:\.env(?:\.[^/]*)?|id_rsa(?:\.pub)?|.*\.pem|.*\.key|credentials|secrets?)(?:$|/)", str(path)):
+        raise ValueError("file:// 目标命中敏感文件名单（.env/密钥/凭证），禁止读取")
     if not path.is_file():
         raise ValueError("file:// 目标不是普通文件")
     raw = path.read_bytes()[:_MAX_FETCH_BYTES]
@@ -1132,9 +1135,22 @@ def _origin(url: str) -> str:
     return f"{p.scheme}://{p.netloc}"
 
 
+def _key_tokens(key: str) -> list[str]:
+    """key 名按常见分隔符切段（小写）：description -> [description]、api_key -> [api, key]。"""
+    import re as _re
+    return [t for t in _re.split(r"[^a-z0-9]+", str(key or "").lower()) if t]
+
+
 def _looks_like_secret_key(key: str, value: str) -> bool:
-    # 1) key 名本身带敏感语义：高置信，直接判正。
-    if any(x in key for x in _SECRET_KEY_TOKENS):
+    # 1) key 名命中敏感词，两档判定：
+    #    a) 切段后精确命中（api_key -> [api,key]）——长短词都算；
+    #    b) 长词（>=5 字符，secret/token/password…）子串命中——覆盖
+    #       ClientAppSecret 这类无分隔符驼峰；短词（des/iv）子串会命中
+    #       description/activity/div 等正常字段（实测 68 个/页），只走 a)。
+    tokens = _key_tokens(key)
+    if any(t in _SECRET_KEY_TOKENS for t in tokens):
+        return True
+    if any(x in key for x in _SECRET_KEY_TOKENS if len(x) >= 5):
         return True
     # 兼容旧逻辑：裸 "key" 后缀/片段（apiKey、secretKey 已由上覆盖；单独 key= 仍收）
     if "key" in key and not any(x in key for x in ("keyboard", "keyword", "monkey")):

@@ -28,7 +28,21 @@ MAX_REWRITE_BODY_BYTES = int(os.environ.get("DS2API_PROXY_MAX_REWRITE_BODY_BYTES
 _HOP_HEADERS = frozenset({
     "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
     "te", "trailers", "transfer-encoding", "upgrade",
+    # httpx 流式读取产出的是已解压字节：原样转发 content-encoding/content-length
+    # 会让客户端二次解压失败/长度不匹配。
+    "content-encoding", "content-length",
 })
+
+_CLIENT: httpx.AsyncClient | None = None
+
+
+def _get_client() -> httpx.AsyncClient:
+    """复用持久 AsyncClient（连接池），避免每请求完整 TCP+TLS 握手。"""
+    global _CLIENT
+    if _CLIENT is None or _CLIENT.is_closed:
+        _CLIENT = httpx.AsyncClient(timeout=REQUEST_TIMEOUT)
+    return _CLIENT
+
 
 router = APIRouter(include_in_schema=False)
 
@@ -102,12 +116,11 @@ async def proxy_ds2api(request: Request, path: str = "", mount_prefix: str = PRE
     body = await request.body()
     headers = _forward_headers(request)
 
-    client = httpx.AsyncClient(timeout=REQUEST_TIMEOUT)
+    client = _get_client()
     try:
         req = client.build_request(request.method, upstream_url, headers=headers, content=body)
         upstream = await client.send(req, stream=True)
     except httpx.RequestError as exc:
-        await client.aclose()
         return Response(
             status_code=502,
             content=f"ds2api upstream unreachable ({UPSTREAM}): {exc}",
@@ -126,7 +139,6 @@ async def proxy_ds2api(request: Request, path: str = "", mount_prefix: str = PRE
             content = await _read_limited(upstream)
         except httpx.HTTPError as exc:
             await upstream.aclose()
-            await client.aclose()
             return Response(
                 status_code=502,
                 content=f"ds2api upstream read failed ({UPSTREAM}): {exc}",
@@ -134,7 +146,6 @@ async def proxy_ds2api(request: Request, path: str = "", mount_prefix: str = PRE
             )
         rewritten = _rewrite_admin_assets(content, content_type, mount_prefix)
         await upstream.aclose()
-        await client.aclose()
         if rewritten is not None:
             content = rewritten
             out_headers.pop("content-length", None)
@@ -152,8 +163,7 @@ async def proxy_ds2api(request: Request, path: str = "", mount_prefix: str = PRE
                 yield chunk
         finally:
             await upstream.aclose()
-            await client.aclose()
-
+    
     return StreamingResponse(
         body_iter(),
         status_code=upstream.status_code,

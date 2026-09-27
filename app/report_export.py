@@ -617,27 +617,31 @@ _EDUSRC_LEVEL_MAP = {"严重": "grave", "高危": "high", "中危": "medium", "�
 
 
 def _edusrc_infer_category(f) -> str:
+    """分类推断：具体词在前（「模板注入」「反序列化」先于泛化的「注入」），
+    裸短词收紧（code/data/rce 易命中 VerificationCode/说明文字/encode）。"""
     text = f"{f.vuln_type or ''} {(f.title or '')}".lower()
     rules = (
-        (r"sql|sqli|注入", "SQL注入漏洞"),
-        (r"upload|file_upload|文件上传", "文件上传漏洞"),
-        (r"command|cmd|命令执行", "命令执行漏洞"),
-        (r"rce|code|ssti|deserialize|反序列化|代码执行", "代码执行漏洞"),
+        (r"sql|sqli", "SQL注入漏洞"),
+        (r"模板注入|ssti|template.inject", "代码执行漏洞"),
+        (r"反序列化|deserializ|jndi|rce|远程代码执行|命令执行|cmd|command.exec", "命令执行漏洞"),
+        (r"代码执行|代码注入|code.exec", "代码执行漏洞"),
+        (r"文件上传|upload.*(shell|bypass)|上传绕过", "文件上传漏洞"),
         (r"xss|跨站", "XSS漏洞"),
         (r"csrf", "CSRF漏洞"),
         (r"ssrf", "SSRF漏洞"),
         (r"clickjacking|点击劫持", "点击劫持漏洞"),
-        (r"weak|password|弱口令|默认口令", "弱口令"),
-        (r"download|任意文件下载", "任意文件下载"),
-        (r"read|lfi|path|traversal|任意文件读取|路径穿越", "任意文件读取"),
-        (r"info|leak|disclosure|sensitive|data|数据|泄露", "敏感信息泄露"),
-        (r"logic|payment|captcha|业务|逻辑|验证码", "逻辑缺陷"),
-        (r"ai|prompt|llm", "AI漏洞"),
+        (r"弱口令|默认口令|weak.?password|credential", "弱口令"),
+        (r"任意文件下载|download.*(任意|未授权)", "任意文件下载"),
+        (r"任意文件读取|路径穿越|traversal|lfi", "任意文件读取"),
+        (r"逻辑缺陷|支付|订单.*篡改|验证码绕过|垂直越权|水平越权|业务逻辑", "逻辑缺陷"),
+        (r"未授权访问|未鉴权|未授权", "未授权访问"),
+        (r"敏感信息泄露|信息泄露|数据泄露|leak|源码泄露|备份文件", "敏感信息泄露"),
+        (r"ai|prompt.inject|llm", "AI漏洞"),
     )
     for pattern, name in rules:
         if re.search(pattern, text):
             return name
-    return "未授权访问"
+    return "其他漏洞"
 
 
 def _edusrc_slug(value) -> str:
@@ -677,7 +681,9 @@ def build_edusrc_report_json(f: Finding, r: Review | None, content_md: str) -> d
     edu_school = (getattr(f, "edu_school", "") or "").strip()
     owner = (edu_school or f.owner or str(edits.get("owner") or "")).strip()
     firm_name = owner if owner and owner != "-" else "待填写单位"
-    title = firm_name if firm_name != "待填写单位" else (str(eff("title")) or "知蠹 Riddle 漏洞报告")
+    # 标题保留用户编辑的漏洞标题（EduSRC 侧展示单位信息靠 firm_name 字段），
+    # 此前 title 被整体替换为单位名，用户改过的标题被静默丢弃。
+    title = str(eff("title")).strip() or (firm_name if firm_name != "待填写单位" else "知蠹 Riddle 漏洞报告")
     edusrc_meta = (f.evidence or {}).get("edusrc") if isinstance(f.evidence, dict) else {}
     edusrc_meta = edusrc_meta or {}
     category_name = _edusrc_infer_category(f)

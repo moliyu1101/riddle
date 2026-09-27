@@ -153,6 +153,8 @@ class OrchestratorManager:
             self._tasks[task_id] = asyncio.create_task(runner.run_forever())
 
     async def stop(self, task_id: str) -> None:
+        from app.llm.usage import clear_usage
+        clear_usage(task_id)  # 停止即清理用量行（否则长驻进程内只增不清）
         runner = self._runners.pop(task_id, None)
         if runner:
             await runner.stop()

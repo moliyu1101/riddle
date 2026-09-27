@@ -225,7 +225,8 @@ class TaskResponse(BaseModel):
     pending_user_review: int = 0
     total_targets: int = 0
     total_vulns: int = 0
-    progress: int = 0
+    # 看板端点返回 dict（分阶段进度），任务列表返回 int——兼容两种形态
+    progress: Any = 0
 
 
 class LLMSettingsDTO(BaseModel):

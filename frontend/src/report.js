@@ -19,7 +19,8 @@ export function normalizeSteps(steps) {
 }
 
 export function effectiveSeverity(f) {
-  return f.review?.user_severity || f.review?.severity_final || "-";
+  // 与后端口径一致：用户编辑 > AI 终审 > worker 自评（此前缺最后一级，未审核显示 "-"）
+  return f.review?.user_severity || f.review?.severity_final || f.severity_claimed || "-";
 }
 
 // 等级统一转中文展示，兼容数据源的英文枚举值（high/critical/medium/low）。

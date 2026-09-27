@@ -10,6 +10,7 @@ from typing import Any
 
 _LOCK = Lock()
 _USAGE: dict[str, dict[str, Any]] = {}
+_USAGE_MAX_TASKS = 200  # 任务停止/删除会主动清理；上限兜底异常路径泄漏
 
 
 def record_usage(task_id: str | None, model: str, prompt_tokens: int = 0,
@@ -41,6 +42,18 @@ def record_usage(task_id: str | None, model: str, prompt_tokens: int = 0,
         row["requests"] += 1
         row["model"] = model
         row["updated_at"] = time()
+        # 容量兜底：超限时淘汰最旧的行（正常路径由 clear_usage 主动清理）
+        while len(_USAGE) > _USAGE_MAX_TASKS:
+            oldest = min(_USAGE, key=lambda k: _USAGE[k].get("updated_at") or 0)
+            _USAGE.pop(oldest, None)
+
+
+def clear_usage(task_id: str | None) -> None:
+    """任务停止/删除时清理其用量行（否则长驻进程内只增不清）。"""
+    if not task_id:
+        return
+    with _LOCK:
+        _USAGE.pop(task_id, None)
 
 
 def usage_snapshot(task_id: str | None, model: str = "") -> dict[str, Any]:
