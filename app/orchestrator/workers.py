@@ -929,6 +929,8 @@ class WorkersMixin:
                 await heartbeat_task
 
         live_snapshot = dict(self._live.get(target_id) or {})
+        # 摘除前取归因快照：pop 之后 _live_llm_fields 恒为空，salvage 的洞会丢模型溯源
+        salvage_llm_fields = self._live_llm_fields(target_id)
         self._live.pop(target_id, None)
         self._worker_last_activity.pop(target_id, None)
         self._worker_cancel_events.pop(target_id, None)
@@ -954,7 +956,8 @@ class WorkersMixin:
             salvage = (result or {}).get("findings") or []
             if salvage:
                 try:
-                    await self._salvage_findings(task_id, target_id, salvage)
+                    await self._salvage_findings(task_id, target_id, salvage,
+                                                 llm_fields=salvage_llm_fields)
                 except Exception:
                     pass
             self._schedule_prune_target_traces(task_id, target_id)

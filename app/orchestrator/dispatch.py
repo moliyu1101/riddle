@@ -826,8 +826,13 @@ class DispatchMixin:
     async def stop(self, reason: str = "任务停止") -> None:
         """停止 runner，并取消 worker/reviewer/killsweep 的后续落库。"""
         self._stop.set()
+        # 等待 flush 协程自然退出（≤ 一个刷盘周期）而不是 cancel：
+        # cancel 打断进行中的 commit 会整批回滚，缓冲事件全丢。
         if self._trace_flush_task is not None:
-            self._trace_flush_task.cancel()
+            try:
+                await asyncio.wait_for(asyncio.shield(self._trace_flush_task), timeout=6)
+            except (asyncio.TimeoutError, asyncio.CancelledError, Exception):
+                pass
             self._trace_flush_task = None
         await self._cancel_active_workers(f"{reason}：运行中 worker 已取消并回队")
         self._cancel_review_tasks(reason)

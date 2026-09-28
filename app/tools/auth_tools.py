@@ -68,10 +68,36 @@ def _origin_of(url: str) -> str:
 
 
 def _identify_form_fields(fields: dict[str, str]) -> dict[str, list[str]]:
-    """从表单字段里识别用户名/密码/验证码字段名。"""
-    user_keys = [k for k in fields if re.search(r"(?i)user|account|login|email|name", k)]
-    pass_keys = [k for k in fields if re.search(r"(?i)pass|pwd", k)]
-    captcha_keys = [k for k in fields if re.search(r"(?i)captcha|verify|code|验证码", k)]
+    """从表单字段里识别用户名/密码/验证码字段名。
+
+    关键词用分隔符切段后精确匹配：此前 "code" 子串命中 country_code/phone_code
+    （验证码误判→放弃爆破）、"name" 命中 nickname/company_name（取 [0] 按字典
+    序填错用户名字段→假阴性）。
+    """
+    def _tokens(name: str) -> set[str]:
+        low = str(name or "").lower()
+        # 驼峰拆分（verifyCode -> verify code）后按非字母数字切段
+        low = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", str(name or "")).lower()
+        return {t for t in re.split(r"[^a-z0-9一-鿿]+", low) if t}
+
+    user_kw = {"user", "username", "account", "login", "email", "name", "mail", "phone", "mobile"}
+    pass_kw = {"pass", "passwd", "password", "pwd"}
+    captcha_kw = {"captcha", "verify", "verification", "code", "vcode", "验证码"}
+    # 非 login 表单字段的排除词：country_code/phone_code 是区号不是验证码，
+    # company_name/nickname 不是登录用户名字段
+    non_login = {"country", "phone", "area", "post", "zip", "company", "org", "nickname", "search"}
+
+    user_keys, pass_keys, captcha_keys = [], [], []
+    for k in fields:
+        toks = _tokens(k)
+        if toks & non_login:
+            continue
+        if toks & pass_kw:
+            pass_keys.append(k)
+        elif toks & user_kw:
+            user_keys.append(k)
+        elif toks & captcha_kw and toks <= (captcha_kw | {"input", "img", "image", "rand"}):
+            captcha_keys.append(k)
     return {"user": user_keys, "pass": pass_keys, "captcha": captcha_keys}
 
 

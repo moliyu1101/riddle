@@ -137,15 +137,17 @@ class PersistenceMixin:
 
     async def _flush_trace_buffer(self) -> None:
         batch, self._trace_buffer = self._trace_buffer, []
-        self._trace_flush_inflight = False
-        if not batch:
-            return
         try:
-            async with SessionLocal() as session:
-                session.add_all(batch)
-                await session.commit()
+            if batch:
+                async with SessionLocal() as session:
+                    session.add_all(batch)
+                    await session.commit()
         except Exception:
             logger.debug("trace flush failed (%d events dropped)", len(batch), exc_info=True)
+        finally:
+            # 写库完成后再放行下一个 flush：提前清零会让并发刷盘成立，
+            # 输家锁竞争失败把整批 trace 静默丢弃。
+            self._trace_flush_inflight = False
 
     async def _trace_flush_loop(self) -> None:
         """周期批量刷盘缓冲的 worker 事件；停止后由 stop() 做最后一次 flush。"""
@@ -250,11 +252,14 @@ class PersistenceMixin:
                 **event_payload,
             )
 
-    async def _salvage_findings(self, task_id: str, target_id: str, findings: list) -> None:
+    async def _salvage_findings(self, task_id: str, target_id: str, findings: list,
+                                llm_fields: dict | None = None) -> None:
         """被取消的 worker 已发现的 findings 抢救落库（只存洞，不改目标状态）。
 
         与 _persist_worker_result 的落库逻辑一致（dedup + 唯一索引兜底），
         但不触碰目标状态机——目标回队/dead 由 cancel/reclaim 链路自行决定。
+        llm_fields：调用方须在摘除 _live **之前**取好归因快照（摘除后
+        _live_llm_fields 恒为空，被取消 worker 的洞会全部丢失模型溯源）。
         """
         if not findings:
             return
@@ -285,7 +290,8 @@ class PersistenceMixin:
                             kill_chain=f.get("kill_chain", []),
                             self_check=f.get("self_check", {}),
                             dedup_key=dedup_key, status="pending_review",
-                            **self._live_llm_fields(target_id),
+                            **(llm_fields if llm_fields is not None
+                               else self._live_llm_fields(target_id)),
                         ))
                     saved += 1
                 except IntegrityError:

@@ -128,14 +128,17 @@ def _normalize_target(target: str) -> Optional[dict[str, Any]]:
 
 
 def _root_domain(host: str) -> str:
-    """提取可注册根域：xxx.edu.cn 取后三段，其余取后两段。"""
+    """提取可注册根域——统一走 target_cluster.root_domain（含 com.cn/net.cn 等
+    二级注册域后缀表；此前本地只认 edu.cn，oa.somewhere.com.cn 会被拆成 com.cn，
+    发出 domain="com.cn" 的全量测绘查询）。"""
+    from app.agents.target_cluster import root_domain as _tc_root
     host = (host or "").strip().lower().rstrip(".")
-    parts = host.split(".")
-    if len(parts) <= 2:
+    if not host:
         return host
-    if len(parts) >= 3 and parts[-2] == "edu" and parts[-1] == "cn":
-        return ".".join(parts[-3:])
-    return ".".join(parts[-2:])
+    if re.fullmatch(r"\d{1,3}(?:\.\d{1,3}){3}", host):
+        return host
+    root = _tc_root(host)
+    return root or host
 
 
 def _safe_title(body: str) -> str:

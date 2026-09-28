@@ -288,14 +288,14 @@ class KillsweepMixin:
         self._killsweep_cancel_events[finding_id] = cancel_event
 
         def emit(kind: str, data: dict):
-            asyncio.run_coroutine_threadsafe(
+            _consume_task_exception(asyncio.run_coroutine_threadsafe(
                 bus.publish(task_id, {"agent": "killsweep", "kind": kind, "finding_id": finding_id,
                                       "ts": _now_iso(), **data}),
                 loop,
-            )
+            ))
             stage = _KILLSWEEP_STAGE_MAP.get(kind)
             if stage:
-                asyncio.run_coroutine_threadsafe(
+                _consume_task_exception(asyncio.run_coroutine_threadsafe(
                     self._mark_killsweep(finding_id, progress={
                         "stage": stage,
                         "label": _KILLSWEEP_STAGE_LABEL[stage],
@@ -303,7 +303,7 @@ class KillsweepMixin:
                         "ts": _now_iso(),
                     }),
                     loop,
-                )
+                ))
 
         def do_hunt() -> dict:
             hunter = KillsweepHunter(
@@ -677,11 +677,11 @@ class KillsweepMixin:
                     st["action"] = f"异常: {(data.get('error') or '')[:100]}"
                 elif kind == "escalate_start":
                     st["action"] = "扩大危害进行中…"
-            asyncio.run_coroutine_threadsafe(
+            _consume_task_exception(asyncio.run_coroutine_threadsafe(
                 bus.publish(task_id, {"agent": "escalation", "kind": kind, "finding_id": finding_id,
                                       "ts": _now_iso(), **data}),
                 loop,
-            )
+            ))
 
         def do_hunt() -> dict:
             hunter = EscalateHunter(

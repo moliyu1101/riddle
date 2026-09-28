@@ -614,12 +614,60 @@ def _coerce_chat_message(resp: Any) -> Any:
         text = resp.strip()
         if not text:
             raise LLMError("upstream", "LLM 返回空字符串。", detail="empty string")
-        # SSE：取最后一条有效 data:
+        # SSE 网关兜底：拼接全部 data chunk 的 delta——此前只取最后一条，而流式
+        # 最后一个 chunk 通常只含 finish_reason/空 delta，正文与 tool_calls 全丢，
+        # worker 表现为「空响应轮」。
         if text.startswith("data:") or "\ndata:" in text:
-            lines = [ln[5:].strip() for ln in text.splitlines() if ln.startswith("data:")]
-            lines = [ln for ln in lines if ln and ln != "[DONE]"]
-            if lines:
-                text = lines[-1]
+            merged_content: list[str] = []
+            merged_calls: dict[int, dict] = {}
+            parsed_any = False
+            for ln in text.splitlines():
+                if not ln.startswith("data:"):
+                    continue
+                payload = ln[5:].strip()
+                if not payload or payload == "[DONE]":
+                    continue
+                try:
+                    chunk = json.loads(payload)
+                except json.JSONDecodeError:
+                    continue
+                parsed_any = True
+                choices = chunk.get("choices") if isinstance(chunk, dict) else None
+                delta = ((choices or [{}])[0].get("delta")) if choices else None
+                delta = delta or {}
+                if delta.get("content"):
+                    merged_content.append(str(delta["content"]))
+                for tc in delta.get("tool_calls") or []:
+                    idx = int(tc.get("index") or 0)
+                    slot = merged_calls.setdefault(
+                        idx, {"id": "", "function": {"name": "", "arguments": ""}})
+                    if tc.get("id"):
+                        slot["id"] = tc["id"]
+                    fn = tc.get("function") or {}
+                    if fn.get("name"):
+                        slot["function"]["name"] = fn["name"]
+                    if fn.get("arguments"):
+                        slot["function"]["arguments"] += str(fn["arguments"])
+            if parsed_any:
+                calls = []
+                for k in sorted(merged_calls):
+                    c = merged_calls[k]
+                    if c["function"]["name"] or c["function"]["arguments"]:
+                        calls.append(SimpleNamespace(
+                            id=c["id"] or f"call_{k}",
+                            function=SimpleNamespace(name=c["function"]["name"],
+                                                     arguments=c["function"]["arguments"])))
+                if calls:
+                    return SimpleNamespace(content="".join(merged_content),
+                                           tool_calls=calls, role="assistant")
+                if merged_content:
+                    return SimpleNamespace(content="".join(merged_content),
+                                           tool_calls=None, role="assistant")
+                # 全空 delta：退回旧行为（取最后一条原始行，交由上层 json/文本解析）
+                tail = [x[5:].strip() for x in text.splitlines() if x.startswith("data:")]
+                tail = [x for x in tail if x and x != "[DONE]"]
+                if tail:
+                    text = tail[-1]
         try:
             resp = json.loads(text)
         except json.JSONDecodeError:
@@ -1325,8 +1373,12 @@ class LLMClient:
         max_tokens_fallback_used = False
         max_retries = _POOL_SAME_PROVIDER_RETRIES if self.pool_mode else _MAX_RETRIES
         retry_count = 0
+        retry_after_spent = 0        # 429 Retry-After 累计等待（秒），封顶防单次 chat 同步阻塞 20 分钟
+        _RETRY_AFTER_SESSION_CAP = 30
+        degrades = 0                 # 一次性兼容降级（TLS/协议/tool_choice/提示词模拟/max_tokens）已触发数
+        _DEGRADE_MAX = 5
         # TLS/协议/参数兼容降级各自最多触发一次，不占传输重试次数。
-        for _attempt in range(max_retries + 5):
+        for _attempt in range(max_retries + _DEGRADE_MAX):
             try:
                 if self._messages_protocol:
                     return _finish(self._messages_chat(
@@ -1340,11 +1392,13 @@ class LLMClient:
                 # TLS 自适应：https 中转自签证书导致校验失败时，自动降级不校验并立即重试。
                 # 只会降级一次（之后 _insecure_tls=True，再进来直接返回 False），不会死循环。
                 if self._maybe_downgrade_tls(e):
+                    degrades += 1
                     continue
                 last_exc = _classify_error(e)
                 kind = getattr(last_exc, "kind", "?")
                 # 协议自适应：端点用错协议（走错路径 404 等）时自动切 messages/openai 重试。
                 if self._maybe_switch_protocol(last_exc):
+                    degrades += 1
                     continue
                 if (
                     tools
@@ -1365,6 +1419,7 @@ class LLMClient:
                     active_tool_choice = "auto"
                     kwargs["tool_choice"] = "auto"
                     tool_choice_fallback_used = True
+                    degrades += 1
                     continue
                 # 工具调用兼容：端点对 tools 参数硬报错「不支持」时，自动切提示词模拟重试。
                 # 仅 auto 模式、仅命中明确「不支持工具」的信号才切，原生可用模型不受影响。
@@ -1389,6 +1444,7 @@ class LLMClient:
                     kwargs["messages"] = messages
                     kwargs.pop("tools", None)
                     kwargs.pop("tool_choice", None)
+                    degrades += 1
                     continue
                 if (
                     not max_tokens_fallback_used
@@ -1404,6 +1460,7 @@ class LLMClient:
                     )
                     kwargs.pop("max_tokens", None)
                     max_tokens_fallback_used = True
+                    degrades += 1
                     continue
                 if not _should_retry_current_provider(last_exc):
                     diag = last_exc.diagnostic() if isinstance(last_exc, LLMError) else str(last_exc)
@@ -1416,9 +1473,18 @@ class LLMClient:
                     logger.info("LLM chat retry %d/%d (kind=%s, model=%s)",
                                 retry_count + 1, max_retries, kind, self.config.model)
                     wait = min(2 ** retry_count, 8)  # 1s, 2s, 4s... 封顶 8s
-                    # 上游 429 带 Retry-After 时按它等待（封顶 300s），别比上游要求更激进
+                    # 上游 429 带 Retry-After 时按它等待；单次 chat 的 Retry-After
+                    # 累计等待封顶 30s——超出直接失败交端点冷却处理，避免 worker
+                    # 线程占着并发位同步阻塞 20 分钟。
                     if isinstance(last_exc, LLMError) and last_exc.retry_after:
-                        wait = max(wait, min(int(last_exc.retry_after), 300))
+                        want = min(int(last_exc.retry_after), 300)
+                        if retry_after_spent + want > _RETRY_AFTER_SESSION_CAP:
+                            logger.warning(
+                                "LLM chat Retry-After 会话累计等待超上限(%ds)，放弃本次重试",
+                                retry_after_spent)
+                            break
+                        wait = max(wait, want)
+                        retry_after_spent += wait - min(2 ** retry_count, 8)
                     time.sleep(wait)
                     retry_count += 1
                 else:
@@ -1537,6 +1603,14 @@ class LLMClient:
             resp = client.post(self._messages_url(), headers=headers, json=payload)
         resp.raise_for_status()
         data = resp.json()
+        # 网关 200 包错误 JSON 的形态（与 OpenAI 路径的 _coerce_chat_message 同口径）：
+        # 不识别会静默返回空消息，worker 表现为「空响应轮」。
+        if isinstance(data, dict) and data.get("error"):
+            err = data["error"]
+            msg = err.get("message", "") if isinstance(err, dict) else str(err)
+            etype = err.get("type", "") if isinstance(err, dict) else ""
+            raise LLMError("upstream", f"LLM 网关返回错误（messages 协议）：{msg[:200] or etype}",
+                           status=resp.status_code, detail=str(err)[:400])
         self._record_messages_usage(data)
         return self._parse_messages_response(data)
 

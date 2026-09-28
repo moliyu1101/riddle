@@ -26,7 +26,7 @@ PROTECTED_DIR_NAMES = frozenset({
 })
 # 再新也不删：正在写日志的目录即使父目录 mtime 很旧也要保住。
 _MIN_IDLE_SECONDS = 30 * 60
-_WALK_CAP = 400
+_WALK_CAP = 4000  # 400 条在大目录里常扫不到最新写入，活跃目录会被误判过期
 _STATS_SIZE_DIRS = 80
 
 
@@ -191,6 +191,7 @@ def cleanup_workdir(
         "deleted_dirs": 0,
         "failed_dirs": 0,
         "skipped_recent": 0,
+        "skipped_checkpoint": 0,
         "freed_bytes": 0,
         "freed_human": "0 B",
         "deleted": [],
@@ -208,6 +209,12 @@ def cleanup_workdir(
             continue
         target = _is_safe_child(root, entry)
         if target is None:
+            continue
+        # 含断点的目录一律不清理：断点意味着目标可从最近进度复活，长暂停任务
+        # 回来续挖时断点与证据必须还在（宁可少删，不冒误删风险）。
+        if (target / "resume_checkpoint.json").exists():
+            result.setdefault("skipped_checkpoint", 0)
+            result["skipped_checkpoint"] += 1
             continue
 
         result["scanned_dirs"] += 1

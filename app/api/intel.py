@@ -357,6 +357,7 @@ async def update_knowledge(
     if "enabled" in payload:
         pl["enabled"] = bool(payload["enabled"])
     it.payload = pl
-    it.last_seen = it.last_seen
+    from datetime import datetime, timezone
+    it.last_seen = datetime.now(timezone.utc)  # 编辑即刷新时间戳（此前自赋值永不变）
     await session.commit()
     return _knowledge_to_dict(it, with_content=True)

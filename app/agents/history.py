@@ -176,9 +176,11 @@ def summarize_tool_content(raw: str, tool: str) -> str:
 
 
 def compact_messages(messages: list[dict[str, Any]], cur_round: int) -> list[dict[str, Any]]:
-    """生成发送给 LLM 的瘦身副本：超窗口的旧 tool 响应压成摘要，剥离内部 _round/_tool 字段。
+    """生成发送给 LLM 的瘦身视图：超窗口的旧 tool 响应压成摘要。
 
-    不带元字段的 tool 消息按 cur_round 处理（视为最新，不压缩）。
+    注意：压缩是对传入 messages **原地**生效（摘要缓存进 _summary 键、content
+    被替换）——调用方若需保留原始证据，请在调用前自行深拷贝；当前 worker
+    的 checkpoint 不含 messages，故无实际影响，但未来改动须保持此约定。
     """
     window = worker_config.history_full_tool_rounds
     out: list[dict[str, Any]] = []

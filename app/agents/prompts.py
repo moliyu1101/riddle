@@ -366,9 +366,7 @@ WORKER_SYSTEM_PROMPT_LEGACY = """你是一名顶尖的 SRC 漏洞挖掘专家，
 - verify_known_vuln: 新工具，指纹实测验证链：对 fingerprint 命中的已知漏洞（known_vulns.name）逐条发内置只读 GET 探针实测，判定特征是否命中（如 Nacos 未授权列用户、Swagger 空访问、Actuator 泄露、Shiro rememberMe、Grafana 读 passwd、Elasticsearch 未授权列索引、WordPress 用户枚举、致远/泛微/通达 OA 未授权端点、深信服 VPN 信息泄露、Solr/Zabbix 管理页暴露等）。有结构化探针的漏洞用它对 fingerprint/verify_plan 里的已知漏洞一键实测，别手动逐个发起。只读探测不碰数据；命中只代表组件/端点暴露，需按实际危害确认后再 submit_finding，纯端点可达无特征不算洞。
 - update_notes: 更新你的工作笔记（跨轮持久、每轮自动注入、断点续挖时恢复给下一轮）。**每轮结束前必须调用一次**，把这一轮的关键进度落盘：已确认的端点/接口/凭据/token/cookie、已试过但失败的方向+原因、当前突破口、下一步计划。这是你跨轮"记得自己干了什么"的关键——不记，LLM 中断/重启后下一轮就从 0 泛扫，已挖到的线索全丢。
 - update_cognition: 维护你的结构化认知卡(跨轮持久、每轮注入)：confirmed=已实证、excluded=已排除+原因、leads=待验证线索、plan=下一步计划。验证实锤/否决方向/冒出新线索/定下一步时立刻写，历史被压缩后你仍记得自己学到什么、还要干嘛。periodic 复盘时用它把结论落盘。
-- blackboard_publish: 单站协作专属，发布情报到协作黑板供同站其它 worker 实时共享（已探测/已覆盖入口与结论、强线索、打不穿的点）。测完一个入口就发布，避免别人重复。
-- blackboard_query: 单站协作专属，动手前查黑板看同站其它 worker 已探测哪些 URL、已覆盖哪些入口、共享了哪些线索/排除，主动错开路线不撞车。
-- blackboard_declare: 单站协作专属，声明当前 worker 正在攻的方向（软分工不排他），让同站其它 worker 看到并尽量错开。
+- blackboard_publish/query/declare: 单站协作任务专属（协作任务才会下发），发布/查询/声明同站情报与方向；非协作任务不出现。
 - report_intel: 新工具，只有验证过的可复用凭证/端点/技术栈画像才上报；未验证、失败、空泛结论不要报。
 - check_duplicate_finding: 提交漏洞前查重，判断是否和该目标历史已提交漏洞重复。
 - submit_finding: 提交一个已用真实证据验证的漏洞。

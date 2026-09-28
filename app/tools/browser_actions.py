@@ -65,7 +65,9 @@ def _url_allowed(url: str, target_host: str) -> bool:
     if not host:
         return False
     if not target_host:
-        return True  # 无目标 host 时不强制限制（本地/测试场景）
+        # 目标 host 缺失（executor.target 未初始化/异常路径）时默认拒绝：
+        # 域边界是浏览器动作的安全底线，放行任意域等于边界形同虚设。
+        return False
     return host == target_host or host.endswith("." + target_host)
 
 
@@ -133,21 +135,32 @@ def _extract_page(page: Any, max_text: int = _MAX_VISIBLE_TEXT) -> dict[str, Any
 
 
 def _sync_cookies(executor: Any, context: Any) -> int:
-    """把浏览器产生的 cookie 同步回 executor 会话 jar（登录态互通）。"""
+    """把浏览器产生的 cookie 同步回 executor 会话 jar（登录态互通）。
+
+    只同步目标域及其子域的 cookie：context.cookies() 会带出页面内第三方
+    iframe 的 cookie，扁平 jar 无域概念，原样回灌会把它发给 worker 后续的
+    每一个请求，污染登录态与会话判定。
+    """
     try:
         cookies = context.cookies()
     except Exception:
         return 0
+    target_host = _target_host(getattr(executor, "target", "") or "")
     n = 0
     for c in cookies:
         name = c.get("name")
         value = c.get("value")
-        if name:
-            try:
-                executor._put_cookie(str(name), str(value), [])
-                n += 1
-            except Exception:
-                pass
+        if not name:
+            continue
+        if target_host:
+            cdomain = str(c.get("domain") or "").lstrip(".").lower()
+            if cdomain and cdomain != target_host and not cdomain.endswith("." + target_host):
+                continue
+        try:
+            executor._put_cookie(str(name), str(value), [])
+            n += 1
+        except Exception:
+            pass
     return n
 
 
