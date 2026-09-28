@@ -5,12 +5,14 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
+from app.config import DEFAULT_LLM_BASE_URL, DEFAULT_LLM_MODEL
+
 
 class ModelConfigDTO(BaseModel):
     inherit_global: Optional[bool] = None
-    base_url: str = "https://api.deepseek.com/v1"
+    base_url: str = DEFAULT_LLM_BASE_URL
     api_key: str = ""
-    model: str = "deepseek-chat"
+    model: str = DEFAULT_LLM_MODEL
     # 单端点多模型灾备：models = 主模型 + 灾备模型，同供应商下失败自动顶替
     models: list[str] = Field(default_factory=list)
     protocol: str = "auto"

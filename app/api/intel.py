@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.intel_curator import curate_intel
-from app.agents.knowledge import sync_kb_from_files
+from app.agents.knowledge import clear_kb_cache, sync_kb_from_files
 from app.db.models import Intel, to_cst_iso
 from app.db.session import get_session
 
@@ -277,7 +277,9 @@ async def list_knowledge(
 @router.post("/knowledge/sync")
 async def sync_knowledge(session: AsyncSession = Depends(get_session)):
     """把 knowledge/(rules+kb) 本地种子文件同步进知识库，同名已存在则跳过（保留用户编辑）。"""
-    return await sync_kb_from_files(session)
+    result = await sync_kb_from_files(session)
+    clear_kb_cache()
+    return result
 
 
 @router.get("/knowledge/{knowledge_id}")
@@ -325,6 +327,7 @@ async def create_knowledge(
     )
     session.add(it)
     await session.commit()
+    clear_kb_cache()
     return _knowledge_to_dict(it, with_content=True)
 
 
@@ -360,4 +363,5 @@ async def update_knowledge(
     from datetime import datetime, timezone
     it.last_seen = datetime.now(timezone.utc)  # 编辑即刷新时间戳（此前自赋值永不变）
     await session.commit()
+    clear_kb_cache()
     return _knowledge_to_dict(it, with_content=True)

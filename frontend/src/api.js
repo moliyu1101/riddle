@@ -119,6 +119,8 @@ export async function applyAccessToken(token) {
   }
 }
 
+const REQ_TIMEOUT_MS = 60_000;
+
 async function req(method, url, body, retriedAuth = false, overrideToken = "") {
   const opt = { method, headers: {} };
   const token = overrideToken || apiToken();
@@ -127,7 +129,20 @@ async function req(method, url, body, retriedAuth = false, overrideToken = "") {
     opt.headers["Content-Type"] = "application/json";
     opt.body = JSON.stringify(body);
   }
-  const res = await fetch(base + url, opt);
+  // 请求超时：后端挂起时不再永久 pending（60s 覆盖所有常规 API；报告导出等
+  // 长操作走 downloadFile/流式接口，不受此限）
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), REQ_TIMEOUT_MS);
+  opt.signal = ctrl.signal;
+  let res;
+  try {
+    res = await fetch(base + url, { ...opt, signal: ctrl.signal });
+  } catch (e) {
+    clearTimeout(timer);
+    if (e && e.name === "AbortError") throw new Error("请求超时（60s），请重试或检查服务状态");
+    throw e;
+  }
+  clearTimeout(timer);
   const text = await res.text();
   if (res.status === 401 && !retriedAuth) {
     handleAuthExpired();
@@ -373,9 +388,9 @@ export const api = {
 };
 
 export function wsUrl(taskId) {
+  // 不再把 token 拼进 query（会落反代访问日志）：浏览器 WS 升级请求自动携带
+  // riddle_token cookie，后端 token_from_headers 本就从 cookie 读取。
   const proto = location.protocol === "https:" ? "wss" : "ws";
   const host = location.host || "localhost:8000";
-  const token = apiToken();
-  const suffix = token ? `?token=${encodeURIComponent(token)}` : "";
-  return `${proto}://${host}/api/tasks/${taskId}/stream${suffix}`;
+  return `${proto}://${host}/api/tasks/${taskId}/stream`;
 }

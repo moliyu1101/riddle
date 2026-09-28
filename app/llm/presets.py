@@ -8,13 +8,15 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.config import DEFAULT_LLM_BASE_URL
+
 # 模型商预设：连接向导一键填充 base_url/协议/推荐模型
 LLM_PROVIDER_PRESETS: list[dict[str, Any]] = [
     {
         "id": "deepseek",
         "name": "DeepSeek",
         "desc": "高性价比 · 对话+推理",
-        "base_url": "https://api.deepseek.com/v1",
+        "base_url": DEFAULT_LLM_BASE_URL,
         "protocol": "auto",
         "models": ["deepseek-chat", "deepseek-reasoner"],
         "recommended": "deepseek-chat",

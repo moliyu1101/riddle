@@ -1,5 +1,6 @@
 <script setup>
 import { computed, reactive, ref, watch, onMounted, onBeforeUnmount } from "vue";
+import { DEFAULT_LLM_BASE_URL, DEFAULT_LLM_MODEL } from "../defaults.js";
 import { useRouter } from "vue-router";
 import { api } from "../api.js";
 import { useAuthBindings, emptyBinding } from "../composables/useAuthBindings.js";
@@ -795,12 +796,12 @@ function ensurePoolSeed() {
   if (taskProviders.value.length) return;
   taskProviders.value = [{
     name: "llm-1",
-    base_url: form.base_url || inherited.base_url || "https://api.deepseek.com/v1",
+    base_url: form.base_url || inherited.base_url || DEFAULT_LLM_BASE_URL,
     api_key: "",
     api_key_set: false,
     api_key_masked: "",
     key_ref: "",
-    model: form.model || inherited.model || "deepseek-chat",
+    model: form.model || inherited.model || DEFAULT_LLM_MODEL,
     protocol: form.protocol || inherited.protocol || "auto",
     temperature: 0.3,
     weight: 1,
@@ -1796,7 +1797,7 @@ async function submit() {
                           <div v-else-if="wizardStep === 1" class="wizard-pane">
                             <div class="create-grid">
                               <label class="wide">模型 base_url
-                                <input v-model="form.base_url" required placeholder="https://api.deepseek.com/v1" @input="invalidateModelKey" />
+                                <input v-model="form.base_url" required :placeholder="DEFAULT_LLM_BASE_URL" @input="invalidateModelKey" />
                               </label>
                               <label class="wide">模型 api_key
                                 <span class="key-line">

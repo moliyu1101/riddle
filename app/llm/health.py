@@ -11,6 +11,18 @@ from typing import Any
 
 _HEALTH: dict[str, dict[str, Any]] = {}
 _LOCK = threading.Lock()
+
+# 状态表容量兜底：换 Key/换模型生成新 ref，旧行永不复用（无界缓慢增长）
+_HEALTH_MAX_REFS = 200
+
+
+def _evict_health_if_full() -> None:
+    """超限淘汰最旧 last_seen 的 ref 行。须在 _LOCK 内调用。"""
+    if len(_HEALTH) <= _HEALTH_MAX_REFS:
+        return
+    victims = sorted(_HEALTH, key=lambda k: str(_HEALTH[k].get("last_seen") or ""))
+    for k in victims[: len(_HEALTH) - _HEALTH_MAX_REFS]:
+        _HEALTH.pop(k, None)
 _FAIL_THRESHOLD = max(1, int(os.environ.get("LLM_PROVIDER_FAIL_THRESHOLD", "5")))
 _BEHAVIOR_FAIL_THRESHOLD = max(1, int(os.environ.get("LLM_PROVIDER_BEHAVIOR_FAIL_THRESHOLD", "3")))
 _FAILED_RETRY_SECONDS = max(1, int(os.environ.get("LLM_PROVIDER_FAILED_RETRY_SECONDS", "60")))
@@ -361,6 +373,7 @@ def mark_provider_failed(
             _refresh_status(row, now)
             return {**row, "transition": "request_rejected"}
 
+        _evict_health_if_full()
         row = _HEALTH.setdefault(ref, {})
         previous_status = _transport_status(row)
         if previous_status == "cooldown" and now.timestamp() < float(row.get("cooldown_until_ts") or 0):

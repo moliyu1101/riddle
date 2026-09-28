@@ -22,6 +22,8 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import time
+from typing import Any
 from pathlib import Path
 
 from sqlalchemy import select
@@ -259,6 +261,29 @@ def _match_methods(text: str) -> list[str]:
     return out
 
 
+# 知识库条目缓存：worker 每次派发都会调 lookup_kb，全表拉取是重复 IO；
+# 条目只在启动同步/手动编辑时变化（低频），TTL 60s + 写操作主动失效。
+_KB_CACHE: dict[str, Any] = {"rows": None, "expires": 0.0}
+_KB_CACHE_TTL = 60.0
+
+
+async def _load_kb_rows(session: AsyncSession) -> list:
+    now = time.monotonic()
+    if _KB_CACHE["rows"] is not None and now < _KB_CACHE["expires"]:
+        return _KB_CACHE["rows"]
+    stmt = select(Intel).where(Intel.kind == "knowledge")
+    rows = (await session.execute(stmt)).scalars().all()
+    _KB_CACHE["rows"] = rows
+    _KB_CACHE["expires"] = now + _KB_CACHE_TTL
+    return rows
+
+
+def clear_kb_cache() -> None:
+    """知识库条目增删改后调用，让 lookup_kb 下次拉取最新。"""
+    _KB_CACHE["rows"] = None
+    _KB_CACHE["expires"] = 0.0
+
+
 async def lookup_kb(
     session: AsyncSession,
     query_terms: list[str] | None = None,
@@ -274,9 +299,7 @@ async def lookup_kb(
     限量返回，手册不占方法论名额。
     """
     limit = limit or _KB_MAX
-    # 覆盖 seed(种子) + 用户手动添加两类条目：种子用 kb: 前缀，用户条目用 kbu: 前缀。
-    stmt = select(Intel).where(Intel.kind == "knowledge")
-    rows = (await session.execute(stmt)).scalars().all()
+    rows = await _load_kb_rows(session)
     by_name = {it.match_key: it for it in rows}
 
     alias_names: set[str] = set()

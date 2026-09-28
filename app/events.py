@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections import defaultdict
 from typing import Any
 
@@ -30,14 +31,20 @@ class EventBus:
                 q.put_nowait(event)
             except asyncio.QueueFull:
                 # 慢消费者：丢掉最旧事件再塞入最新，避免静默整段失联。
+                # 打日志留痕（含 kind）：前端看板的事件缺口至少可与服务端日志对账。
                 try:
-                    q.get_nowait()
+                    dropped = q.get_nowait()
                 except asyncio.QueueEmpty:
                     continue
+                logger.warning(
+                    "event bus 慢消费者丢帧 task=%s dropped_kind=%s new_kind=%s",
+                    task_id, (dropped or {}).get("kind", "?"), event.get("kind", "?"))
                 try:
                     q.put_nowait(event)
                 except asyncio.QueueFull:
                     pass
 
+
+logger = logging.getLogger(__name__)
 
 bus = EventBus()

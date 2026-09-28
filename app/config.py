@@ -1,4 +1,4 @@
-﻿"""配置：全部从环境变量读取，凭证绝不硬编码进源码。"""
+"""配置：全部从环境变量读取，凭证绝不硬编码进源码。"""
 from __future__ import annotations
 
 import os
@@ -24,10 +24,15 @@ def _load_dotenv() -> None:
 _load_dotenv()
 
 
+# 全平台默认 LLM 端点（默认供应商 DeepSeek）：唯一出处，dto/presets/UI 兜底一律引用
+DEFAULT_LLM_BASE_URL = "https://api.deepseek.com/v1"
+DEFAULT_LLM_MODEL = "deepseek-chat"
+
+
 class LLMConfig(BaseModel):
-    base_url: str = os.environ.get("LLM_BASE_URL", "https://api.deepseek.com/v1")
+    base_url: str = os.environ.get("LLM_BASE_URL", DEFAULT_LLM_BASE_URL)
     api_key: str = os.environ.get("LLM_API_KEY", "")
-    model: str = os.environ.get("LLM_MODEL", "deepseek-chat")
+    model: str = os.environ.get("LLM_MODEL", DEFAULT_LLM_MODEL)
     temperature: float = float(os.environ.get("LLM_TEMPERATURE", "0.3"))
     protocol: str = os.environ.get("LLM_PROTOCOL", "auto")
     weight: int = int(os.environ.get("LLM_WEIGHT", "1"))

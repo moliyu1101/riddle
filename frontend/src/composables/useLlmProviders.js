@@ -1,4 +1,5 @@
 import { ref, computed, watch, nextTick } from "vue";
+import { DEFAULT_LLM_BASE_URL, DEFAULT_LLM_MODEL } from "../defaults.js";
 import { api } from "../api.js";
 import { copyText, formatLlmTestCopy } from "../clipboard.js";
 
@@ -20,13 +21,13 @@ export function useLlmProviders(ctx) {
     return {
       _uid: nextProviderUid(),
       name: `llm-${form.llm_providers.length + 1}`,
-      base_url: form.base_url || "https://api.deepseek.com/v1",
+      base_url: form.base_url || DEFAULT_LLM_BASE_URL,
       api_key: "",
       api_key_set: false,
       api_key_masked: "",
       key_ref: "",
       health_ref: "",
-      model: form.model || "deepseek-chat",
+      model: form.model || DEFAULT_LLM_MODEL,
       protocol: form.protocol || "openai_chat",
       temperature: Number(form.temperature ?? 0.3),
       weight: 1,
