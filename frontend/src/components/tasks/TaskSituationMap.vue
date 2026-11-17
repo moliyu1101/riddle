@@ -50,8 +50,8 @@ function go(id) {
     <div class="situation-head">
       <div class="situation-title">
         <span class="sit-live-dot" :class="{ on: runningCount > 0 }"></span>
-        <b>任务态势图</b>
-        <span class="sit-sub">实时任务拓扑 · {{ runningCount }} 在侦</span>
+        <b>全局作战态势拓扑</b>
+        <span class="sit-sub">全闭环自进化在线 · {{ runningCount }} 在侦 · {{ reviewCount }} 待审</span>
       </div>
       <div class="situation-legend">
         <span class="legend-item"><i class="lg running"></i>运行中</span>
@@ -87,7 +87,7 @@ function go(id) {
           </svg>
         </div>
         <div class="hub-text">
-          <div class="hub-label">指挥中心</div>
+          <div class="hub-label">自主指挥中枢</div>
           <div class="hub-meta">{{ tasks.length }} 任务 · {{ vulnCount }} 漏洞</div>
         </div>
       </div>

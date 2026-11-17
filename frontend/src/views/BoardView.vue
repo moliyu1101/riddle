@@ -1,5 +1,6 @@
 ﻿<script setup>
 import { ref, onMounted, onUnmounted, computed, watch, nextTick } from "vue";
+import { useRoute } from "vue-router";
 import { api, wsUrl, authRoleRef, authReadyRef, loadAuthRole } from "../api.js";
 import { copyText, formatLlmErrorCopy } from "../clipboard.js";
 import { useEventFormat, TRACE_KINDS, DETAIL_KINDS } from "../composables/useEventFormat.js";
@@ -20,6 +21,7 @@ import BoardFusionDrawer from "../components/board/BoardFusionDrawer.vue";
 defineOptions({ name: "BoardView" });
 
 const props = defineProps({ id: String });
+const route = useRoute();
 const task = ref(null);
 const tab = ref("board");          // board | review | submit | killsweep | rejected | archived
 const boardPanel = ref("workers"); // workers | stream（手机端看板切换）
@@ -502,12 +504,20 @@ function syncPollers() {
   }), running ? 15000 : 30000);
 }
 
+function applyBoardFusionQuery() {
+  const f = String(route.query?.fusion || "").trim();
+  if (f === "goals" || f === "switches" || f === "ops") {
+    openFusionDrawer(f);
+  }
+}
+
 onMounted(async () => {
   window.addEventListener("riddle-auth-role", onAuthOrTokenChange);
   window.addEventListener("riddle-token-changed", onAuthOrTokenChange);
   window.addEventListener("riddle:task-saved", onTaskSavedEvent);
   if (!authReadyRef.value) await loadAuthRole();
   await bootstrapTask();
+  applyBoardFusionQuery();
   syncPollers();
 });
 onUnmounted(() => {
@@ -527,6 +537,10 @@ watch(() => props.id, async (id, oldId) => {
   if (!id || id === oldId) return;
   await bootstrapTask();
   syncPollers();
+});
+
+watch(() => route.query?.fusion, () => {
+  applyBoardFusionQuery();
 });
 
 watch(() => task.value?.status, () => {
@@ -1067,6 +1081,8 @@ const liveTargetIds = computed(() => new Set(liveWorkers.value.map((w) => w.targ
         :sweep-count="sweepCount"
         :timeline="timeline"
         :vuln-dist="vulnDist"
+        :live-escalations-count="liveEscalations.length"
+        :has-blackboard="!!siteCollab?.blackboard"
         @edit="() => openEditTask(props.id)"
         @start="ctl('start')"
         @pause="ctl('pause')"

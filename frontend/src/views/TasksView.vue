@@ -5,6 +5,7 @@ import { api, authReadyRef, authRequiredRef, authRoleRef, loadAuthRole, verifyTo
 import TaskSituationMap from "../components/tasks/TaskSituationMap.vue";
 import { openCreateTask, openEditTask } from "../composables/useCreateTask.js";
 import { useCountUp } from "../composables/useCountUp.js";
+import { showToast } from "../composables/useToast.js";
 
 defineOptions({ name: "TasksView" });
 
@@ -13,9 +14,20 @@ const initialLoading = ref(true);
 const refreshing = ref(false);
 const searchQuery = ref("");
 const statusFilter = ref("all");
+const onlyPendingReview = ref(false);
 const writable = computed(() => authRoleRef.value === "full");
 const router = useRouter();
 let pollTimer = null;
+
+const loopMetrics = ref({
+  intelTotal: 0,
+  intelVerified: 0,
+  intelReused: 0,
+  kbTotal: 0,
+  kbDistilled: 0,
+  hardTotal: 0,
+  pendingIntercepts: 0,
+});
 
 const STATUS_LABEL = {
   running: "运行中",
@@ -77,17 +89,29 @@ const statTotal = useCountUp(computed(() => stats.value.total));
 const statRunning = useCountUp(computed(() => stats.value.running));
 const statReview = useCountUp(computed(() => stats.value.pendingReview));
 const statVulns = useCountUp(computed(() => stats.value.totalVulns));
+const statIntel = useCountUp(computed(() => loopMetrics.value.intelTotal));
+const statDistilled = useCountUp(computed(() => loopMetrics.value.kbDistilled));
 
 // 筛选后的任务
 const filteredTasks = computed(() => {
   return tasks.value.filter((t) => {
     const matchStatus = statusFilter.value === "all" || t.status === statusFilter.value;
+    const matchReview = !onlyPendingReview.value || (t.pending_user_review || 0) > 0;
     const matchSearch = !searchQuery.value ||
       t.name.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
       (t.fofa_query || "").toLowerCase().includes(searchQuery.value.toLowerCase());
-    return matchStatus && matchSearch;
+    return matchStatus && matchReview && matchSearch;
   });
 });
+
+function collabModeLabel(t) {
+  if (t?.target_source === "site") return "🕸️ 单站多路线黑板";
+  if ((t?.concurrency || 1) >= 2) return "🤝 多目标共享黑板";
+  return "";
+}
+function openTaskFusionGoals(taskId) {
+  router.push({ path: `/task/${taskId}`, query: { fusion: "goals" } });
+}
 
 const hasRunning = computed(() => tasks.value.some((t) => t.status === "running"));
 
@@ -102,8 +126,27 @@ async function load(opts = {}) {
   const background = !!opts.background;
   if (!tasks.value.length) initialLoading.value = true;
   else if (!background) refreshing.value = true;
-  try { tasks.value = await api.listTasks(); }
-  finally {
+  try {
+    const isPriv = authRoleRef.value !== "observer";
+    const [taskRes, intelRes, kbRes, hardRes, icRes] = await Promise.all([
+      api.listTasks(),
+      isPriv ? api.intelStats().catch(() => null) : Promise.resolve(null),
+      isPriv ? api.knowledgeList("all", "").catch(() => []) : Promise.resolve([]),
+      isPriv ? api.hardTargetsStats().catch(() => null) : Promise.resolve(null),
+      isPriv ? api.fusionInterceptList({ status: "pending" }).catch(() => null) : Promise.resolve(null),
+    ]);
+    tasks.value = Array.isArray(taskRes) ? taskRes : [];
+    const kbList = Array.isArray(kbRes) ? kbRes : [];
+    loopMetrics.value = {
+      intelTotal: Number(intelRes?.total || 0),
+      intelVerified: Number(intelRes?.verified || 0),
+      intelReused: Number(intelRes?.reused || 0),
+      kbTotal: kbList.length,
+      kbDistilled: kbList.filter((x) => x?.origin === "distilled").length,
+      hardTotal: Number(hardRes?.total || 0),
+      pendingIntercepts: Array.isArray(icRes?.items) ? icRes.items.length : 0,
+    };
+  } finally {
     initialLoading.value = false;
     refreshing.value = false;
     syncPoller();
@@ -151,6 +194,7 @@ async function confirmDelete() {
     tasks.value = tasks.value.filter((t) => t.id !== task.id);
     delTarget.value = null;
     delToken.value = "";
+    showToast(`已删除任务「${task.name}」`, "ok");
   } catch (e) {
     delError.value = `删除失败：${e.message || e}`;
   } finally {
@@ -190,48 +234,83 @@ watch(hasRunning, () => syncPoller());
       <b>任务态势</b>
     </nav>
 
-    <!-- 态势图横幅 -->
-    <div v-if="!initialLoading && tasks.length" class="situation-banner">
-      <TaskSituationMap :tasks="tasks" />
-    </div>
+    <!-- 双栏作战总览：左 6 维闭环矩阵 + 右战术态势拓扑 -->
+    <div v-if="!initialLoading && tasks.length" class="ops-command-deck">
+      <div class="stats-row" :class="{ 'stats-row-6': authRoleRef !== 'observer' }">
+        <div class="stat-card clickable" :class="{ on: statusFilter === 'running' }" @click="statusFilter = statusFilter === 'running' ? 'all' : 'running'">
+          <div class="stat-icon running">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          </div>
+          <div class="stat-info">
+            <span class="stat-value">{{ statRunning }}<small style="font-size:12px;color:var(--faint);font-weight:500;"> / {{ statTotal }}</small></span>
+            <span class="stat-label">运行 / 总任务</span>
+          </div>
+        </div>
+        <div class="stat-card clickable" :class="{ on: onlyPendingReview }" @click="onlyPendingReview = !onlyPendingReview">
+          <div class="stat-icon review">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          </div>
+          <div class="stat-info">
+            <span class="stat-value review-value">{{ statReview }}</span>
+            <span class="stat-label">待人工复审</span>
+          </div>
+        </div>
+        <div class="stat-card clickable" @click="router.push('/vulns')">
+          <div class="stat-icon vuln">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          </div>
+          <div class="stat-info">
+            <span class="stat-value">{{ statVulns }}</span>
+            <span class="stat-label">累计漏洞档案</span>
+          </div>
+        </div>
+        <template v-if="authRoleRef !== 'observer'">
+          <div class="stat-card clickable" @click="router.push({ path: '/intel', query: { tab: 'intel' } })">
+            <div class="stat-icon total">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            </div>
+            <div class="stat-info">
+              <span class="stat-value">{{ statIntel }}</span>
+              <span class="stat-label">效用情报 ({{ loopMetrics.intelVerified }} 核准)</span>
+            </div>
+          </div>
+          <div class="stat-card clickable" @click="router.push({ path: '/intel', query: { tab: 'kb', origin: 'distilled' } })">
+            <div class="stat-icon running">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+            </div>
+            <div class="stat-info">
+              <span class="stat-value">{{ statDistilled }}<small style="font-size:12px;color:var(--faint);font-weight:500;"> / {{ loopMetrics.kbTotal }}</small></span>
+              <span class="stat-label">⚡ 实战蒸馏 / 知识库</span>
+            </div>
+          </div>
+          <div
+            class="stat-card clickable"
+            @click="router.push(loopMetrics.pendingIntercepts > 0 ? { path: '/fusion', query: { tab: 'gates' } } : { path: '/intel', query: { tab: 'hard' } })"
+          >
+            <div class="stat-icon review">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            </div>
+            <div class="stat-info">
+              <span class="stat-value">{{ loopMetrics.hardTotal }}</span>
+              <span class="stat-label">
+                {{ loopMetrics.pendingIntercepts > 0 ? `硬骨头 · ${loopMetrics.pendingIntercepts} 待批命令` : "硬骨头待唤醒池" }}
+              </span>
+            </div>
+          </div>
+        </template>
+        <div v-else class="stat-card">
+          <div class="stat-icon total">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          </div>
+          <div class="stat-info">
+            <span class="stat-value">{{ statTotal }}</span>
+            <span class="stat-label">任务总数</span>
+          </div>
+        </div>
+      </div>
 
-    <!-- 统计条 -->
-    <div v-if="!initialLoading && tasks.length" class="stats-row">
-      <div class="stat-card">
-        <div class="stat-icon total">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-        </div>
-        <div class="stat-info">
-          <span class="stat-value">{{ statTotal }}</span>
-          <span class="stat-label">任务总数</span>
-        </div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-icon running">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-        </div>
-        <div class="stat-info">
-          <span class="stat-value">{{ statRunning }}</span>
-          <span class="stat-label">运行中</span>
-        </div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-icon review">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-        </div>
-        <div class="stat-info">
-          <span class="stat-value review-value">{{ statReview }}</span>
-          <span class="stat-label">待复审</span>
-        </div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-icon vuln">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-        </div>
-        <div class="stat-info">
-          <span class="stat-value">{{ statVulns }}</span>
-          <span class="stat-label">累计漏洞</span>
-        </div>
+      <div class="situation-banner">
+        <TaskSituationMap :tasks="tasks" />
       </div>
     </div>
 
@@ -328,6 +407,9 @@ watch(hasRunning, () => syncPoller());
               <span v-if="t.status === 'running'" class="pulse"></span>
               <b>{{ t.name }}</b>
             </div>
+            <span v-if="collabModeLabel(t)" class="collab-chip" title="已启用任务级黑板实时共享凭据与探测路径">
+              {{ collabModeLabel(t) }}
+            </span>
             <div v-if="t.goal_summary?.configured" class="goal-badge"
                  :class="t.goal_summary.goal_met ? 'met' : 'incomplete'"
                  :title="`目标闸门：${t.goal_summary.summary}（终态 ${t.goal_summary.terminal_state}）`">
@@ -388,6 +470,9 @@ watch(hasRunning, () => syncPoller());
             {{ t.created_at.slice(0, 19).replace("T", " ") }}
           </time>
           <div v-if="writable" class="task-actions">
+            <button class="mini-action" type="button" title="打开任务融合目标与闸门控制" @click.stop="openTaskFusionGoals(t.id)">
+              🎯 目标
+            </button>
             <button class="mini-action" type="button" @click.stop="openEditTask(t.id)">
               <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
               编辑

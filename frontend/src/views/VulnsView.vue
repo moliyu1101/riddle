@@ -1,9 +1,10 @@
 <script setup>
 import { computed, onActivated, onMounted, ref, watch } from "vue";
-import { api } from "../api.js";
+import { api, canWrite } from "../api.js";
 import ReportDrawer from "../components/ReportDrawer.vue";
 import { fmtLocalTime } from "../format.js";
 import { useCountUp } from "../composables/useCountUp.js";
+import { showToast } from "../composables/useToast.js";
 
 defineOptions({ name: "VulnsView" });
 
@@ -24,10 +25,42 @@ const page = ref(0);
 const pageSize = 100;
 const hasMore = ref(false);
 const drawerId = ref(null);
-const toastMsg = ref("");
+const distillingId = ref(null);
+const distilledIds = ref(new Set());
+const exportingId = ref(null);
+const writable = computed(() => canWrite());
 let searchTimer = null;
 
-function toast(m) { toastMsg.value = m; setTimeout(() => (toastMsg.value = ""), 2200); }
+function toast(m) { showToast(m, "info"); }
+
+async function distillRow(row) {
+  if (!writable.value || !row?.id || distillingId.value) return;
+  distillingId.value = row.id;
+  try {
+    const res = await api.distillFindingToKb(row.id);
+    const next = new Set(distilledIds.value);
+    next.add(row.id);
+    distilledIds.value = next;
+    showToast(`已脱敏蒸馏入库：${res?.name || res?.item?.name || row.title}`, "ok");
+  } catch (e) {
+    showToast(`蒸馏失败：${String(e?.message || e).replace(/^\d+\s*/, "")}`, "danger");
+  } finally {
+    distillingId.value = null;
+  }
+}
+
+async function exportDocxRow(row) {
+  if (!row?.id || exportingId.value) return;
+  exportingId.value = row.id;
+  try {
+    await api.fusionReportDocx(row.id);
+    showToast(`已导出公文级 Word：${row.title}`, "ok");
+  } catch (e) {
+    showToast(`导出失败：${String(e?.message || e).replace(/^\d+\s*/, "")}`, "danger");
+  } finally {
+    exportingId.value = null;
+  }
+}
 
 const SUBMIT_TABS = [
   { id: "all", label: "全部" },
@@ -292,6 +325,28 @@ onActivated(() => {
           </span>
           <span v-if="row.score" class="vc-score">{{ row.score }} 分</span>
           <time>{{ fmtLocalTime(row.user_reviewed_at || row.created_at) }}</time>
+          <div class="vc-quick-acts" @click.stop>
+            <button
+              v-if="writable"
+              type="button"
+              class="vc-qbtn"
+              :class="{ done: distilledIds.has(row.id) }"
+              :disabled="distillingId === row.id"
+              title="脱敏蒸馏该漏洞攻击路径与载荷至知识库"
+              @click="distillRow(row)"
+            >
+              {{ distillingId === row.id ? "蒸馏中…" : distilledIds.has(row.id) ? "✓ 已蒸馏" : "⚡ 蒸馏入库" }}
+            </button>
+            <button
+              type="button"
+              class="vc-qbtn"
+              :disabled="exportingId === row.id"
+              title="直接生成并下载公文级 Word 报告"
+              @click="exportDocxRow(row)"
+            >
+              {{ exportingId === row.id ? "导出中…" : "📄 公文 Word" }}
+            </button>
+          </div>
         </div>
       </article>
     </div>
@@ -304,6 +359,5 @@ onActivated(() => {
 
     <ReportDrawer :finding-id="drawerId" mode="view" @close="drawerId = null"
       @updated="onDrawerUpdated" @toast="toast" />
-    <div v-if="toastMsg" class="toast">{{ toastMsg }}</div>
   </section>
 </template>

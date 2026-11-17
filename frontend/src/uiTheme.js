@@ -1,42 +1,42 @@
 /** 外观偏好：服务端持久化，localStorage 只做启动缓存。 */
 
-export const UI_STORAGE_KEY = "riddle-ui";
+export const UI_STORAGE_KEY = "riddle-ui-v2";
 export const THEME_STORAGE_KEY = "riddle-theme";
-const MIGRATED_KEY = "riddle-ui-migrated";
+const MIGRATED_KEY = "riddle-ui-v2-migrated";
 
 export const ACCENT_PRESETS = [
-  { h: 330, name: "品红" },
-  { h: 285, name: "霓虹紫" },
-  { h: 228, name: "电光蓝" },
-  { h: 195, name: "青" },
-  { h: 140, name: "荧光绿" },
-  { h: 45, name: "琥珀" },
+  { h: 212, name: "战术钴蓝" },
+  { h: 168, name: "信号翠青" },
+  { h: 155, name: "战地翡翠" },
+  { h: 42, name: "钨金琥珀" },
+  { h: 12, name: "赤红警戒" },
+  { h: 265, name: "量子紫晶" },
 ];
 
 export const ACCENT2_PRESETS = [
-  { h: 195, name: "青" },
-  { h: 330, name: "品红" },
-  { h: 228, name: "电光蓝" },
-  { h: 140, name: "荧光绿" },
-  { h: 285, name: "霓虹紫" },
-  { h: 45, name: "琥珀" },
+  { h: 168, name: "信号翠青" },
+  { h: 212, name: "战术钴蓝" },
+  { h: 42, name: "钨金琥珀" },
+  { h: 195, name: "冰川天青" },
+  { h: 145, name: "矩阵绿" },
+  { h: 25, name: "铜橘" },
 ];
 
 export const BG_PRESETS = [
-  { h: 295, name: "深紫" },
-  { h: 255, name: "深蓝" },
-  { h: 220, name: "深青" },
-  { h: 300, name: "近黑" },
+  { h: 222, name: "碳灰岩" },
+  { h: 210, name: "深海石墨" },
+  { h: 240, name: "曜石蓝黑" },
+  { h: 195, name: "极夜深青" },
 ];
 
-/** 整套主题预设：一键切换 主色/副色/背景色调/辉光强度（不动明暗与壁纸） */
+/** 整套主题预设：棱镜战术工作台六套工业风配色 */
 export const THEME_PRESETS = [
-  { id: "neon",  name: "霓虹终端", accentHue: 330, accent2Hue: 195, bgHue: 295, glow: 1.0, desc: "品红 × 青，默认作战形态" },
-  { id: "cyber", name: "赛博朋克", accentHue: 285, accent2Hue: 195, bgHue: 300, glow: 1.4, desc: "高辉光紫青，最浓夜色" },
-  { id: "ice",   name: "冰蓝管制", accentHue: 228, accent2Hue: 195, bgHue: 255, glow: 0.7, desc: "低辉光电光蓝，克制冷静" },
-  { id: "matrix",name: "矩阵绿", accentHue: 140, accent2Hue: 45,  bgHue: 220, glow: 1.1, desc: "荧光绿 × 琥珀，老派终端" },
-  { id: "amber", name: "琥珀暖夜", accentHue: 45,  accent2Hue: 285, bgHue: 300, glow: 0.9, desc: "琥珀 × 霓虹紫，护眼暖色" },
-  { id: "blood", name: "赤红警戒", accentHue: 350, accent2Hue: 45,  bgHue: 300, glow: 1.2, desc: "红 × 琥珀，高压氛围" },
+  { id: "prism",   name: "棱镜战术蓝", accentHue: 212, accent2Hue: 168, bgHue: 222, glow: 0.45, desc: "碳黑岩灰 × 钴蓝翠青（重构默认）" },
+  { id: "emerald", name: "深林猎手",   accentHue: 158, accent2Hue: 195, bgHue: 210, glow: 0.55, desc: "翡翠绿 × 天青，高频侦察视野" },
+  { id: "amber",   name: "钨金指挥",   accentHue: 42,  accent2Hue: 205, bgHue: 230, glow: 0.5,  desc: "暖金琥珀 × 钢蓝，长时审阅护眼" },
+  { id: "crimson", name: "红队攻坚",   accentHue: 12,  accent2Hue: 38,  bgHue: 235, glow: 0.6,  desc: "战术赤红 × 琥珀，高压攻防态" },
+  { id: "arctic",  name: "极昼冰岩",   accentHue: 205, accent2Hue: 172, bgHue: 220, glow: 0.35, desc: "极低微光，干净精密仪表风" },
+  { id: "violet",  name: "量子紫外",   accentHue: 265, accent2Hue: 185, bgHue: 245, glow: 0.65, desc: "冷紫 × 青光，高对比科技感" },
 ];
 
 /** 界面缩放档位 */
@@ -49,11 +49,12 @@ export const UI_SCALE_STEPS = [
 ];
 
 export const DEFAULTS = {
+  v: 2,
   theme: "dark",
-  accentHue: 330,
-  accent2Hue: 195,
-  glow: 1,
-  bgHue: 295,
+  accentHue: 212,
+  accent2Hue: 168,
+  glow: 0.45,
+  bgHue: 222,
   wallpaperKind: "none",
   wallpaperUrl: "",
   wallpaperFit: "cover",
@@ -91,12 +92,15 @@ function clampScale(s) {
 }
 
 export function prefsFromApi(ui = {}) {
+  // 从旧版赛博品红紫无感迁移至 v2 棱镜战术蓝默认值（保留壁纸与明暗选择）
+  const isLegacyDefault = Number(ui.v || 1) < 2;
   return {
+    v: 2,
     theme: ui.theme === "light" ? "light" : "dark",
-    accentHue: clampHue(ui.accentHue),
-    accent2Hue: clampHue(ui.accent2Hue, DEFAULTS.accent2Hue),
-    glow: clampGlow(ui.glow),
-    bgHue: clampHue(ui.bgHue, DEFAULTS.bgHue),
+    accentHue: isLegacyDefault ? DEFAULTS.accentHue : clampHue(ui.accentHue),
+    accent2Hue: isLegacyDefault ? DEFAULTS.accent2Hue : clampHue(ui.accent2Hue, DEFAULTS.accent2Hue),
+    glow: isLegacyDefault ? DEFAULTS.glow : clampGlow(ui.glow),
+    bgHue: isLegacyDefault ? DEFAULTS.bgHue : clampHue(ui.bgHue, DEFAULTS.bgHue),
     wallpaperKind: ["none", "url", "file"].includes(ui.wallpaperKind) ? ui.wallpaperKind : "none",
     wallpaperUrl: typeof ui.wallpaperUrl === "string" ? ui.wallpaperUrl.trim() : "",
     wallpaperFit: ui.wallpaperFit === "contain" ? "contain" : "cover",
@@ -109,6 +113,7 @@ export function prefsFromApi(ui = {}) {
 
 export function prefsToApi(prefs) {
   return {
+    v: 2,
     theme: prefs.theme,
     accentHue: clampHue(prefs.accentHue),
     accent2Hue: clampHue(prefs.accent2Hue),

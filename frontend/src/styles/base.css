@@ -1,103 +1,89 @@
 /* ============================================================
-   知蠹 Riddle — 赛博霓虹 / 样式模块
-   模块：base.css — 设计令牌 / 重置 / 滚动条 / 字阶 / 表单控件
-   配色：主霓虹(--accent-h) + 副霓虹(--accent2-h) + 背景色调(--bg-h)
-         + 霓虹强度(--glow)，全部可在设置里自定义
+   知蠹 Riddle — Prism Tactical Workbench（棱镜战术暗曜重构版）
+   模块：base.css — 全新碳岩灰+钴蓝+翠青设计令牌 / 精密控件 / 动效系统
    ============================================================ */
 
-@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap");
-
-/* ============================================================
-   设计令牌 v3 — 赛博霓虹
-   - 深紫黑基底 + 霓虹品红主色 + 霓虹青副色
-   - 玻璃拟态表面（半透明 + 霓虹描边）
-   - 霓虹辉光阴影（强度随 --glow 缩放）
-   - 5 级表面 + 3 级边框 + 间距/圆角/阴影尺度
-   ============================================================ */
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap");
 
 :root,
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  /* 背景色调（可自定义：深紫/深蓝/深青/近黑） */
-  --bg-h: 295;
+  /* 基底色相：碳黑岩灰（极低饱和度，拒绝浑浊紫黑） */
+  --bg-h: 222;
 
-  /* 中性层 — 5 级表面，深紫黑基底 */
-  --bg:          oklch(13% 0.035 var(--bg-h));
-  --surface:     oklch(17% 0.04 var(--bg-h));
-  --surface-2:   oklch(21% 0.045 var(--bg-h));
-  --surface-3:   oklch(25% 0.05 var(--bg-h));
-  --surface-4:   oklch(29% 0.05 var(--bg-h));
+  /* 5 级精密表面阶梯 */
+  --bg:           oklch(11.5% 0.010 var(--bg-h));
+  --nav:          oklch(13.2% 0.011 var(--bg-h));
+  --surface:      oklch(15.2% 0.012 var(--bg-h));
+  --surface-2:    oklch(18.5% 0.014 var(--bg-h));
+  --surface-3:    oklch(22.0% 0.016 var(--bg-h));
+  --surface-4:    oklch(26.0% 0.018 var(--bg-h));
 
-  /* 边框 — 3 级：柔 / 标准 / 强调（紫调） */
-  --border-soft:  oklch(23% 0.04 var(--bg-h));
-  --border:       oklch(30% 0.05 var(--bg-h));
-  --border-strong:oklch(38% 0.06 var(--bg-h));
+  /* 3 级精密工业描边 */
+  --border-soft:  oklch(21.5% 0.014 var(--bg-h));
+  --border:       oklch(27.0% 0.016 var(--bg-h));
+  --border-strong:oklch(35.0% 0.020 var(--bg-h));
 
-  /* 侧边栏专属 */
-  --sidebar-bg:     oklch(15% 0.04 var(--bg-h));
-  --sidebar-border: oklch(24% 0.04 var(--bg-h));
+  /* 左侧战术导航轨 */
+  --sidebar-bg:     oklch(13.0% 0.011 var(--bg-h));
+  --sidebar-border: oklch(23.0% 0.014 var(--bg-h));
 
-  /* 文字阶（淡紫白） */
-  --ink:    oklch(96% 0.012 300);
-  --ink-2:  oklch(85% 0.02 300);
-  --muted:  oklch(72% 0.03 300);
-  --faint:  oklch(58% 0.03 300);
+  /* 冷白高对比文字阶 */
+  --ink:    oklch(96.0% 0.006 230);
+  --ink-2:  oklch(84.5% 0.010 230);
+  --muted:  oklch(68.0% 0.014 230);
+  --faint:  oklch(52.0% 0.014 230);
 
-  /* 霓虹强度（0.2 ~ 2，默认 1） */
-  --glow: 1;
+  /* 克制微光系数（默认 0.45） */
+  --glow: 0.45;
 
-  /* 主霓虹色（默认品红） */
-  --accent-h: 330;
-  --accent:     oklch(72% 0.22 var(--accent-h));
-  --accent-ink: oklch(78% 0.20 var(--accent-h));
-  --accent-bg:  oklch(72% 0.22 var(--accent-h) / 0.16);
-  --accent-bg-2:oklch(72% 0.22 var(--accent-h) / 0.30);
-  --on-accent:  oklch(20% 0.02 300);
+  /* 主色：战术钴蓝 */
+  --accent-h: 212;
+  --accent:      oklch(65.0% 0.175 var(--accent-h));
+  --accent-ink:  oklch(74.0% 0.160 var(--accent-h));
+  --accent-bg:   oklch(65.0% 0.175 var(--accent-h) / 0.14);
+  --accent-bg-2: oklch(65.0% 0.175 var(--accent-h) / 0.24);
+  --on-accent:   oklch(13.0% 0.012 var(--bg-h));
 
-  /* 副霓虹色（默认青） */
-  --accent2-h: 195;
-  --accent2:     oklch(78% 0.16 var(--accent2-h));
-  --accent2-ink: oklch(82% 0.14 var(--accent2-h));
-  --accent2-bg:  oklch(78% 0.16 var(--accent2-h) / 0.14);
-  --accent2-bg-2:oklch(78% 0.16 var(--accent2-h) / 0.26);
-  --on-accent2:  oklch(18% 0.02 300);
+  /* 副色：信号翠青 */
+  --accent2-h: 168;
+  --accent2:     oklch(72.0% 0.145 var(--accent2-h));
+  --accent2-ink: oklch(79.0% 0.130 var(--accent2-h));
+  --accent2-bg:  oklch(72.0% 0.145 var(--accent2-h) / 0.12);
+  --accent2-bg-2:oklch(72.0% 0.145 var(--accent2-h) / 0.22);
+  --on-accent2:  oklch(13.0% 0.012 var(--bg-h));
 
-  /* 语义状态色（霓虹化） */
-  --ok:     oklch(78% 0.16 155);
-  --warn:   oklch(82% 0.15 85);
-  --danger: oklch(72% 0.20 15);
-  --info:   oklch(76% 0.15 var(--accent2-h));
+  /* 语义色（工业清晰度） */
+  --ok:     oklch(74.0% 0.155 156);
+  --warn:   oklch(80.0% 0.150 78);
+  --danger: oklch(68.0% 0.195 22);
+  --info:   oklch(72.0% 0.140 var(--accent-h));
 
-  --ok-bg:     oklch(78% 0.16 155 / 0.16);
-  --warn-bg:   oklch(82% 0.15 85 / 0.16);
-  --danger-bg: oklch(72% 0.20 15 / 0.16);
-  --info-bg:   oklch(76% 0.15 var(--accent2-h) / 0.16);
+  --ok-bg:     oklch(74.0% 0.155 156 / 0.13);
+  --warn-bg:   oklch(80.0% 0.150 78 / 0.13);
+  --danger-bg: oklch(68.0% 0.195 22 / 0.14);
+  --info-bg:   oklch(72.0% 0.140 var(--accent-h) / 0.13);
 
-  /* 霓虹辉光 — 强度随 --glow 缩放 */
-  --glow-accent: 0 0 calc(6px * var(--glow)) var(--accent-bg-2),
-                 0 0 calc(18px * var(--glow)) var(--accent-bg);
-  --glow-accent2: 0 0 calc(6px * var(--glow)) var(--accent2-bg-2),
-                  0 0 calc(18px * var(--glow)) var(--accent2-bg);
-  --glow-ok: 0 0 calc(6px * var(--glow)) var(--ok-bg);
-  --glow-danger: 0 0 calc(6px * var(--glow)) var(--danger-bg);
+  /* 克制发光与层级投影 */
+  --glow-accent:  0 0 calc(10px * var(--glow)) var(--accent-bg-2);
+  --glow-accent2: 0 0 calc(10px * var(--glow)) var(--accent2-bg-2);
+  --glow-ok:      0 0 calc(8px * var(--glow)) var(--ok-bg);
+  --glow-danger:  0 0 calc(8px * var(--glow)) var(--danger-bg);
 
-  /* 阴影 — 3 级 */
-  --shadow-sm: 0 1px 2px oklch(0% 0 0 / 0.4), 0 0 calc(8px * var(--glow)) var(--accent-bg);
-  --shadow:    0 2px 8px oklch(0% 0 0 / 0.35), 0 8px 24px oklch(0% 0 0 / 0.25), 0 0 calc(16px * var(--glow)) var(--accent-bg);
-  --shadow-lg: 0 12px 48px oklch(0% 0 0 / 0.5), 0 0 calc(24px * var(--glow)) var(--accent-bg);
+  --shadow-sm: 0 1px 2px oklch(0% 0 0 / 0.45);
+  --shadow:    0 4px 16px oklch(0% 0 0 / 0.36);
+  --shadow-lg: 0 16px 48px oklch(0% 0 0 / 0.55);
 
-  /* 圆角 — 3 级 */
+  /* 工业级紧凑圆角 */
   --radius-sm: 6px;
-  --radius:    10px;
-  --radius-lg: 14px;
+  --radius:    9px;
+  --radius-lg: 13px;
 
-  /* 焦点环（霓虹） */
-  --focus-ring: 0 0 0 3px var(--accent-bg), var(--glow-accent);
-  --focus-border: color-mix(in oklch, var(--accent) 55%, var(--border));
+  --focus-ring:   0 0 0 3px var(--accent-bg);
+  --focus-border: color-mix(in oklch, var(--accent) 65%, var(--border));
 
-  /* 网格线（霓虹青） */
-  --grid-line: oklch(72% 0.14 var(--accent2-h) / 0.07);
+  --grid-line: oklch(72.0% 0.04 var(--accent-h) / 0.045);
 
   /* 壁纸 */
   --wallpaper-dim: 0.28;
@@ -219,18 +205,16 @@ body {
   transition: background-color .2s ease, color .2s ease;
 }
 
-/* 背景装饰：霓虹径向光晕 + 青调网格 + 品红辉光 */
+/* 背景装饰：极简冷灰点阵 + 顶部微光晕 */
 body::before {
   content: "";
   position: fixed; inset: 0;
   pointer-events: none; z-index: 0;
   background-image:
-    radial-gradient(ellipse 70% 45% at 50% -10%, var(--accent-bg), transparent 62%),
-    radial-gradient(ellipse 45% 35% at 90% 100%, var(--accent2-bg), transparent 60%),
-    linear-gradient(var(--grid-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
-  background-size: 100% 100%, 100% 100%, 40px 40px, 40px 40px;
-  mask-image: linear-gradient(180deg, oklch(0% 0 0 / 1), oklch(0% 0 0 / 0.45) 60%, oklch(0% 0 0 / 0.18));
+    radial-gradient(ellipse 65% 36% at 22% -8%, var(--accent-bg), transparent 64%),
+    radial-gradient(ellipse 40% 30% at 88% 95%, var(--accent2-bg), transparent 62%),
+    radial-gradient(var(--grid-line) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 24px 24px;
 }
 
 .ah-wallpaper {

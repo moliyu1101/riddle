@@ -1,12 +1,18 @@
 <script setup>
 import { computed, onActivated, onMounted, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { api, canWrite } from "../api.js";
+import { showToast } from "../composables/useToast.js";
 
 defineOptions({ name: "IntelView" });
 
+const route = useRoute();
 const router = useRouter();
 const activeTab = ref("intel");
+const intelSort = ref("utility");
+const intelSignal = ref("all");
+const kbOriginFilter = ref("all");
+const selectedHardIds = ref([]);
 
 /* ---------- 情报沉淀 ---------- */
 const stats = ref({ total: 0, by_kind: {}, verified: 0, reused: 0 });
@@ -130,9 +136,10 @@ async function removeOne(row) {
   if (!confirm(`确认删除这条情报？\n${row.match_key} · ${primaryText(row)}`)) return;
   try {
     await api.deleteIntel(row.id);
+    showToast("情报条目已删除", "ok");
     await reloadIntel();
   } catch (e) {
-    alert(`删除失败：${e?.message || e}`);
+    showToast(`删除失败：${e?.message || e}`, "danger");
   }
 }
 
@@ -142,9 +149,10 @@ async function clearKind() {
   if (!confirm(`确认清空【${label}】情报？此操作不可恢复。`)) return;
   try {
     await api.clearIntel(kind.value);
+    showToast(`已清空【${label}】情报`, "ok");
     await reloadIntel();
   } catch (e) {
-    alert(`清空失败：${e?.message || e}`);
+    showToast(`清空失败：${e?.message || e}`, "danger");
   }
 }
 
@@ -168,14 +176,46 @@ async function applyCurator() {
   try {
     const res = await api.applyIntelCurate(1000);
     const kept = res?.kept_hot || 0;
-    alert(`已清理 ${res?.deleted || 0} 条垃圾情报` + (kept ? `，保留 ${kept} 条高频复用项（hit≥3）需人工确认` : ""));
+    showToast(
+      `已清理 ${res?.deleted || 0} 条垃圾情报` + (kept ? `，保留 ${kept} 条高频复用项（hit≥3）` : ""),
+      "ok",
+    );
     curator.value = res;
     await reloadIntel();
   } catch (e) {
-    alert(`清理失败：${e?.message || e}`);
+    showToast(`清理失败：${e?.message || e}`, "danger");
   } finally {
     curatorApplying.value = false;
   }
+}
+
+const convertedIntelCount = computed(() =>
+  rows.value.filter((r) => (r.converted_count || 0) > 0).length
+);
+const pitfallCount = computed(() =>
+  rows.value.filter((r) => r.payload?.lesson_type === "pitfall").length
+);
+const filteredAndSortedIntel = computed(() => {
+  let list = rows.value.slice();
+  if (intelSignal.value === "converted") {
+    list = list.filter((r) => (r.converted_count || 0) > 0);
+  } else if (intelSignal.value === "human_verified") {
+    list = list.filter((r) => !!r.payload?.human_verified);
+  } else if (intelSignal.value === "pitfall") {
+    list = list.filter((r) => r.payload?.lesson_type === "pitfall");
+  }
+  if (intelSort.value === "utility") {
+    list.sort((a, b) => (Number(b.utility_score || 0) - Number(a.utility_score || 0)) || ((b.hit_count || 0) - (a.hit_count || 0)));
+  } else if (intelSort.value === "converted") {
+    list.sort((a, b) => (Number(b.converted_count || 0) - Number(a.converted_count || 0)) || (Number(b.utility_score || 0) - Number(a.utility_score || 0)));
+  } else if (intelSort.value === "hit") {
+    list.sort((a, b) => (Number(b.hit_count || 0) - Number(a.hit_count || 0)));
+  }
+  return list;
+});
+function utilityBarPct(score) {
+  const n = Number(score || 0);
+  return Math.max(4, Math.min(100, Math.round((n / 6.0) * 100)));
 }
 
 watch([kind, confidence], reloadIntel);
@@ -261,10 +301,41 @@ async function reviveSingleHard(row) {
       target_ids: [row.id],
       inject_latest_intel: true,
     });
+    selectedHardIds.value = selectedHardIds.value.filter((x) => x !== row.id);
     await reloadHard();
-    alert(`已唤醒 ${res?.revived_count ?? 1} 个硬骨头目标重新入队（附带最新沉淀情报指引）`);
+    showToast(`已唤醒 ${res?.revived_count ?? 1} 个硬骨头目标重新入队`, "ok");
   } catch (e) {
-    alert(`唤醒失败：${e?.message || e}`);
+    showToast(`唤醒失败：${e?.message || e}`, "danger");
+  } finally {
+    hardReviving.value = false;
+  }
+}
+
+function toggleHardSelect(id) {
+  const s = new Set(selectedHardIds.value);
+  if (s.has(id)) s.delete(id); else s.add(id);
+  selectedHardIds.value = [...s];
+}
+function toggleSelectAllHard() {
+  if (selectedHardIds.value.length === hardRows.value.length) {
+    selectedHardIds.value = [];
+  } else {
+    selectedHardIds.value = hardRows.value.map((r) => r.id);
+  }
+}
+async function reviveSelectedHard() {
+  if (!selectedHardIds.value.length || hardReviving.value) return;
+  hardReviving.value = true;
+  try {
+    const res = await api.reviveHardTargets({
+      target_ids: selectedHardIds.value,
+      inject_latest_intel: true,
+    });
+    selectedHardIds.value = [];
+    await reloadHard();
+    showToast(`已唤醒 ${res?.revived_count ?? 0} 个选中目标重新入队（涉及 ${(res?.task_ids || []).length} 个任务）`, "ok");
+  } catch (e) {
+    showToast(`唤醒选中失败：${e?.message || e}`, "danger");
   } finally {
     hardReviving.value = false;
   }
@@ -282,10 +353,11 @@ async function reviveAllFilteredHard() {
       limit: 50,
       inject_latest_intel: true,
     });
+    selectedHardIds.value = [];
     await reloadHard();
-    alert(`已批量唤醒 ${res?.revived_count ?? 0} 个硬骨头目标重新入队（涉及 ${(res?.task_ids || []).length} 个任务）`);
+    showToast(`已批量唤醒 ${res?.revived_count ?? 0} 个硬骨头目标重新入队（涉及 ${(res?.task_ids || []).length} 个任务）`, "ok");
   } catch (e) {
-    alert(`批量唤醒失败：${e?.message || e}`);
+    showToast(`批量唤醒失败：${e?.message || e}`, "danger");
   } finally {
     hardReviving.value = false;
   }
@@ -345,12 +417,22 @@ watch(kbSearchDraft, (v) => {
   }, 180);
 });
 
+const distilledKbCount = computed(() => kbRows.value.filter((r) => r?.origin === "distilled").length);
+const userKbCount = computed(() => kbRows.value.filter((r) => r?.origin !== "seed" && r?.origin !== "distilled").length);
+const seedKbCount = computed(() => kbRows.value.filter((r) => r?.origin === "seed").length);
+const visibleKbRows = computed(() => {
+  if (kbOriginFilter.value === "all") return kbRows.value;
+  if (kbOriginFilter.value === "distilled") return kbRows.value.filter((r) => r?.origin === "distilled");
+  if (kbOriginFilter.value === "seed") return kbRows.value.filter((r) => r?.origin === "seed");
+  return kbRows.value.filter((r) => r?.origin !== "seed" && r?.origin !== "distilled");
+});
+
 async function viewKb(row) {
   try {
     kbViewed.value = await api.knowledgeDetail(row.id);
     kbViewOpen.value = true;
   } catch (e) {
-    alert(`读取失败：${e?.message || e}`);
+    showToast(`读取失败：${e?.message || e}`, "danger");
   }
 }
 // 关联篇目跳转：优先在当前列表按 match_key 命中，否则按名称查全库
@@ -361,9 +443,9 @@ async function viewKbByName(name) {
     const list = await api.knowledgeList("all", name);
     const hit = list.find((r) => r.match_key === name || r.name === name);
     if (hit) return viewKb(hit);
-    alert(`未找到关联篇目：${name}`);
+    showToast(`未找到关联篇目：${name}`, "warn");
   } catch (e) {
-    alert(`跳转失败：${e?.message || e}`);
+    showToast(`跳转失败：${e?.message || e}`, "danger");
   }
 }
 function closeKbView() {
@@ -375,18 +457,20 @@ async function removeKb(row) {
   if (!confirm(`确认删除这篇知识？\n${row.summary || row.match_key}`)) return;
   try {
     await api.deleteIntel(row.id);
+    showToast("知识条目已删除", "ok");
     await reloadKb();
     await loadStats();
   } catch (e) {
-    alert(`删除失败：${e?.message || e}`);
+    showToast(`删除失败：${e?.message || e}`, "danger");
   }
 }
 async function toggleKb(row) {
   try {
     await api.knowledgeUpdate(row.id, { enabled: !row.enabled });
+    showToast(!row.enabled ? "知识已启用" : "知识已停用", "ok");
     await reloadKb();
   } catch (e) {
-    alert(`操作失败：${e?.message || e}`);
+    showToast(`操作失败：${e?.message || e}`, "danger");
   }
 }
 async function syncKb() {
@@ -394,11 +478,11 @@ async function syncKb() {
   checking.value = true;
   try {
     const res = await api.knowledgeSync();
-    alert(`知识库种子同步完成：新增 ${res?.added ?? 0} 篇，已存在 ${res?.skipped ?? 0} 篇（保留你的编辑）`);
+    showToast(`种子同步完成：新增 ${res?.added ?? 0} 篇，跳过 ${res?.skipped ?? 0} 篇`, "ok");
     await reloadKb();
     await loadStats();
   } catch (e) {
-    alert(`同步失败：${e?.message || e}`);
+    showToast(`同步失败：${e?.message || e}`, "danger");
   } finally {
     checking.value = false;
   }
@@ -429,12 +513,12 @@ async function openEditKb(row) {
     kbViewOpen.value = false;
     kbAddOpen.value = true;
   } catch (e) {
-    alert(`读取失败：${e?.message || e}`);
+    showToast(`读取失败：${e?.message || e}`, "danger");
   }
 }
 async function saveKb() {
   if (!writable.value) return;
-  if (!kbForm.value.content.trim()) { alert("内容不能为空"); return; }
+  if (!kbForm.value.content.trim()) { showToast("内容不能为空", "warn"); return; }
   try {
     if (kbEditId.value) {
       await api.knowledgeUpdate(kbEditId.value, kbForm.value);
@@ -442,20 +526,21 @@ async function saveKb() {
       await api.knowledgeCreate(kbForm.value);
     }
     autoCloseKbView();
+    showToast(kbEditId.value ? "知识修改已保存" : "知识条目已沉淀", "ok");
     await reloadKb();
     await loadStats();
   } catch (e) {
-    alert(`保存失败：${e?.message || e}`);
+    showToast(`保存失败：${e?.message || e}`, "danger");
   }
 }
 async function copyKbContent(row) {
   const content = row?.content || "";
-  if (!content) { alert("内容为空，无可复制"); return; }
+  if (!content) { showToast("内容为空，无可复制", "warn"); return; }
   try {
     await navigator.clipboard.writeText(content);
-    alert("内容已复制到剪贴板");
+    showToast("知识正文已复制到剪贴板", "ok");
   } catch {
-    alert("复制失败，请手动选中复制");
+    showToast("复制失败，请手动选中复制", "warn");
   }
 }
 
@@ -504,12 +589,27 @@ async function syncCveIntel() {
 }
 
 /* ---------- 公共 ---------- */
+function applyRouteQuery() {
+  const q = route.query || {};
+  const tab = String(q.tab || "").trim();
+  if (tab === "intel" || tab === "kb" || tab === "hard") {
+    activeTab.value = tab;
+  }
+  const orig = String(q.origin || "").trim();
+  if (orig === "distilled" || orig === "user" || orig === "seed" || orig === "all") {
+    kbOriginFilter.value = orig;
+  }
+}
+
 async function reload() {
+  applyRouteQuery();
   await Promise.all([reloadIntel(), reloadHard(), loadKbList(), loadFusionIntelConfig()]);
 }
 
+watch(() => route.query, applyRouteQuery);
 onMounted(reload);
 onActivated(() => {
+  applyRouteQuery();
   if (rows.value.length || hardRows.value.length) reload();
 });
 </script>
@@ -526,11 +626,38 @@ onActivated(() => {
 
     <header class="page-head split">
       <div>
-        <h2>作战情报中心 <span class="intel-chip">OPS-INTEL</span></h2>
-        <p class="page-sub">跨任务沉淀的可复用作战情报与攻坚记录——情报越挖越聪明，硬骨头集中回捞复盘。</p>
+        <h2>自主知识与进化中心 <span class="intel-chip">EVOLUTION ENGINE</span></h2>
+        <p class="page-sub">情报转化率优胜劣汰 · 人工复审强反馈 · 高危实战脱敏蒸馏入库 · 硬骨头携情报定向唤醒。</p>
       </div>
-      <router-link class="head-action" to="/">返回任务</router-link>
+      <router-link class="head-action" to="/">返回作战台</router-link>
     </header>
+
+    <!-- 四阶自主进化闭环漏斗条 -->
+    <div class="evo-pipeline" role="region" aria-label="自主能力进化闭环总览">
+      <button type="button" class="evo-stage" :class="{ on: activeTab === 'intel' && intelSignal === 'all' }" @click="activeTab = 'intel'; intelSignal = 'all'">
+        <span class="evo-step">STAGE 01</span>
+        <b>情报与 CVE 汇聚</b>
+        <em>{{ stats.total }} 条 · CVE {{ stats.by_kind?.cve_feed || 0 }}</em>
+      </button>
+      <span class="evo-arrow" aria-hidden="true">→</span>
+      <button type="button" class="evo-stage" :class="{ on: activeTab === 'intel' && intelSignal !== 'all' }" @click="activeTab = 'intel'; intelSignal = 'converted'">
+        <span class="evo-step">STAGE 02</span>
+        <b>效用评估与复审反哺</b>
+        <em>成洞 {{ convertedIntelCount }} · 避坑 {{ pitfallCount }}</em>
+      </button>
+      <span class="evo-arrow" aria-hidden="true">→</span>
+      <button type="button" class="evo-stage" :class="{ on: activeTab === 'kb' }" @click="activeTab = 'kb'; kbOriginFilter = 'distilled'">
+        <span class="evo-step">STAGE 03</span>
+        <b>实战脱敏蒸馏知识库</b>
+        <em>总 {{ kbRows.length }} 篇 · ⚡ {{ distilledKbCount }} 蒸馏</em>
+      </button>
+      <span class="evo-arrow" aria-hidden="true">→</span>
+      <button type="button" class="evo-stage" :class="{ on: activeTab === 'hard' }" @click="activeTab = 'hard'">
+        <span class="evo-step">STAGE 04</span>
+        <b>硬骨头携情报唤醒</b>
+        <em>待唤醒 {{ hardStats.total }}（🦴 {{ hardStats.dead }} / ⏭ {{ hardStats.skipped }}）</em>
+      </button>
+    </div>
 
     <!-- 分区大标签 -->
     <div class="ops-tabs" role="tablist" aria-label="情报分区">
@@ -651,10 +778,22 @@ onActivated(() => {
             {{ t.label }}
           </button>
         </div>
+        <div class="kind-tabs">
+          <button type="button" class="kind-tab" :class="{ on: intelSignal === 'all' }" @click="intelSignal = 'all'">全部信号</button>
+          <button type="button" class="kind-tab" :class="{ on: intelSignal === 'converted' }" @click="intelSignal = 'converted'">🔥 已转化 ({{ convertedIntelCount }})</button>
+          <button type="button" class="kind-tab" :class="{ on: intelSignal === 'human_verified' }" @click="intelSignal = 'human_verified'">✓ 人工核准</button>
+          <button type="button" class="kind-tab" :class="{ on: intelSignal === 'pitfall' }" @click="intelSignal = 'pitfall'">⛔ 避坑指南 ({{ pitfallCount }})</button>
+        </div>
         <div class="search-box">
           <span>⌕</span>
           <input v-model="searchDraft" placeholder="搜索 域名 / 账号 / 路径 / 来源 / 内容" />
         </div>
+        <select v-model="intelSort" aria-label="排序方式">
+          <option value="utility">按效用分最高</option>
+          <option value="converted">按成洞转化最多</option>
+          <option value="hit">按复用次数最多</option>
+          <option value="recent">按最新沉淀</option>
+        </select>
         <select v-model="confidence">
           <option value="all">全部可信度</option>
           <option value="verified">仅已验证</option>
@@ -707,19 +846,23 @@ onActivated(() => {
       <div v-if="initialLoading" class="intel-grid">
         <div v-for="n in 8" :key="n" class="intel-row skeleton-hard"></div>
       </div>
-      <div v-else-if="!rows.length" class="empty">
-        情报库暂无记录
-        <span class="hint">worker 出洞 / 撞库成功后会自动沉淀，越挖越聪明</span>
+      <div v-else-if="!filteredAndSortedIntel.length" class="empty">
+        情报库暂无匹配记录
+        <span class="hint">worker 出洞 / 撞库或人工复审反馈后会自动沉淀，越挖越聪明</span>
       </div>
       <div v-else class="intel-grid">
-        <article v-for="(row, i) in rows" :key="row.id" class="intel-row anim-fade-up" :class="KIND_META[row.kind]?.hue" :style="{ '--i': i }">
+        <article v-for="(row, i) in filteredAndSortedIntel" :key="row.id" class="intel-row anim-fade-up" :class="KIND_META[row.kind]?.hue" :style="{ '--i': i }">
           <span class="ir-kind" :class="KIND_META[row.kind]?.hue">
             <i>{{ KIND_META[row.kind]?.icon }}</i>{{ KIND_META[row.kind]?.label || row.kind }}
           </span>
           <div class="ir-main">
             <b class="ir-primary">{{ primaryText(row) }}</b>
             <small class="ir-secondary" v-if="secondaryText(row)">{{ secondaryText(row) }}</small>
-            <span class="ir-key">作用域：{{ row.match_key }}</span>
+            <div class="ir-tags-row">
+              <span class="ir-key">作用域：{{ row.match_key }}</span>
+              <span v-if="row.payload?.human_verified" class="ir-fb-badge ok">✓ 人工核准高可信</span>
+              <span v-else-if="row.payload?.human_rejected" class="ir-fb-badge warn">⛔ 人工驳回避坑</span>
+            </div>
           </div>
           <div class="ir-side">
             <span class="ir-conf" :class="row.confidence">
@@ -729,6 +872,7 @@ onActivated(() => {
               <span class="ir-utility" title="综合验证状态、命中转化率与人工复审反馈的实战效用分">
                 效用 {{ Number(row.utility_score || 0).toFixed(1) }}
               </span>
+              <span class="ir-util-bar" aria-hidden="true"><i :style="{ width: utilityBarPct(row.utility_score) + '%' }"></i></span>
               <span
                 class="ir-conv"
                 v-if="(row.converted_count || 0) > 0"
@@ -777,6 +921,23 @@ onActivated(() => {
           <option value="skipped">只看跳过</option>
         </select>
         <button
+          v-if="hardRows.length"
+          type="button"
+          class="btn-ghost"
+          @click="toggleSelectAllHard"
+        >
+          {{ selectedHardIds.length === hardRows.length ? "取消全选" : `全选本页 (${hardRows.length})` }}
+        </button>
+        <button
+          v-if="selectedHardIds.length"
+          class="btn-revive"
+          type="button"
+          @click="reviveSelectedHard"
+          :disabled="hardReviving"
+        >
+          {{ hardReviving ? "唤醒中…" : `⚡ 唤醒选中 (${selectedHardIds.length})` }}
+        </button>
+        <button
           class="btn-revive"
           type="button"
           @click="reviveAllFilteredHard"
@@ -800,13 +961,24 @@ onActivated(() => {
           v-for="(row, i) in hardRows"
           :key="row.id"
           class="hard-row anim-fade-up"
+          :class="{ selected: selectedHardIds.includes(row.id) }"
           :style="{ '--i': i }"
           role="button"
           tabindex="0"
           @click="openTask(row)"
           @keydown.enter="openTask(row)"
         >
-          <span class="hard-status" :class="row.status">{{ HARD_STATUS_LABEL[row.status] || row.status }}</span>
+          <div class="hard-left">
+            <input
+              type="checkbox"
+              class="hard-check"
+              :checked="selectedHardIds.includes(row.id)"
+              aria-label="选择此硬骨头目标"
+              @click.stop
+              @change="toggleHardSelect(row.id)"
+            />
+            <span class="hard-status" :class="row.status">{{ HARD_STATUS_LABEL[row.status] || row.status }}</span>
+          </div>
           <span class="hard-main">
             <b>{{ row.host || row.url }}</b>
             <small>{{ row.task_name }} · {{ row.school || row.org || row.title || "归属待确认" }}</small>
@@ -845,6 +1017,12 @@ onActivated(() => {
             {{ t.label }}
           </button>
         </div>
+        <div class="kind-tabs">
+          <button type="button" class="kind-tab" :class="{ on: kbOriginFilter === 'all' }" @click="kbOriginFilter = 'all'">全部来源 ({{ kbRows.length }})</button>
+          <button type="button" class="kind-tab" :class="{ on: kbOriginFilter === 'distilled' }" @click="kbOriginFilter = 'distilled'">⚡ 实战蒸馏 ({{ distilledKbCount }})</button>
+          <button type="button" class="kind-tab" :class="{ on: kbOriginFilter === 'user' }" @click="kbOriginFilter = 'user'">✍ 用户沉淀 ({{ userKbCount }})</button>
+          <button type="button" class="kind-tab" :class="{ on: kbOriginFilter === 'seed' }" @click="kbOriginFilter = 'seed'">📦 种子库 ({{ seedKbCount }})</button>
+        </div>
         <div class="search-box">
           <span>⌕</span>
           <input v-model="kbSearchDraft" placeholder="搜索 篇名 / 关键词 / 内容" />
@@ -854,29 +1032,30 @@ onActivated(() => {
       </div>
 
       <div class="kb-hint">
-        <b>知识库说明</b>
-        <span>worker 挖洞时会按目标任务命中这些测试手册/方法论并注入；你可以「＋手动添加」沉淀自己的经验，或「同步种子」从本地文件补基础库。</span>
+        <b>知识库双源检索说明</b>
+        <span>Worker 挖洞时自动合并本地盘手册与 DB 新增/实战脱敏蒸馏条目（覆盖同名种子）；高危人工复审通过后自动蒸馏入库。</span>
       </div>
 
       <div v-if="kbLoading" class="intel-grid">
         <div v-for="n in 8" :key="n" class="intel-row skeleton-hard"></div>
       </div>
-      <div v-else-if="!kbRows.length" class="empty">
-        知识库暂无条目
-        <span class="hint">点击「同步种子」导入基础手册，或「手动添加」沉淀你的经验</span>
+      <div v-else-if="!visibleKbRows.length" class="empty">
+        当前筛选下知识库暂无条目
+        <span class="hint">切换来源筛选、点击「同步种子」或在漏洞报告点击「⚡ 蒸馏为知识库」</span>
       </div>
       <div v-else class="kb-list">
-        <article v-for="(row, i) in kbRows" :key="row.id" class="kb-row anim-fade-up" :style="{ '--i': i }"
-                 :class="{ on: row.enabled, off: !row.enabled }" type="button" @click="viewKb(row)" :title="`查看：${kbCleanTitle(row)}`">
+        <article v-for="(row, i) in visibleKbRows" :key="row.id" class="kb-row anim-fade-up" :style="{ '--i': i }"
+                 :class="{ on: row.enabled, off: !row.enabled, distilled: row.origin === 'distilled' }" type="button" @click="viewKb(row)" :title="`查看：${kbCleanTitle(row)}`">
           <span class="kb-cat" :class="row.category">{{ kbCatLabel(row.category) }}</span>
           <div class="kb-main">
             <b>
               {{ kbCleanTitle(row) }}
+              <span class="kb-origin-pill" :class="row.origin">{{ kbOrigin(row) }}</span>
               <em v-if="row.hit_count > 1" class="kb-reuse" title="已被 worker 复用次数">已复用 {{ row.hit_count }}</em>
             </b>
             <small>
               <span v-if="row.keyword && row.keyword !== kbCleanTitle(row)" class="kw">关键词：{{ row.keyword }}</span>
-              <span v-else class="src" :class="row.origin">{{ kbOrigin(row) }}</span>
+              <span v-if="row.payload?.source_finding_id" class="kw">· 源漏洞 #{{ String(row.payload.source_finding_id).slice(0, 8) }}</span>
               <template v-if="row.updated_at">· {{ fmtTime(row.updated_at) }}</template>
             </small>
           </div>

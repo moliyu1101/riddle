@@ -9,15 +9,24 @@ defineOptions({ name: "FusionView" });
 const route = useRoute();
 
 const TABS = [
-  { id: "overview", label: "总览与配置" },
-  { id: "goals", label: "目标闸门" },
-  { id: "gates", label: "证据与范围" },
-  { id: "intel", label: "情报时间流" },
-  { id: "graphs", label: "双图架构" },
-  { id: "traffic", label: "流量留痕" },
-  { id: "report", label: "公文报告" },
-  { id: "skills", label: "技能速查" },
+  { id: "overview", label: "总览与路由", pillar: "P1 · 运行控制" },
+  { id: "goals", label: "目标闸门", pillar: "P2 · 闸门与审批" },
+  { id: "gates", label: "证据·范围·拦截", pillar: "P2 · 闸门与审批" },
+  { id: "graphs", label: "双图血缘", pillar: "P3 · 图谱与留痕" },
+  { id: "traffic", label: "流量留痕", pillar: "P3 · 图谱与留痕" },
+  { id: "intel", label: "CVE 时间流", pillar: "P4 · 知识与报告" },
+  { id: "report", label: "公文与复测", pillar: "P4 · 知识与报告" },
+  { id: "skills", label: "技能速查", pillar: "P4 · 知识与报告" },
 ];
+const TAB_GROUPS = [
+  { key: "p1", label: "⚡ 控制路由", tabs: ["overview"] },
+  { key: "p2", label: "🛡️ 闸门与命令审批", tabs: ["goals", "gates"] },
+  { key: "p3", label: "🕸️ 双图与流量留痕", tabs: ["graphs", "traffic"] },
+  { key: "p4", label: "🧠 情报·报告·技能", tabs: ["intel", "report", "skills"] },
+];
+const pendingInterceptCount = computed(() =>
+  interceptItems.value.filter((x) => x?.status === "pending").length
+);
 const activeTab = ref("overview");
 const status = ref(null);
 const skillIndex = ref(null);
@@ -641,9 +650,24 @@ onMounted(async () => {
     <div v-if="notice" class="fusion-alert ok">{{ notice }}</div>
     <div v-if="error" class="fusion-alert bad">{{ error }}</div>
 
-    <nav class="fusion-tabs" role="tablist" aria-label="融合层模块">
-      <button v-for="t in TABS" :key="t.id" class="fusion-tab" :class="{ active: activeTab === t.id }"
-        role="tab" :aria-selected="activeTab === t.id" @click="activeTab = t.id">{{ t.label }}</button>
+    <nav class="fusion-pillars" role="tablist" aria-label="融合治理四大支柱">
+      <div v-for="grp in TAB_GROUPS" :key="grp.key" class="fusion-pillar-grp">
+        <span class="fusion-pillar-lbl">{{ grp.label }}</span>
+        <div class="fusion-pillar-tabs">
+          <button
+            v-for="t in TABS.filter((x) => grp.tabs.includes(x.id))"
+            :key="t.id"
+            class="fusion-tab"
+            :class="{ active: activeTab === t.id }"
+            role="tab"
+            :aria-selected="activeTab === t.id"
+            @click="activeTab = t.id"
+          >
+            {{ t.label }}
+            <span v-if="t.id === 'gates' && pendingInterceptCount > 0" class="ftab-badge">{{ pendingInterceptCount }}</span>
+          </button>
+        </div>
+      </div>
     </nav>
 
     <div v-if="loading" class="fusion-card">正在读取融合层状态…</div>
@@ -1238,10 +1262,34 @@ onMounted(async () => {
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
   color: var(--ink); padding: 7px 10px; font-size: 12px;
 }
-.fusion-tabs { display: flex; gap: 6px; flex-wrap: wrap; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
-.fusion-tab { background: transparent; border: 1px solid transparent; border-radius: var(--radius-sm); color: var(--muted); padding: 6px 12px; font-size: 12px; cursor: pointer; }
-.fusion-tab:hover { color: var(--ink); border-color: var(--border); }
-.fusion-tab.active { color: var(--accent-ink); background: var(--accent-bg); border-color: var(--accent); }
+.fusion-pillars {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.fusion-pillar-grp {
+  display: flex; flex-direction: column; gap: 6px; padding: 6px 8px;
+  border-radius: var(--radius-sm); background: var(--bg); border: 1px solid var(--border-soft);
+}
+.fusion-pillar-lbl { font-size: 10.5px; font-weight: 700; color: var(--accent2-ink); letter-spacing: .04em; }
+.fusion-pillar-tabs { display: flex; flex-wrap: wrap; gap: 4px; }
+.fusion-tab {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: transparent; border: 1px solid transparent; border-radius: 6px;
+  color: var(--muted); padding: 5px 9px; font-size: 12px; cursor: pointer;
+}
+.fusion-tab:hover { color: var(--ink); border-color: var(--border); background: var(--surface-2); }
+.fusion-tab.active { color: var(--accent-ink); background: var(--accent-bg); border-color: var(--accent); font-weight: 600; }
+.ftab-badge {
+  font-size: 10px; font-weight: 700; padding: 0 5px; border-radius: 999px;
+  background: var(--warn-bg); color: var(--warn); border: 1px solid color-mix(in oklch, var(--warn) 45%, transparent);
+}
+@media (max-width: 1120px) { .fusion-pillars { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 640px) { .fusion-pillars { grid-template-columns: 1fr; } }
 .fusion-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .fusion-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .fusion-card.wide { grid-column: 1 / -1; }

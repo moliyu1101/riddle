@@ -1037,6 +1037,9 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
                 >
                   {{ distilling ? "蒸馏中…" : "⚡ 蒸馏为知识库" }}
                 </button>
+                <p class="rc-ops-evo-note">
+                  进化联动：高危/严重人工「通过」将自动脱敏蒸馏入库；「不通过」原因计入避坑指南并降权同类低效打法。
+                </p>
               </div>
 
               <div v-if="deepenOpen" class="deepen-box">

@@ -11,8 +11,18 @@ const props = defineProps({
   sweepCount: { type: Number, default: 0 },
   timeline: { type: Array, default: () => [] },
   vulnDist: { type: Array, default: () => [] },
+  liveEscalationsCount: { type: Number, default: 0 },
+  hasBlackboard: { type: Boolean, default: false },
 });
 const emit = defineEmits(["edit", "start", "pause", "stop", "openFusion"]);
+
+const collabStatusLabel = computed(() => {
+  if (props.task.target_source === "site") return "🕸️ 单站多路线协同黑板";
+  if (props.hasBlackboard || ((props.task.concurrency || 1) >= 2 && totalTargets.value >= 2)) {
+    return "🤝 多目标并发共享黑板";
+  }
+  return "🛰️ 独立目标挖掘模式";
+});
 
 const stats = computed(() => props.task.stats || {});
 const progress = computed(() => props.task.progress || null);
@@ -177,6 +187,21 @@ function vdPct(count) {
         <span class="deck-scope" :title="missionScopeText">{{ missionScopeText }}</span>
       </div>
     </header>
+
+    <!-- 协同工作流与融合快控带 -->
+    <div class="deck-evo-strip">
+      <div class="des-left">
+        <span class="des-badge ok">{{ collabStatusLabel }}</span>
+        <span class="des-badge info" title="Worker 发现漏洞后自动持久化 session_heritage.json，供 EscalateHunter 继承 Cookie / 请求头 / 认知卡">
+          🧬 Escalate 会话认知继承{{ liveEscalationsCount > 0 ? ` · ${liveEscalationsCount} 在扩` : "就绪" }}
+        </span>
+      </div>
+      <div v-if="authRole !== 'observer'" class="des-actions">
+        <button type="button" class="des-btn" @click="emit('openFusion', 'goals')">🎯 验收目标</button>
+        <button type="button" class="des-btn" @click="emit('openFusion', 'switches')">🛡️ 硬闸门与留痕</button>
+        <button type="button" class="des-btn" @click="emit('openFusion', 'ops')">🕸️ 双图与流量台账</button>
+      </div>
+    </div>
 
     <!-- 作战带：进度环+控制 · 运行时 · 作战曲线 -->
     <div class="deck-battle">
