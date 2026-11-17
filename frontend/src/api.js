@@ -278,6 +278,7 @@ export const api = {
   timeline: (id, opts = {}) => req("GET", `/api/tasks/${id}/timeline${qs(opts)}`),
   hardTargets: (status, q, opts = {}) => req("GET", `/api/tasks/hard-targets${qs({ status, q, ...opts })}`),
   hardTargetsStats: () => req("GET", "/api/tasks/hard-targets/stats"),
+  reviveHardTargets: (body = {}) => req("POST", "/api/tasks/hard-targets/revive", body),
   start: (id) => req("POST", `/api/tasks/${id}/start`),
   pause: (id) => req("POST", `/api/tasks/${id}/pause`),
   stop: (id) => req("POST", `/api/tasks/${id}/stop`),

@@ -848,6 +848,9 @@ class Worker:
         verdict = Verdict(self._finished["verdict"]) if self._finished else Verdict.error
         if self.findings and verdict == Verdict.no_vuln:
             verdict = Verdict.found  # 有漏洞却说 no_vuln，以实际为准
+        # 有出洞证据或发现漏洞结束时，持久化会话态/笔记/认知卡供扩大危害 Agent 继承复用。
+        if self.findings or verdict == Verdict.found.value:
+            self._write_session_heritage()
         # 正常结束（finish/自动收尾）时清掉检查点文件，避免下次从一个已跑完的目标
         # 误恢复旧进度；异常/被打断（error/cancelled）则保留，供硬杀后续挖兜底。
         if verdict in (Verdict.found.value, Verdict.no_vuln.value):
@@ -924,6 +927,43 @@ class Worker:
             return self.executor.work_dir / "resume_checkpoint.json"
         except Exception:
             return None
+
+    def _session_heritage_path(self):
+        try:
+            return self.executor.work_dir / "session_heritage.json"
+        except Exception:
+            return None
+
+    def _write_session_heritage(self) -> None:
+        """出洞完成时把登录态/请求头/工作笔记/认知卡落盘，供后续扩大危害 Agent 继承复用。"""
+        path = self._session_heritage_path()
+        if path is None:
+            return
+        try:
+            snap = self.executor.export_resume_state()
+        except Exception:
+            return
+        cookies = snap.get("session_cookies") or {}
+        headers = snap.get("session_headers") or {}
+        notes = (snap.get("worker_notes") or "").strip()
+        cog = snap.get("cognition") or {}
+        has_cog = any(bool(cog.get(k)) for k in ("confirmed", "excluded", "leads", "plan"))
+        if not (cookies or headers or notes or has_cog or self.findings):
+            return
+        payload = {
+            "target": self.target,
+            "session_cookies": cookies,
+            "session_headers": headers,
+            "worker_notes": notes,
+            "cognition": cog,
+        }
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            os.replace(tmp, path)
+        except Exception:
+            pass
 
     def _write_resume_checkpoint(self, rounds: int) -> None:
         """把断点快照周期落盘到目标专属文件，硬杀/崩溃/重启也能恢复。
@@ -1258,6 +1298,18 @@ class Worker:
                 "",
                 "要求：直接接上进度验证/深挖；打穿就 submit_finding；确认无增量就 finish。",
             ]
+            return "\n".join(parts)
+        if ctx.get("source") == "hard_target_revive":
+            parts = [
+                f"目标：{self.target}",
+                "",
+                "⚡ 这是一次【硬骨头回捞重测】：目标此前曾失败或被跳过，现携最新全局情报/蒸馏知识库再次排查。",
+            ]
+            if summary:
+                parts.append(f"上次失败/跳过原因：{summary[:600]}")
+            if directive:
+                parts.append(f"👉 结合新情报的突破方向：\n{directive}")
+            parts.append("要求：切换未试过的攻击面或参数向量深入排查，避免重走上次死胡同。")
             return "\n".join(parts)
         parts = [
             f"目标：{self.target}",
@@ -1848,7 +1900,7 @@ class Worker:
     def _premature_finish_reason(self, args: dict, rnd: int) -> str:
         if (args.get("verdict") or "no_vuln") != "no_vuln" or self.findings:
             return ""
-        if self.deepen_context:
+        if self.deepen_context and (self.deepen_context or {}).get("source") != "hard_target_revive":
             return ""
         if self._js_signal_seen and not self._tool_counts.get("analyze_javascript"):
             return (

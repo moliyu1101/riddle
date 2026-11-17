@@ -3,6 +3,7 @@ from __future__ import annotations
 
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel
 from sqlalchemy import case, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,7 +30,7 @@ from app.agents.query_analyzer import analyze_query
 from app.agents.prompts import normalize_src_type
 from app.fusion import goal_gate
 from app.tools.guard import _FORBIDDEN_OP_DEFS, forbidden_ops_labels, normalize_guard_ops, parse_forbidden_ops
-from app.db.models import Finding, Killsweep, ReportVersion, Review, Target, Task, TaskEvent, to_cst, to_cst_iso
+from app.db.models import Finding, Intel, Killsweep, ReportVersion, Review, Target, Task, TaskEvent, to_cst, to_cst_iso
 from app.db.session import get_session
 from app.llm.usage import usage_snapshot
 from app.orchestrator import manager
@@ -836,6 +837,105 @@ async def hard_targets_stats(session: AsyncSession = Depends(get_session)):
         "total": total,
         "dead": counts.get("dead", 0),
         "skipped": counts.get("skipped", 0),
+    }
+
+
+class _HardTargetReviveRequest(BaseModel):
+    target_ids: list[str] | None = None
+    status: str = "all"
+    q: str | None = None
+    limit: int = 50
+    inject_latest_intel: bool = True
+
+
+@router.post("/hard-targets/revive")
+async def revive_hard_targets(
+    req: _HardTargetReviveRequest,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    """硬骨头一键唤醒回捞：重置 dead/skipped 目标为 queued，并可选注入最新沉淀情报定向指引。"""
+    if _is_observer(request):
+        raise HTTPException(403, "观摩令牌不允许唤醒硬骨头目标")
+    if req.status not in ("all", "dead", "skipped"):
+        raise HTTPException(400, "无效的状态筛选")
+
+    clean_ids = [str(x).strip() for x in (req.target_ids or []) if str(x or "").strip()]
+    statuses = ["dead", "skipped"] if req.status == "all" else [req.status]
+    safe_limit = max(1, min(int(req.limit or 50), 200))
+
+    stmt = (
+        select(Target, Task)
+        .join(Task, Task.id == Target.task_id)
+        .where(Target.status.in_(statuses if not clean_ids else ["dead", "skipped"]))
+    )
+    if clean_ids:
+        stmt = stmt.where(Target.id.in_(clean_ids))
+    else:
+        needle = (req.q or "").strip()
+        if needle:
+            like = f"%{needle}%"
+            stmt = stmt.where(or_(
+                Target.host.ilike(like),
+                Target.url.ilike(like),
+                Target.org.ilike(like),
+                Target.school.ilike(like),
+                Target.title.ilike(like),
+                Target.dead_reason.ilike(like),
+                Target.last_error.ilike(like),
+                Target.priority_reason.ilike(like),
+                Task.name.ilike(like),
+            ))
+        stmt = stmt.order_by(Target.updated_at.desc(), Target.priority_score.desc()).limit(safe_limit)
+
+    rows = (await session.execute(stmt)).all()
+
+    revive_hint = ""
+    if req.inject_latest_intel and rows:
+        intel_rows = (await session.execute(
+            select(Intel)
+            .where(Intel.kind.in_(("knowledge", "lesson", "fingerprint")))
+            .order_by(Intel.last_seen.desc(), Intel.hit_count.desc())
+            .limit(3)
+        )).scalars().all()
+        notes = [
+            (it.summary or it.match_key or "").strip()[:60]
+            for it in intel_rows
+            if (it.summary or it.match_key or "").strip()
+        ]
+        revive_hint = "结合最新全局情报与实战蒸馏知识库，切换未尝试过的攻击面或参数向量重测。"
+        if notes:
+            revive_hint += f"\n最新高价值沉淀参考：{'；'.join(notes)}"
+
+    revived_ids: list[str] = []
+    affected_tasks: set[str] = set()
+    for tgt, task in rows:
+        old_reason = (tgt.dead_reason or tgt.last_error or "").strip()
+        tgt.status = "queued"
+        tgt.verdict = ""
+        tgt.dead_reason = ""
+        tgt.last_error = ""
+        tgt.assigned_worker = ""
+        tgt.retry_count = 0
+        if req.inject_latest_intel:
+            prev_ctx = dict(tgt.deepen_context or {})
+            prev_ctx.update({
+                "source": "hard_target_revive",
+                "directive": revive_hint,
+                "original_summary": old_reason[:400],
+            })
+            tgt.deepen_context = prev_ctx
+        if task and task.status in ("stopped", "paused"):
+            task.status = "created"
+        revived_ids.append(tgt.id)
+        affected_tasks.add(tgt.task_id)
+
+    await session.commit()
+    return {
+        "ok": True,
+        "revived_count": len(revived_ids),
+        "target_ids": revived_ids,
+        "task_ids": sorted(affected_tasks),
     }
 
 

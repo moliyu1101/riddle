@@ -9,16 +9,64 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import threading
+from pathlib import Path
 from typing import Any, Callable, Optional
+from urllib.parse import urlparse
 
 from app.agents.history import compact_messages
 from app.agents.prompts import escalate_system_prompt, is_enterprise_src
+from app.config import worker_config
 from app.llm.client import LLMClient
 from app.tools.executor import ToolExecutor
 from app.tools.schemas import ESCALATE_TOOL_SCHEMAS, SESSION_TOOL_SCHEMAS
+
+
+def load_session_heritage(finding: dict, work_dir: str | None = None) -> dict:
+    """读取前序 Worker 遗留的 session_heritage.json（登录态/笔记/认知卡）。"""
+    if not isinstance(finding, dict):
+        return {}
+    direct = finding.get("session_heritage")
+    if isinstance(direct, dict) and direct:
+        return direct
+    root = Path(work_dir or worker_config.work_root)
+    candidates: list[str] = []
+    for k in ("target_base_url", "target_url", "host"):
+        val = str(finding.get(k) or "").strip()
+        if val:
+            candidates.append(val)
+    turl = str(finding.get("target_url") or "").strip()
+    if turl:
+        try:
+            p = urlparse(turl if "://" in turl else f"http://{turl}")
+            if p.netloc:
+                candidates.append(f"{p.scheme or 'https'}://{p.netloc}")
+                candidates.append(p.netloc)
+                if p.hostname:
+                    candidates.append(p.hostname)
+        except Exception:
+            pass
+    seen: set[str] = set()
+    for raw in candidates:
+        if raw in seen:
+            continue
+        seen.add(raw)
+        safe_name = "".join(c if c.isalnum() else "_" for c in raw)[:60]
+        if len(raw) > 60:
+            digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:10]
+            safe_name = f"{safe_name}_{digest}"
+        path = root / safe_name / "session_heritage.json"
+        try:
+            if path.exists():
+                data = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(data, dict):
+                    return data
+        except Exception:
+            continue
+    return {}
 
 # 扩大危害阶段也开放会话保持：拿原洞凭证/新伪造凭证登录后固化登录态再深挖。
 _ESCALATE_TOOLS = ESCALATE_TOOL_SCHEMAS + SESSION_TOOL_SCHEMAS
@@ -46,24 +94,72 @@ class EscalateHunter:
         cancel_event: Optional[threading.Event] = None,
         src_rules: str = "",
         guard_ops: Optional[list[str]] = None,
+        work_dir: Optional[str] = None,
     ):
         self.finding = finding
         self.llm = llm or LLMClient()
         self.cancel_event = cancel_event or threading.Event()
+        self.work_dir = work_dir
         self.executor = ToolExecutor(
             f"escalate_{finding.get('target_url', 'x')}", cancel_event=self.cancel_event,
-            src_rules=src_rules or "", guard_ops=guard_ops,
+            work_dir=work_dir, src_rules=src_rules or "", guard_ops=guard_ops,
         )
         self.on_event = on_event or (lambda kind, data: None)
         self._result: Optional[dict] = None
         self.src_type = src_type
+        self._heritage: dict = {}
 
     def _emit(self, kind: str, **data: Any) -> None:
         self.on_event(kind, data)
 
+    def _apply_heritage(self) -> dict:
+        if self._heritage:
+            return self._heritage
+        heritage = load_session_heritage(self.finding, self.work_dir)
+        if not heritage:
+            return {}
+        self._heritage = heritage
+        try:
+            self.executor.restore_resume_state(
+                worker_notes=heritage.get("worker_notes") or "",
+                cognition=heritage.get("cognition") or None,
+                session_cookies=heritage.get("session_cookies") or None,
+                session_headers=heritage.get("session_headers") or None,
+            )
+        except Exception:
+            pass
+        return heritage
+
     def _brief(self) -> str:
         f = self.finding
         unit_label = "企业/系统归属" if is_enterprise_src(self.src_type) else "归属"
+        heritage = self._apply_heritage()
+        heritage_lines: list[str] = []
+        if heritage:
+            cookies = heritage.get("session_cookies") or {}
+            headers = heritage.get("session_headers") or {}
+            notes = (heritage.get("worker_notes") or "").strip()
+            cog = heritage.get("cognition") or {}
+            if cookies or headers:
+                heritage_lines.append(
+                    f"- 已继承认证会话：Cookies {sorted(cookies.keys())}，Headers {sorted(headers.keys())}（http_request 会自动携带）"
+                )
+            if isinstance(cog, dict):
+                if cog.get("confirmed"):
+                    heritage_lines.append(f"- 前序已证实：{'；'.join(str(x) for x in cog['confirmed'][:6])}")
+                if cog.get("excluded"):
+                    heritage_lines.append(f"- 前序已排除（避坑）：{'；'.join(str(x) for x in cog['excluded'][:6])}")
+                if cog.get("leads"):
+                    heritage_lines.append(f"- 前序未穷尽线索：{'；'.join(str(x) for x in cog['leads'][:6])}")
+                if cog.get("plan"):
+                    heritage_lines.append(f"- 前序攻防思路：{str(cog['plan'])[:300]}")
+            if notes:
+                heritage_lines.append(f"- 前序工作笔记：\n{notes[:800]}")
+        heritage_block = (
+            "\n\n## 继承的前序 Worker 会话与认知资产\n" + "\n".join(heritage_lines)
+            if heritage_lines
+            else ""
+        )
         return (
             f"# 已确认存在的漏洞（你的深挖起点）\n"
             f"- 标题：{f.get('title','')}\n"
@@ -75,7 +171,8 @@ class EscalateHunter:
             f"- 攻击链：{json.dumps(f.get('kill_chain') or [], ensure_ascii=False)[:600]}\n"
             f"- PoC：{(f.get('poc') or '')[:600]}\n"
             f"- 原始请求(片段)：{(f.get('raw_request') or '')[:600]}\n"
-            f"- 原始响应(片段)：{(f.get('raw_response') or '')[:900]}\n\n"
+            f"- 原始响应(片段)：{(f.get('raw_response') or '')[:900]}"
+            f"{heritage_block}\n\n"
             f"请在这个已确认据点上继续往下打，把危害做大。"
             f"打出任何原洞没证明、而你新证明出来的实锤危害（等级提升 / 影响面数量级 / 或在原洞基础上"
             f"实际拿到敏感数据·写操作·账号接管等新实质危害）就 submit_escalation；只有纯原地打转、"
@@ -83,6 +180,7 @@ class EscalateHunter:
         )
 
     def run(self) -> EscalateResult:
+        self._apply_heritage()
         self._emit("escalate_start", title=self.finding.get("title", ""))
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": escalate_system_prompt(self.src_type)},

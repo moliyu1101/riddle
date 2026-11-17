@@ -192,6 +192,7 @@ const hardStats = ref({ total: 0, dead: 0, skipped: 0 });
 const hardRows = ref([]);
 const hardLoading = ref(true);
 const hardRefreshing = ref(false);
+const hardReviving = ref(false);
 const hardStatus = ref("all");
 const hardSearchDraft = ref("");
 const hardSearchText = ref("");
@@ -250,6 +251,44 @@ function hardReasonOf(row) {
 
 function openTask(row) {
   router.push(`/task/${row.task_id}`);
+}
+
+async function reviveSingleHard(row) {
+  if (!row?.id || hardReviving.value) return;
+  hardReviving.value = true;
+  try {
+    const res = await api.reviveHardTargets({
+      target_ids: [row.id],
+      inject_latest_intel: true,
+    });
+    await reloadHard();
+    alert(`已唤醒 ${res?.revived_count ?? 1} 个硬骨头目标重新入队（附带最新沉淀情报指引）`);
+  } catch (e) {
+    alert(`唤醒失败：${e?.message || e}`);
+  } finally {
+    hardReviving.value = false;
+  }
+}
+
+async function reviveAllFilteredHard() {
+  if (!hardRows.value.length || hardReviving.value) return;
+  const est = Math.min(hardTotal.value || hardRows.value.length, 50);
+  if (!confirm(`确定按当前筛选条件唤醒最多 ${est} 个硬骨头目标，并注入最新情报与蒸馏知识库重测吗？`)) return;
+  hardReviving.value = true;
+  try {
+    const res = await api.reviveHardTargets({
+      status: hardStatus.value,
+      q: hardSearchText.value || undefined,
+      limit: 50,
+      inject_latest_intel: true,
+    });
+    await reloadHard();
+    alert(`已批量唤醒 ${res?.revived_count ?? 0} 个硬骨头目标重新入队（涉及 ${(res?.task_ids || []).length} 个任务）`);
+  } catch (e) {
+    alert(`批量唤醒失败：${e?.message || e}`);
+  } finally {
+    hardReviving.value = false;
+  }
 }
 
 /* ---------- 知识库 ---------- */
@@ -737,6 +776,15 @@ onActivated(() => {
           <option value="dead">只看硬骨头</option>
           <option value="skipped">只看跳过</option>
         </select>
+        <button
+          class="btn-revive"
+          type="button"
+          @click="reviveAllFilteredHard"
+          :disabled="hardReviving || !hardRows.length"
+          title="将当前筛选下的硬骨头目标复位入队，并注入最新沉淀情报与知识库重测"
+        >
+          {{ hardReviving ? "唤醒中…" : "⚡ 批量唤醒当前列表" }}
+        </button>
         <button class="btn-ghost" @click="reloadHard" :disabled="hardRefreshing">{{ hardRefreshing ? "刷新中…" : "刷新" }}</button>
       </div>
 
@@ -748,7 +796,16 @@ onActivated(() => {
         <span class="hint">打不动的目标会沉淀到这里，便于回捞与复盘收敛质量</span>
       </div>
       <div v-else class="hard-list">
-        <button v-for="(row, i) in hardRows" :key="row.id" class="hard-row anim-fade-up" :style="{ '--i': i }" type="button" @click="openTask(row)">
+        <div
+          v-for="(row, i) in hardRows"
+          :key="row.id"
+          class="hard-row anim-fade-up"
+          :style="{ '--i': i }"
+          role="button"
+          tabindex="0"
+          @click="openTask(row)"
+          @keydown.enter="openTask(row)"
+        >
           <span class="hard-status" :class="row.status">{{ HARD_STATUS_LABEL[row.status] || row.status }}</span>
           <span class="hard-main">
             <b>{{ row.host || row.url }}</b>
@@ -759,8 +816,17 @@ onActivated(() => {
             <b>重试 {{ row.retry_count }}</b>
             <small>优先级 {{ Number(row.priority_score || 0).toFixed(1) }}</small>
             <time>{{ fmtTime(row.updated_at || row.created_at) }}</time>
+            <button
+              type="button"
+              class="btn-revive-row"
+              :disabled="hardReviving"
+              @click.stop="reviveSingleHard(row)"
+              title="复位此目标并携最新沉淀情报重新排队探测"
+            >
+              ⚡ 唤醒重测
+            </button>
           </span>
-        </button>
+        </div>
       </div>
 
       <div v-if="!hardLoading && hardTotal > hardPageSize" class="hard-pager">

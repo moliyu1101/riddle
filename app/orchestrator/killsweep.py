@@ -637,8 +637,11 @@ class KillsweepMixin:
             task = await session.get(Task, task_id)
             src_type = (task.src_type if task else "edusrc") or "edusrc"
             target_id = f.target_id
+            tgt = await session.get(Target, target_id) if target_id else None
             finding_dict = {
                 "title": f.title, "vuln_type": f.vuln_type, "target_url": f.target_url,
+                "target_base_url": (tgt.url if tgt else "") or "",
+                "host": (tgt.host if tgt else "") or "",
                 "owner": f.owner, "description": f.description, "poc": f.poc,
                 "raw_request": f.raw_request, "raw_response": f.raw_response,
                 "kill_chain": f.kill_chain, "severity": orig_severity,

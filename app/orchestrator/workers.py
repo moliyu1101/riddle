@@ -13,7 +13,7 @@ import traceback
 from datetime import datetime, timezone
 from urllib.parse import urljoin, urlparse, urlunparse
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -766,6 +766,16 @@ class WorkersMixin:
                         self._live[target_id]["action"] = f"协作路线：{route.label}"
                 except Exception:
                     pass
+                if blackboard is None:
+                    # 并发多目标协同：同任务存在 >=2 个目标或并发 >=2 时，启用任务级共享黑板（凭据/规则/端点/覆盖）
+                    try:
+                        sibling_cnt = (await session.execute(
+                            select(func.count()).select_from(Target).where(Target.task_id == task_id)
+                        )).scalar() or 0
+                        if sibling_cnt >= 2 or (task_obj and (task_obj.concurrency or 1) >= 2):
+                            blackboard = self._get_blackboard()
+                    except Exception:
+                        pass
                 if deepen_context:
                     self._live[target_id]["mode"] = "deepen"
                     self._live[target_id]["action"] = "🔁 定向深挖启动中…"

@@ -834,6 +834,23 @@
 .hard-meta b { font-size: 11.5px; color: var(--accent-ink); font-variant-numeric: tabular-nums; }
 .hard-meta small { font-size: 11px; color: var(--faint); }
 .hard-meta time { font-size: 11px; color: var(--faint); }
+.btn-revive,
+.btn-revive-row {
+  padding: 5px 10px;
+  border-radius: 7px;
+  border: 1px solid color-mix(in oklch, var(--accent) 40%, transparent);
+  background: var(--accent-bg);
+  color: var(--accent-ink);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .14s, color .14s, transform .1s;
+}
+.btn-revive:hover:not(:disabled),
+.btn-revive-row:hover:not(:disabled) { background: var(--accent); color: var(--on-accent); transform: translateY(-1px); }
+.btn-revive:disabled,
+.btn-revive-row:disabled { opacity: .55; cursor: not-allowed; }
+.btn-revive { padding: 7px 12px; font-size: 12px; }
 .hard-pager {
   display: flex;
   align-items: center;
