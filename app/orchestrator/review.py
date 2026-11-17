@@ -329,9 +329,13 @@ class ReviewMixin:
                         finding={
                             "vuln_type": f.vuln_type, "title": f.title,
                             "target_url": f.target_url, "owner": f.owner or "",
+                            "description": f.description or "",
                             "poc": f.poc, "raw_request": f.raw_request,
+                            "raw_response": f.raw_response or "",
+                            "biz_id": (f.evidence or {}).get("biz_id", "") if isinstance(f.evidence, dict) else "",
                         },
                         review=rv,
+                        allow_fallback=True,
                     )
                 except Exception:
                     pass

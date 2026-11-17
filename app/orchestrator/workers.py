@@ -706,12 +706,27 @@ class WorkersMixin:
                     )
                 except Exception:
                     pass
-                # 触发式检索全局情报库：按 root 域 + 系统指纹命中才注入（不冗余）。
+                # 触发式检索全局情报库：按 root 域 + 系统指纹（+业务画像/漏洞类降级键 + CVE 时间流）命中注入。
                 try:
                     root = target_cluster.root_domain(tgt.host or "")
-                    fps = intel_lib.detect_fingerprints(tgt.host or "", tgt.title or "", tgt.org or "")
-                    hits = await intel_lib.lookup_intel(session, root, fps)
-                    block = intel_lib.render_intel_block(hits)
+                    fps = intel_lib.detect_fingerprints(
+                        tgt.host or "", tgt.title or "", tgt.org or "", tgt.priority_reason or ""
+                    )
+                    fb_keys: list[str] = []
+                    if biz and getattr(biz, "biz_id", ""):
+                        fb_keys.append(f"biz_{biz.biz_id}")
+                    for vt in ((task_obj.vuln_types or []) if task_obj else []):
+                        vtok = intel_lib._norm_key_token(str(vt or ""))
+                        if vtok:
+                            fb_keys.append(f"vuln_{vtok}")
+                    hits = await intel_lib.lookup_intel(session, root, fps, fallback_keys=fb_keys)
+                    techs = [
+                        tgt.title or "",
+                        tgt.priority_reason or "",
+                        *(fp.split("_", 1)[-1] for fp in fps),
+                    ]
+                    cve_block = await intel_lib.lookup_cve_hints(session, techs)
+                    block = intel_lib.render_intel_block(hits, cve_block=cve_block)
                     if block:
                         target_meta["intel_block"] = block
                 except Exception:

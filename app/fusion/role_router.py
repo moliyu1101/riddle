@@ -89,9 +89,42 @@ def clear_skill_cache() -> None:
     load_skill_entries.cache_clear()
 
 
+def _merged_skill_entries() -> list[dict]:
+    """合并磁盘内置技能与 DB 动态知识库（用户沉淀/蒸馏篇目优先靠前）。"""
+    by_name: dict[str, dict] = {
+        row["name"]: dict(row) for row in load_skill_entries()
+    }
+    dynamic_rows: list[dict] = []
+    try:
+        from app.agents.knowledge import cached_db_kb_entries
+
+        for row in cached_db_kb_entries():
+            name = row.get("name") or ""
+            if not name:
+                continue
+            if not row.get("enabled", True):
+                by_name.pop(name, None)
+                continue
+            hint = re.sub(r"\s+", " ", str(row.get("title") or row.get("keyword") or "")).strip()[:80]
+            item = {
+                "name": name,
+                "category": row.get("category") or "user",
+                "origin": row.get("origin") or "user",
+                "hint": hint,
+            }
+            if item["origin"] in ("user", "distilled"):
+                dynamic_rows.append(item)
+                by_name.pop(name, None)
+            else:
+                by_name[name] = item
+    except Exception:
+        pass
+    return [*dynamic_rows, *by_name.values()]
+
+
 def skill_index_block(entries: Any = None, max_chars: int = _MAX_BLOCK_CHARS) -> str:
     """生成常驻速查块；空清单返回空串，绝不往 prompt 塞空标题。"""
-    rows = list(entries if entries is not None else load_skill_entries())
+    rows = list(entries) if entries is not None else _merged_skill_entries()
     if not rows:
         return ""
     lines = [
@@ -105,7 +138,8 @@ def skill_index_block(entries: Any = None, max_chars: int = _MAX_BLOCK_CHARS) ->
         if not name:
             continue
         hint = str(row.get("hint") or "").strip()
-        category = "方法论" if row.get("category") == "rules" else "测试手册"
+        cat = row.get("category")
+        category = "方法论" if cat == "rules" else "实战沉淀" if row.get("origin") in ("user", "distilled") or cat == "user" else "测试手册"
         line = f"- {name}（{category}）{('：' + hint) if hint else ''}"
         if used + len(line) + 1 > max_chars:
             tail = f"- …另有 {len(rows)} 篇，按触发词按需注入正文"

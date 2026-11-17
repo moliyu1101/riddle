@@ -284,6 +284,44 @@ def clear_kb_cache() -> None:
     _KB_CACHE["expires"] = 0.0
 
 
+async def refresh_kb_cache(session: AsyncSession) -> list:
+    """清除并立即重新预热 DB 知识库缓存，供同步工具 kb_lookup 与 skill_index 读取最新内容。"""
+    clear_kb_cache()
+    try:
+        return await _load_kb_rows(session)
+    except Exception:
+        return []
+
+
+def cached_db_kb_entries() -> list[dict]:
+    """线程安全读取最近一次缓存的 DB 知识库条目（含用户新增与编辑覆盖）。"""
+    rows = _KB_CACHE.get("rows")
+    if not rows:
+        return []
+    snapshot = list(rows)
+    out: list[dict] = []
+    for it in snapshot:
+        try:
+            pl = dict(getattr(it, "payload", None) or {})
+            name = str(getattr(it, "match_key", "") or pl.get("name") or "").strip()
+            content = str(pl.get("content") or "")
+            if not name:
+                continue
+            out.append({
+                "name": name,
+                "category": str(pl.get("category") or "user"),
+                "origin": str(pl.get("origin") or "user"),
+                "title": str(pl.get("name") or _human_title(name)),
+                "keyword": str(pl.get("keyword") or name),
+                "content": content,
+                "enabled": bool(pl.get("enabled", True)),
+                "related": list(pl.get("related") or []),
+            })
+        except Exception:
+            continue
+    return out
+
+
 async def lookup_kb(
     session: AsyncSession,
     query_terms: list[str] | None = None,
@@ -408,58 +446,104 @@ def render_kb_block(items: list[Intel], max_chars: int = 0) -> str:
 
 
 def lookup_kb_file(query: str, max_chars: int = 4000) -> dict:
-    """按篇目名/关键词查知识库全文（读 knowledge 目录文件，同步、无 DB 依赖）。
+    """按篇目名/关键词查知识库全文（合并 DB 动态知识库缓存与本地 knowledge 目录）。
 
     知识库文档互相引用（如「见 authbypass-test.md §18」），worker 看到跳转指引时
     用本函数查对应篇目全文。精确命中篇目名返回全文；否则按关键词返回候选列表。
+    DB 中的用户新增（origin='user'/'distilled'）与已编辑种子条目优先级高于磁盘文件。
     """
     query = (query or "").strip().lower()
     if not query:
         return {"ok": False, "error": "query 不能为空"}
     if query.endswith(".md"):
         query = query[:-3]
-    files: list[tuple[str, str, Path]] = []
+
+    entries_by_name: dict[str, dict] = {}
     for category, folder in (("rules", _RULES_DIR), ("kb", _KB_DIR)):
         if not folder.exists():
             continue
         for p in sorted(folder.glob("*.md")):
-            files.append((p.stem, category, p))
-    known = {f[0] for f in files}
+            entries_by_name[p.stem] = {
+                "name": p.stem,
+                "category": category,
+                "origin": "seed",
+                "title": _human_title(p.stem),
+                "keyword": _human_title(p.stem),
+                "path": p,
+                "content": None,
+                "enabled": True,
+                "related": None,
+            }
 
-    def _read(name: str, category: str, path: Path) -> dict:
-        content = path.read_text(encoding="utf-8", errors="ignore")
+    for db_row in cached_db_kb_entries():
+        name = db_row["name"]
+        if not db_row.get("enabled", True):
+            entries_by_name.pop(name, None)
+            continue
+        entries_by_name[name] = {**db_row, "path": None}
+
+    entries = list(entries_by_name.values())
+    known = {e["name"] for e in entries}
+
+    def _get_content(entry: dict) -> str:
+        if entry.get("content") is not None:
+            return entry["content"]
+        p = entry.get("path")
+        if p is not None:
+            try:
+                content = p.read_text(encoding="utf-8", errors="ignore")
+                entry["content"] = content
+                return content
+            except Exception:
+                return ""
+        return ""
+
+    def _read(entry: dict) -> dict:
+        content = _get_content(entry)
+        rel = entry.get("related")
+        if not rel:
+            rel = _parse_refs(content, known)
         return {
             "ok": True,
             "query": query,
-            "name": name,
-            "category": category,
-            "title": _human_title(name),
-            "related": _parse_refs(content, known),
+            "name": entry["name"],
+            "category": entry["category"],
+            "origin": entry.get("origin", "seed"),
+            "title": entry.get("title") or _human_title(entry["name"]),
+            "related": rel,
             "content": content[:max_chars],
             "truncated": len(content) > max_chars,
         }
 
-    exact = [f for f in files if f[0].lower() == query]
+    exact = [
+        e for e in entries
+        if e["name"].lower() == query
+        or str(e.get("keyword") or "").lower() == query
+        or str(e.get("title") or "").lower() == query
+    ]
     if exact:
-        return _read(*exact[0])
-    partial = [f for f in files if query in f[0].lower()]
+        return _read(exact[0])
+    partial = [
+        e for e in entries
+        if query in e["name"].lower()
+        or query in str(e.get("keyword") or "").lower()
+        or query in str(e.get("title") or "").lower()
+    ]
     if partial:
-        out = _read(*partial[0])
+        out = _read(partial[0])
         out["matches"] = [
-            {"name": f[0], "category": f[1], "title": _human_title(f[0])} for f in partial
+            {"name": e["name"], "category": e["category"], "title": e.get("title") or _human_title(e["name"])}
+            for e in partial
         ]
         return out
     hits: list[dict] = []
     parts = _kw_parts(query)
     need = min(2, len(parts))  # 中文 2 字窗口至少命中 2 个，避免单窗口误命中
-    for name, category, path in files:
-        try:
-            content = path.read_text(encoding="utf-8", errors="ignore")
-        except Exception:
-            continue
-        low = content.lower()
+    for entry in entries:
+        content = _get_content(entry)
+        low = f"{entry.get('title', '')} {entry.get('keyword', '')} {content}".lower()
         if sum(1 for p in parts if p in low) >= need:
-            hits.append({"name": name, "category": category, "title": _human_title(name)})
+            hits.append({"name": entry["name"], "category": entry["category"], "title": entry.get("title") or _human_title(entry["name"])})
     if hits:
         return {
             "ok": True,

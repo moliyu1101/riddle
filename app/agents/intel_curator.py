@@ -70,9 +70,14 @@ def _norm_payload(payload: dict) -> dict:
     out = {}
     for k, v in (payload or {}).items():
         key = _text(k)[:50]
-        val = _text(v)[:300]
-        if key and val:
-            out[key] = val
+        if not key:
+            continue
+        if isinstance(v, (bool, int, float)):
+            out[key] = v
+        else:
+            val = _text(v)[:300]
+            if val:
+                out[key] = val
     return out
 
 
@@ -112,13 +117,14 @@ def assess_intel(kind: str, match_key: str, payload: dict, summary: str = "", co
         reasons.append("match_key 为空或过于泛化")
     if not payload:
         reasons.append("payload 为空")
-    if _contains_low_signal(summary, str(payload)):
+    is_pitfall = kind == "lesson" and _text(payload.get("lesson_type")).lower() == "pitfall"
+    if not is_pitfall and _contains_low_signal(summary, str(payload)):
         reasons.append("摘要/内容包含低价值或失败结论")
 
     # 按类型轻量校验
     if kind == "cred":
-        username = payload.get("username", "")
-        password = payload.get("password", "")
+        username = _text(payload.get("username", ""))
+        password = _text(payload.get("password", ""))
         if username.lower() in _PLACEHOLDER_VALUES or password.lower() in _PLACEHOLDER_VALUES or len(username) < 2 or len(password) < 3:
             reasons.append("凭证字段为空/占位/过短")
         if confidence != "verified":
@@ -130,22 +136,22 @@ def assess_intel(kind: str, match_key: str, payload: dict, summary: str = "", co
             payload["path"] = path
         if not path or not path.startswith("/"):
             reasons.append("endpoint 缺少有效 path")
-        elif not _has_high_value_signal(summary, payload.get("vuln_type", "")):
+        elif not _has_high_value_signal(summary, _text(payload.get("vuln_type", ""))):
             # 非高价值信号时，过滤公开/静态/区分度不足的通用路径
             if path in _PUBLIC_ENDPOINTS or _STATIC_EXT_RE.search(path) or len([p for p in path.split("/") if p]) < 2:
                 reasons.append("endpoint 是公开/静态/通用路径")
-        if not (payload.get("vuln_type") or summary):
+        if not (_text(payload.get("vuln_type")) or summary):
             reasons.append("endpoint 缺少漏洞类型或说明")
 
     elif kind == "fingerprint":
-        if len(payload.get("tactic", "")) < 8 or not (payload.get("vuln_type") or summary):
+        if len(_text(payload.get("tactic", ""))) < 8 or not (_text(payload.get("vuln_type")) or summary):
             reasons.append("打法摘要过短或缺漏洞类型")
         if confidence != "verified":
             reasons.append("打法未验证")
 
     elif kind == "profile":
-        key = payload.get("key", "")
-        value = payload.get("value", "")
+        key = _text(payload.get("key", ""))
+        value = _text(payload.get("value", ""))
         # 有效内容 = value 或 summary（很多画像把详情写在 summary 里）
         if max(len(value), len(summary)) < 8 and not _has_high_value_signal(summary, value):
             reasons.append("画像内容为空/过短")
@@ -153,15 +159,15 @@ def assess_intel(kind: str, match_key: str, payload: dict, summary: str = "", co
             reasons.append("画像键过于泛化")
 
     elif kind == "lesson":
-        ltype = payload.get("lesson_type", "")
-        vuln_type = payload.get("vuln_type", "")
+        ltype = _text(payload.get("lesson_type", ""))
+        vuln_type = _text(payload.get("vuln_type", ""))
         if ltype not in {"poc", "pitfall"}:
             reasons.append("lesson 类型非法")
         if not vuln_type or len(vuln_type) < 2:
             reasons.append("lesson 缺少漏洞类型")
-        if ltype == "poc" and max(len(payload.get("repro", "")), len(summary)) < 8:
+        if ltype == "poc" and max(len(_text(payload.get("repro", ""))), len(summary)) < 8:
             reasons.append("lesson 复现/摘要过短")
-        elif ltype == "pitfall" and not (payload.get("reason") or summary):
+        elif ltype == "pitfall" and not (_text(payload.get("reason")) or summary):
             reasons.append("lesson 缺少被驳原因")
 
     # verified 历史情报更保守：可豁免"长度/区分度"软问题，但内容硬伤仍拦。

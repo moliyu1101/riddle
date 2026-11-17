@@ -57,6 +57,20 @@ _FINGERPRINT_KEYWORDS: list[tuple[tuple[str, ...], str]] = [
     (("nacos", "/nacos/"), "mw_nacos"),
     (("grafana",), "mw_grafana"),
     (("kibana",), "mw_kibana"),
+    (("xxl-job", "xxl_job"), "mw_xxl_job"),
+    (("minio", "x-amz-request-id"), "mw_minio"),
+    # 组件 / 开发与企业套件
+    (("rememberme=", "shiro"), "comp_shiro"),
+    (("fastjson", "com.alibaba.fastjson"), "comp_fastjson"),
+    (("jenkins", "x-jenkins"), "devops_jenkins"),
+    (("gitlab", "_gitlab_session"), "devops_gitlab"),
+    (("wordpress", "wp-content", "wp-login"), "cms_wordpress"),
+    (("dedecms", "dedeajax"), "cms_dedecms"),
+    (("discuz", "discuz_"), "cms_discuz"),
+    (("eyou", "亿邮"), "mail_eyou"),
+    (("landray", "蓝凌", "/ekp/"), "oa_landray"),
+    (("kingdee", "金蝶", "/k3cloud/"), "erp_kingdee"),
+    (("yonyou", "用友", "/nccloud/", "/u8cloud/"), "erp_yonyou"),
 ]
 
 # 注入上限（防 prompt 膨胀 / 不冗余）
@@ -74,6 +88,12 @@ def _clip(s, n: int = _MAX_FIELD) -> str:
     if not isinstance(s, str):
         s = str(s or "")
     return s[:n]
+
+
+def _clip_payload_value(v, n: int = _MAX_FIELD):
+    if isinstance(v, (bool, int, float)):
+        return v
+    return _clip(v, n)
 
 
 def detect_fingerprints(*parts: str) -> list[str]:
@@ -139,8 +159,8 @@ async def record_intel(
             return False
         if not isinstance(payload, dict) or not payload:
             return False
-        # 内容字段硬截断
-        payload = {k: _clip(v) for k, v in payload.items() if v not in (None, "")}
+        # 内容字段硬截断（保留 bool/int/float 供效用与来源标记）
+        payload = {k: _clip_payload_value(v) for k, v in payload.items() if v not in (None, "")}
         if not payload:
             return False
         assessment = assess_intel(kind, match_key, payload, summary, confidence)
@@ -161,6 +181,10 @@ async def record_intel(
             # verified 优先级高于 likely：一旦验证过就升级，不回退。
             if confidence == "verified":
                 existing.confidence = "verified"
+            if payload.get("human_verified"):
+                existing.payload = payload
+                if summary:
+                    existing.summary = _clip(summary, 500)
             return True
 
         session.add(Intel(
@@ -178,16 +202,24 @@ async def lookup_intel(
     session: AsyncSession,
     root: str,
     fingerprints: list[str] | None = None,
+    *,
+    fallback_keys: list[str] | None = None,
 ) -> dict[str, list[Intel]]:
-    """触发式检索：按 root域 + 系统指纹命中相关情报。命中才返回，不冗余。
+    """触发式检索：按 root域 + 系统指纹（及业务画像/漏洞类降级键）命中相关情报。
 
-    返回 {cred:[], fingerprint:[], endpoint:[], profile:[]}，每类按 verified优先+hit_count 排序、限量。
+    返回 {cred:[], fingerprint:[], endpoint:[], profile:[], lesson:[]}，每类按 verified优先+hit_count 排序、限量。
     任何失败降级返回空 dict。
     """
     out: dict[str, list[Intel]] = {"cred": [], "fingerprint": [], "endpoint": [], "profile": [], "lesson": []}
     try:
         root = (root or "").strip().lower()
-        fps = [f for f in (fingerprints or []) if f]
+        fps: list[str] = []
+        seen_fp: set[str] = set()
+        for raw_k in [*(fingerprints or []), *(fallback_keys or [])]:
+            k = str(raw_k or "").strip().lower()
+            if k and k not in seen_fp:
+                seen_fp.add(k)
+                fps.append(k)
 
         # cred / profile 按 root 域命中
         if root:
@@ -199,7 +231,7 @@ async def lookup_intel(
                 )).scalars().all()
                 out[kind] = list(rows)
 
-        # fingerprint / endpoint / lesson 按系统指纹命中（lesson 是按指纹沉淀的打法经验）
+        # fingerprint / endpoint / lesson 按系统指纹及三级降级键命中
         if fps:
             for kind in ("fingerprint", "endpoint", "lesson"):
                 rows = (await session.execute(
@@ -213,7 +245,46 @@ async def lookup_intel(
         return out
 
 
-def render_intel_block(intel: dict[str, list[Intel]]) -> str:
+async def lookup_cve_hints(session: AsyncSession, technologies: list[str]) -> str:
+    """按当前目标识别出的指纹/技术栈反查近期 CVE 时间流，生成紧凑提示块。"""
+    techs = [str(t).strip() for t in (technologies or []) if str(t or "").strip()]
+    if not techs:
+        return ""
+    try:
+        from app.fusion import vulnintel
+
+        rows = (await session.execute(
+            select(Intel)
+            .where(Intel.kind == vulnintel.INTEL_KIND)
+            .order_by(Intel.last_seen.desc())
+            .limit(300)
+        )).scalars().all()
+        if not rows:
+            return ""
+        entries = [{
+            "cve_id": (r.payload or {}).get("cve_id", ""),
+            "cvss": (r.payload or {}).get("cvss", 0),
+            "kev": (r.payload or {}).get("kev", False),
+            "products": list((r.payload or {}).get("products") or []) + ([r.match_key] if r.match_key else []),
+            "version_ranges": list((r.payload or {}).get("version_ranges") or []),
+            "summary": r.summary or "",
+        } for r in rows]
+        hints = vulnintel.match_fingerprint(entries, techs)
+        if not hints:
+            return ""
+        lines = ["## 近期关联 CVE 情报提示（融合时间流匹配）"]
+        for h in hints[:4]:
+            kev_tag = " [KEV]" if h.get("kev") else ""
+            ver_tag = f" ({h.get('version_in_range')})" if h.get("version_in_range") else ""
+            lines.append(
+                f"- {h.get('cve_id')} CVSS {float(h.get('cvss') or 0):.1f}{kev_tag}{ver_tag}｜命中 {', '.join(h.get('matched') or [])}｜{h.get('summary', '')[:120]}"
+            )
+        return "\n".join(lines)
+    except Exception:
+        return ""
+
+
+def render_intel_block(intel: dict[str, list[Intel]], cve_block: str = "") -> str:
     """把检索到的情报渲染成注入 worker 的 prompt 块（限量、去重、不冗余）。
 
     完全没命中则返回空串（绝大多数新目标的常态，零开销）。
@@ -223,7 +294,8 @@ def render_intel_block(intel: dict[str, list[Intel]]) -> str:
     ep = intel.get("endpoint") or []
     profile = intel.get("profile") or []
     lesson = intel.get("lesson") or []
-    if not (cred or fp or ep or profile or lesson):
+    cve_text = (cve_block or "").strip()
+    if not (cred or fp or ep or profile or lesson or cve_text):
         return ""
 
     lines = ["# 情报库命中（其它 worker 沉淀的可复用情报，按可信度排序）"]
@@ -232,7 +304,7 @@ def render_intel_block(intel: dict[str, list[Intel]]) -> str:
         lines.append("\n## 同类系统历史经验（审核反馈沉淀）")
         for it in lesson:
             p = it.payload or {}
-            tag = "✓出洞" if it.confidence == "verified" else "·疑似"
+            tag = "✓人工核准" if p.get("human_verified") else ("✓出洞" if it.confidence == "verified" else "·疑似")
             kind_tag = "有效打法" if p.get("lesson_type") == "poc" else "易踩坑"
             lines.append(f"- [{tag}]{kind_tag} [{p.get('vuln_type','')}] {it.summary}".rstrip())
 
@@ -261,6 +333,9 @@ def render_intel_block(intel: dict[str, list[Intel]]) -> str:
             p = it.payload or {}
             lines.append(f"- {p.get('key', '')}: {p.get('value', '')}")
 
+    if cve_text:
+        lines.append("\n" + cve_text)
+
     lines.append("\n注意：情报仅供参考、可能已失效；它只是其中一个攻击面，别因此忽略其它洞，也别盲目照搬。")
     block = "\n".join(lines)
     # 硬字数上限，防膨胀。
@@ -285,15 +360,48 @@ def _host_of(url: str) -> str:
         return ""
 
 
-def distill_review_lesson(f: dict, review: dict) -> dict | None:
+def _norm_key_token(value: str, limit: int = 40) -> str:
+    import re
+    clean = re.sub(r"[^a-z0-9\u4e00-\u9fff]+", "_", str(value or "").strip().lower()).strip("_")
+    return clean[:limit]
+
+
+def resolve_lesson_keys(f: dict) -> list[str]:
+    """三级检索键解析：系统指纹 → 业务画像(biz_*) → 漏洞类型(vuln_*)。"""
+    url = _clip((f.get("target_url") or ""), 255)
+    title = _clip((f.get("title") or ""), 120)
+    owner = _clip((f.get("owner") or ""), 120)
+    desc = _clip((f.get("description") or ""), 400)
+    raw_resp = _clip((f.get("raw_response") or ""), 800)
+    poc = _clip((f.get("poc") or ""), 300)
+    fps = detect_fingerprints(_host_of(url), title, owner, desc, raw_resp, poc)
+    if fps:
+        return [ _clip(fps[0], 64) ]
+    keys: list[str] = []
+    biz_id = _norm_key_token(f.get("biz_id") or "")
+    if biz_id:
+        keys.append(f"biz_{biz_id}")
+    vtype = str(f.get("vuln_type") or "").strip()
+    if vtype and vtype not in ("其他", "unknown", "other"):
+        vtok = _norm_key_token(vtype)
+        if vtok:
+            keys.append(f"vuln_{vtok}")
+    return keys
+
+
+def distill_review_lesson(
+    f: dict,
+    review: dict,
+    *,
+    allow_fallback: bool = False,
+) -> dict | None:
     """从一条初审结论提炼可回流的 lesson 情报（纯函数，可单测）。
 
     输入 f=Finding 关键字段 dict，review=审核结果 dict（verdict/severity_final/ignore_reasons...）。
+    allow_fallback=True 时启用「指纹 → 业务画像 → 漏洞类型」三级兜底键，打破固定指纹限制。
     只产出两类：
       - accepted → 正向「有效打法」PoC 模板（confidence=verified）
       - ignored 且驳回原因是证据质量 → 负向「易踩坑」注意（confidence=likely）
-    一律要求能识别出系统指纹（match_key=指纹，宁缺毋滥防泛化污染）；无指纹不入库。
-    不产生课间噪音：deepen/重复/范围外/公开接口都不提炼。
     """
     try:
         verdict = (review.get("verdict") or "").strip()
@@ -302,10 +410,16 @@ def distill_review_lesson(f: dict, review: dict) -> dict | None:
         vuln_type = _clip((f.get("vuln_type") or "其他"), 30)
         title = _clip((f.get("title") or ""), 100)
         url = _clip((f.get("target_url") or ""), 255)
-        fps = detect_fingerprints(_host_of(url), title, f.get("owner") or "")
-        if not fps:
-            return None
-        match_key = _clip(fps[0], 64)
+        if allow_fallback:
+            keys = resolve_lesson_keys(f)
+            if not keys:
+                return None
+            match_key = _clip(keys[0], 64)
+        else:
+            fps = detect_fingerprints(_host_of(url), title, f.get("owner") or "")
+            if not fps:
+                return None
+            match_key = _clip(fps[0], 64)
 
         if verdict == "accepted":
             repro = _clip((f.get("poc") or "") or (f.get("raw_request") or ""), 300)
@@ -329,9 +443,15 @@ def distill_review_lesson(f: dict, review: dict) -> dict | None:
     return None
 
 
-async def emit_review_lessons(session: AsyncSession, finding: dict, review: dict) -> None:
+async def emit_review_lessons(
+    session: AsyncSession,
+    finding: dict,
+    review: dict,
+    *,
+    allow_fallback: bool = False,
+) -> None:
     """审核落库后调用：把初审结论沉淀进情报库（失败降级不抛异常）。"""
-    item = distill_review_lesson(finding, review)
+    item = distill_review_lesson(finding, review, allow_fallback=allow_fallback)
     if not item:
         return
     await record_intel(
@@ -340,3 +460,107 @@ async def emit_review_lessons(session: AsyncSession, finding: dict, review: dict
         source_host=_host_of(finding.get("target_url") or ""),
         confidence=item["confidence"],
     )
+
+
+async def apply_human_review_feedback(
+    session: AsyncSession,
+    finding: Any,
+    review: Any,
+    *,
+    user_status: str,
+    user_notes: str = "",
+    user_edits: dict | None = None,
+) -> dict:
+    """人工复审强反馈闭环：passed 沉淀精修经验与端点，rejected 记为避坑指南并降权误报打法。"""
+    if user_status not in ("passed", "rejected") or finding is None:
+        return {"recorded": "", "downgraded": 0}
+    try:
+        edits = user_edits if isinstance(user_edits, dict) else {}
+        ev = getattr(finding, "evidence", None) if not isinstance(finding, dict) else finding.get("evidence")
+        biz_id = (ev or {}).get("biz_id", "") if isinstance(ev, dict) else ""
+        get_f = (lambda k, d="": finding.get(k, d)) if isinstance(finding, dict) else (lambda k, d="": getattr(finding, k, d))
+        title = _clip(edits.get("title") or get_f("title", ""), 100)
+        vuln_type = _clip(get_f("vuln_type", "") or "其他", 30)
+        target_url = _clip(get_f("target_url", ""), 255)
+        poc = _clip(edits.get("poc") or get_f("poc", "") or get_f("raw_request", ""), 300)
+        eff = {
+            "vuln_type": vuln_type,
+            "title": title,
+            "target_url": target_url,
+            "owner": get_f("owner", ""),
+            "description": edits.get("description") or get_f("description", ""),
+            "poc": poc,
+            "raw_response": get_f("raw_response", ""),
+            "biz_id": biz_id,
+        }
+        keys = resolve_lesson_keys(eff) or [f"vuln_{_norm_key_token(vuln_type) or 'general'}"]
+        match_key = _clip(keys[0], 64)
+        host = _host_of(target_url)
+
+        if user_status == "passed":
+            await record_intel(
+                session,
+                "lesson",
+                match_key,
+                payload={
+                    "lesson_type": "poc",
+                    "vuln_type": vuln_type,
+                    "title": title or vuln_type,
+                    "repro": poc or title or "已人工审核通过，保留有效验证步骤",
+                    "human_verified": True,
+                },
+                summary=f"人工核准打法 [{vuln_type}] {title}".strip(),
+                source_host=host,
+                confidence="verified",
+            )
+            from urllib.parse import urlparse
+            path = (urlparse(target_url).path or "") if target_url else ""
+            if path and path != "/":
+                await record_intel(
+                    session,
+                    "endpoint",
+                    match_key,
+                    payload={"path": path, "vuln_type": vuln_type, "human_verified": True},
+                    summary=f"人工复审通过端点（来自 {host}）",
+                    source_host=host,
+                    confidence="verified",
+                )
+            return {"recorded": "passed", "match_key": match_key, "downgraded": 0}
+
+        # user_status == "rejected"
+        rev_notes = (
+            getattr(review, "reviewer_notes", "") if review and not isinstance(review, dict) else (review or {}).get("reviewer_notes", "")
+        )
+        reason = _clip(
+            (user_notes or "").strip() or (rev_notes or "").strip() or "人工复审判定无效或证据不足",
+            200,
+        )
+        await record_intel(
+            session,
+            "lesson",
+            match_key,
+            payload={
+                "lesson_type": "pitfall",
+                "vuln_type": vuln_type,
+                "reason": reason,
+                "human_rejected": True,
+            },
+            summary=f"人工驳回避坑 [{vuln_type}] {reason[:90]}".strip(),
+            source_host=host,
+            confidence="verified",
+        )
+        downgraded = 0
+        rows = (await session.execute(
+            select(Intel).where(Intel.kind == "lesson", Intel.match_key == match_key)
+        )).scalars().all()
+        for row in rows:
+            pl = dict(row.payload or {})
+            if pl.get("lesson_type") == "poc" and (pl.get("vuln_type") == vuln_type or title and pl.get("title") == title):
+                pl["rejected_count"] = int(pl.get("rejected_count") or 0) + 1
+                row.payload = pl
+                if row.confidence != "likely" and not pl.get("human_verified"):
+                    row.confidence = "likely"
+                downgraded += 1
+        return {"recorded": "rejected", "match_key": match_key, "downgraded": downgraded}
+    except Exception:
+        return {"recorded": "", "downgraded": 0}

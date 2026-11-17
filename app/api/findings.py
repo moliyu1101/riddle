@@ -1817,6 +1817,20 @@ async def user_review(finding_id: str, req: UserReviewRequest,
         elif req.user_notes is not None and req.user_edits is None and req.user_severity is None:
             note = "补充人工复审备注"
         await _snapshot_report_version(session, f, r, source="user_edit", note=note)
+    if req.user_status in ("passed", "rejected") and f is not None:
+        try:
+            from app.agents.intel import apply_human_review_feedback
+
+            await apply_human_review_feedback(
+                session,
+                f,
+                r,
+                user_status=req.user_status,
+                user_notes=r.user_notes or "",
+                user_edits=r.user_edits or {},
+            )
+        except Exception:
+            pass
     await session.commit()
     killsweep_triggered = False
     if trigger_killsweep:

@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.intel_curator import curate_intel
-from app.agents.knowledge import clear_kb_cache, sync_kb_from_files
+from app.agents.knowledge import clear_kb_cache, refresh_kb_cache, sync_kb_from_files
 from app.db.models import Intel, to_cst_iso
 from app.db.session import get_session
 
@@ -199,8 +199,11 @@ async def delete_intel(intel_id: str, session: AsyncSession = Depends(get_sessio
     it = await session.get(Intel, intel_id)
     if not it:
         raise HTTPException(404, "情报不存在")
+    was_kb = it.kind == "knowledge"
     await session.delete(it)
     await session.commit()
+    if was_kb:
+        await refresh_kb_cache(session)
     return {"ok": True}
 
 
@@ -278,7 +281,7 @@ async def list_knowledge(
 async def sync_knowledge(session: AsyncSession = Depends(get_session)):
     """把 knowledge/(rules+kb) 本地种子文件同步进知识库，同名已存在则跳过（保留用户编辑）。"""
     result = await sync_kb_from_files(session)
-    clear_kb_cache()
+    await refresh_kb_cache(session)
     return result
 
 
@@ -327,7 +330,7 @@ async def create_knowledge(
     )
     session.add(it)
     await session.commit()
-    clear_kb_cache()
+    await refresh_kb_cache(session)
     return _knowledge_to_dict(it, with_content=True)
 
 
@@ -363,5 +366,5 @@ async def update_knowledge(
     from datetime import datetime, timezone
     it.last_seen = datetime.now(timezone.utc)  # 编辑即刷新时间戳（此前自赋值永不变）
     await session.commit()
-    clear_kb_cache()
+    await refresh_kb_cache(session)
     return _knowledge_to_dict(it, with_content=True)
