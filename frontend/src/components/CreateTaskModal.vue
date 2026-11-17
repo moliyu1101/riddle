@@ -9,6 +9,8 @@ import LlmModelPicker from "./LlmModelPicker.vue";
 import LlmPoolEditor from "./LlmPoolEditor.vue";
 import AuthTargetInput from "./AuthTargetInput.vue";
 import TemperatureRecommend from "./TemperatureRecommend.vue";
+import FusionGoalEditor from "./FusionGoalEditor.vue";
+import { fromGoalPayload, toGoalPayload, validateGoalRows } from "../fusionGoals.js";
 
 defineOptions({ name: "CreateTaskModal" });
 
@@ -46,6 +48,7 @@ const singleModels = ref([]);
 const singleModelsLoading = ref(false);
 const singleModelsError = ref("");
 const poolEditor = ref(null);
+const fusionGoals = ref([]);
 // 编辑模式：modal.editTaskId 非空时，弹窗预填任务数据、保存走 updateTask
 const isEdit = computed(() => !!modal.editTaskId);
 const editTask = ref(null);
@@ -892,6 +895,7 @@ async function resetForm() {
   });
   srcApplySuppressed = false;
   taskProviders.value = [];
+  fusionGoals.value = [];
   await initForm();
 }
 
@@ -992,8 +996,12 @@ async function loadEditTask(id) {
   editError.value = "";
   try {
     await initForm();   // 先加载引擎状态点等系统信息
-    const task = await api.getTask(id);
+    const [task, goalsRes] = await Promise.all([
+      api.getTask(id),
+      api.fusionGoals(id).catch(() => ({ goals: [] })),
+    ]);
     fill(task);
+    fusionGoals.value = fromGoalPayload(goalsRes?.goals || []);
     editTask.value = task;
   } catch (e) {
     editError.value = `加载任务失败：${e?.message || e}`;
@@ -1053,6 +1061,10 @@ function validateStep(n) {
   if (n === 1) {
     if (!form.name.trim()) { invalidField.value = "name"; return "先给任务起个名字"; }
     if (!vulnSelected.value.size) { invalidField.value = "vuln"; return "至少选一类漏洞"; }
+    if (fusionGoals.value.length) {
+      const gErr = validateGoalRows(fusionGoals.value);
+      if (gErr) { invalidField.value = "goals"; return gErr; }
+    }
   }
   if (n === 2) {
     if ((form.target_source === "manual" || form.target_source === "site") && !effectiveManualCount.value) {
@@ -1218,7 +1230,11 @@ async function submit() {
   if (isEdit.value) {
     // closeCreateTask 会清空 modal.editTaskId，先存局部变量再跳转，避免跳到 /task/null
     const editId = modal.editTaskId;
-    const updated = await api.updateTask(editId, body);
+    let updated = await api.updateTask(editId, body);
+    if (fusionGoals.value.length) {
+      await api.fusionSaveGoals(editId, toGoalPayload(fusionGoals.value));
+      updated = await api.getTask(editId).catch(() => updated);
+    }
     closeCreateTask();
     resetForm();
     if (router.currentRoute.value.path === `/task/${editId}`) {
@@ -1228,6 +1244,9 @@ async function submit() {
     }
   } else {
     const task = await api.createTask(body);
+    if (fusionGoals.value.length) {
+      await api.fusionSaveGoals(task.id, toGoalPayload(fusionGoals.value)).catch(() => {});
+    }
     clearDraft();
     closeCreateTask();
     resetForm();
@@ -1365,6 +1384,24 @@ async function submit() {
                       <p class="create-mini">
                         {{ srcOption.title }} 推荐 {{ recommendedVulnIds.size }} 类：{{ recommendedVulnList.join("、") }}。切换口径自动应用推荐集，手动改过则保留你的选择。
                       </p>
+                    </section>
+
+                    <section class="create-block">
+                      <header class="create-block-head">
+                        <b>验收目标（融合层目标闸门）</b>
+                        <small>可选 · 已配置 {{ fusionGoals.length }} 条</small>
+                      </header>
+                      <FusionGoalEditor
+                        v-model="fusionGoals"
+                        compact
+                        :suggest-context="{
+                          name: form.name,
+                          src_type: form.src_type,
+                          vuln_types: Array.isArray(form.vuln_types) ? form.vuln_types : String(form.vuln_types || '').split(',').map((s) => s.trim()).filter(Boolean),
+                          fofa_query: form.fofa_query,
+                          targets: Array.isArray(form.manual_targets) ? form.manual_targets : String(form.manual_targets || '').split(/\r?\n/).map((s) => s.trim()).filter(Boolean),
+                        }"
+                      />
                     </section>
                   </div>
 

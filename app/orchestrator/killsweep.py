@@ -283,6 +283,7 @@ class KillsweepMixin:
             on_provider_failure=self._provider_failure_callback(
                 loop, "killsweep", finding_id=finding_id
             ),
+            role="worker",
         )
         cancel_event = threading.Event()
         self._killsweep_cancel_events[finding_id] = cancel_event
@@ -648,6 +649,7 @@ class KillsweepMixin:
             on_provider_failure=self._provider_failure_callback(
                 loop, "escalation", finding_id=finding_id
             ),
+            role="worker",
         )
         cancel_event = threading.Event()
         self._escalation_cancel_events[finding_id] = cancel_event

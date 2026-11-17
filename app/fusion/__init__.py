@@ -21,4 +21,6 @@ __all__ = [
     "scope_guard",
     "vulnintel",
     "role_router",
+    "intercept",
+    "retest",
 ]

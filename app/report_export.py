@@ -256,9 +256,23 @@ _SCORE_LABELS = (
 )
 
 
+def _impact_summary(f: Finding, r: Review | None) -> dict:
+    try:
+        from app.fusion.evidence_gate import check_finding_with_review
+        return check_finding_with_review(f, r)
+    except Exception:
+        return {
+            "impact_level": "L1",
+            "impact_label": "信息面（版本号/指纹/报错）",
+            "allowed": True,
+            "reasons": [],
+        }
+
+
 def build_report_sections(f: Finding, r: Review | None, src_type: str = "edusrc") -> dict:
     """按模板返回分节数据，前端据此渲染章节导航与正文。"""
     template = _REPORT_TEMPLATES.get((src_type or "edusrc").strip() or "edusrc", _REPORT_TEMPLATES["edusrc"])
+    imp = _impact_summary(f, r)
     data = {
         "overview": {
             "title": _eff(f, r, "title") or f.title,
@@ -267,6 +281,10 @@ def build_report_sections(f: Finding, r: Review | None, src_type: str = "edusrc"
             "owner": _owner(f),
             "severity": _sev(f, r),
             "confidence": _conf(r),
+            "impact_level": imp.get("impact_level", "L1"),
+            "impact_label": imp.get("impact_label", ""),
+            "evidence_ok": imp.get("allowed", True),
+            "evidence_reasons": imp.get("reasons", []),
             "score": r.score if r else None,
             "score_breakdown": score_breakdown(f, r),
             "created_at": to_cst_iso(f.created_at),
@@ -302,6 +320,7 @@ def build_report_markdown(f: Finding, r: Review | None, src_type: str = "edusrc"
         "| 项目 | 内容 |",
         "| --- | --- |",
         f"| **漏洞等级** | {_md_escape(ov['severity'])}（{ov['score'] or '-'} / 10） |",
+        f"| **影响分级** | {_md_escape(ov.get('impact_level', 'L1'))} · {_md_escape(ov.get('impact_label', '-'))} |",
         f"| **信度** | {_md_escape(ov['confidence'])} |",
         f"| **漏洞类型** | `{_md_escape(ov['vuln_type'])}` |",
         f"| **归属单位** | {_md_escape(ov['owner'])} |",
@@ -423,6 +442,7 @@ def build_docx_bytes(f: Finding, r: Review | None, src_type: str = "edusrc") -> 
 
     body = [heading(ov["title"], 1)]
     body.append(para(f"漏洞等级：{ov['severity']}（{ov['score'] or '-'} / 10）"))
+    body.append(para(f"影响分级：{ov.get('impact_level', 'L1')} · {ov.get('impact_label', '-')}"))
     body.append(para(f"信度：{ov['confidence']}"))
     body.append(para(f"漏洞类型：{ov['vuln_type']}"))
     body.append(para(f"归属单位：{ov['owner']}"))
@@ -542,9 +562,12 @@ def build_report_html(f: Finding, r: Review | None, src_type: str = "edusrc") ->
     parts = [f"<h1>{esc(ov['title'])}</h1>"]
     parts.append(
         "<table class='meta'><tr><th>漏洞等级</th><td>{}</td><th>信度</th><td>{}</td></tr>"
+        "<tr><th>影响分级</th><td colspan='3'>{} · {}</td></tr>"
         "<tr><th>漏洞类型</th><td>{}</td><th>归属单位</th><td>{}</td></tr>"
         "<tr><th>目标 URL</th><td>{}</td><th>发现时间</th><td>{}</td></tr></table>".format(
-            esc(ov["severity"]), esc(ov["confidence"]), esc(ov["vuln_type"]),
+            esc(ov["severity"]), esc(ov["confidence"]),
+            esc(ov.get("impact_level", "L1")), esc(ov.get("impact_label", "-")),
+            esc(ov["vuln_type"]),
             esc(ov["owner"]), esc(ov["target_url"]), esc(ov["created_at"] or "-"),
         )
     )

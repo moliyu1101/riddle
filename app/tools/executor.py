@@ -406,6 +406,24 @@ class ToolExecutor:
         except CommandBlocked as e:
             return {"ok": False, "blocked": True, "error": str(e)}
 
+        # 融合层三层命令拦截旁路登记：把上下文敏感或边界变更命令记入审批台账；
+        # 若操作已被人工审批台账显式拒绝，则直接拦阻，保持默认对存量测试无侵入。
+        try:
+            from app.fusion import intercept as fusion_intercept
+
+            ic = fusion_intercept.evaluate_command(
+                command,
+                tool="run_shell",
+                cwd=str(self._shell_cwd),
+                src_type="enterprise" if self.enterprise else "edusrc",
+                forbidden_ops=self._forbidden_ops,
+                record=True,
+            )
+            if ic.get("rule") == "manual_decision" and ic.get("approval_status") == "denied":
+                return {"ok": False, "blocked": True, "error": f"人工审批台账已拒绝：{ic.get('reason')}"}
+        except Exception:
+            pass
+
         # 命令历史去重：重复执行时提示，避免 worker 反复跑同一命令。
         self._shell_history.append(command)
         repeat = self._shell_history.count(command)

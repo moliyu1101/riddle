@@ -65,9 +65,13 @@ class CoreEndpointsTest(ApiIntegrationBase):
         self.assertIn("name", about.json())
 
     def test_index_served(self):
+        from app.main import INDEX_FILE
         res = self.client.get("/")
         self.assertEqual(res.status_code, 200)
-        self.assertIn("知蠹 Riddle", res.text)
+        if INDEX_FILE.exists():
+            self.assertIn("知蠹 Riddle", res.text)
+        else:
+            self.assertIn("前端未构建", res.text)
 
     def test_task_crud_roundtrip(self):
         created = self.client.post("/api/tasks", json={

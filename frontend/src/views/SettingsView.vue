@@ -12,6 +12,7 @@ import AppearancePanel from "../components/settings/AppearancePanel.vue";
 import LlmSettingsPanel from "../components/settings/LlmSettingsPanel.vue";
 import ReconSettingsPanel from "../components/settings/ReconSettingsPanel.vue";
 import RuntimeSettingsPanel from "../components/settings/RuntimeSettingsPanel.vue";
+import FusionSettingsPanel from "../components/settings/FusionSettingsPanel.vue";
 import SecurityPanel from "../components/settings/SecurityPanel.vue";
 import DataBackupPanel from "../components/settings/DataBackupPanel.vue";
 import ConfigTransferPanel from "../components/settings/ConfigTransferPanel.vue";
@@ -69,6 +70,23 @@ const form = reactive({
   deepen_cap: 2,
   skip_score_threshold: -10,
   worker_prompt_version: "legacy",
+  fusion: {
+    evidence_gate_hard: false,
+    scope_guard_hard: false,
+    traffic_enabled: false,
+    goal_gate_enabled: true,
+    skill_index_enabled: true,
+    role_routing_enabled: true,
+    intel_sync_enabled: true,
+    graphs_enabled: true,
+    report_enabled: true,
+    intel_lookback_days: 7,
+    intel_sync_interval_hours: 0,
+    intel_fastlane_cvss: 9.0,
+    intel_timeout: 12,
+    nvd_api_key_configured: false,
+    role_models: { planner: "", worker: "", reviewer: "", judge: "" },
+  },
   // 访问令牌：输入值 + 已设置/环境变量标志（来自 /api/settings 的 auth 段）
   full_token: "",
   full_token_set: false,
@@ -211,6 +229,14 @@ async function save({ silent = false } = {}) {
         skip_score_threshold: Number(form.skip_score_threshold),
         worker_prompt_version: form.worker_prompt_version,
         engine: form.default_engine || "fofa",
+        fusion: {
+          ...form.fusion,
+          intel_lookback_days: Number(form.fusion.intel_lookback_days || 7),
+          intel_sync_interval_hours: Number(form.fusion.intel_sync_interval_hours || 0),
+          intel_fastlane_cvss: Number(form.fusion.intel_fastlane_cvss ?? 9),
+          intel_timeout: Number(form.fusion.intel_timeout || 12),
+          role_models: { ...(form.fusion.role_models || {}) },
+        },
       },
       auth: {
         full_token: form.full_token_set && !form.full_token ? MASKED : form.full_token,
@@ -394,6 +420,29 @@ async function load() {
     form.deepen_cap = s.defaults?.deepen_cap ?? 2;
     form.skip_score_threshold = s.defaults?.skip_score_threshold ?? -10;
     form.worker_prompt_version = s.defaults?.worker_prompt_version || "legacy";
+    const sf = s.defaults?.fusion || {};
+    form.fusion = {
+      evidence_gate_hard: !!sf.evidence_gate_hard,
+      scope_guard_hard: !!sf.scope_guard_hard,
+      traffic_enabled: !!sf.traffic_enabled,
+      goal_gate_enabled: sf.goal_gate_enabled !== false,
+      skill_index_enabled: sf.skill_index_enabled !== false,
+      role_routing_enabled: sf.role_routing_enabled !== false,
+      intel_sync_enabled: sf.intel_sync_enabled !== false,
+      graphs_enabled: sf.graphs_enabled !== false,
+      report_enabled: sf.report_enabled !== false,
+      intel_lookback_days: Number(sf.intel_lookback_days ?? 7),
+      intel_sync_interval_hours: Number(sf.intel_sync_interval_hours ?? 0),
+      intel_fastlane_cvss: Number(sf.intel_fastlane_cvss ?? 9),
+      intel_timeout: Number(sf.intel_timeout ?? 12),
+      nvd_api_key_configured: !!sf.nvd_api_key_configured,
+      role_models: {
+        planner: sf.role_models?.planner || "",
+        worker: sf.role_models?.worker || "",
+        reviewer: sf.role_models?.reviewer || "",
+        judge: sf.role_models?.judge || "",
+      },
+    };
     const authView = s.auth || {};
     form.full_token = "";
     form.full_token_set = !!authView.full_token_set;
@@ -476,6 +525,7 @@ const SETTINGS_TABS = [
   { id: "llm", label: "模型", hint: "LLM 通道" },
   { id: "recon", label: "测绘", hint: "引擎与 Key" },
   { id: "runtime", label: "调度", hint: "并发深挖" },
+  { id: "fusion", label: "融合", hint: "闸门与留痕" },
   { id: "security", label: "安全", hint: "访问令牌" },
   { id: "data", label: "数据", hint: "备份磁盘" },
   { id: "update", label: "更新", hint: "版本检查" },
@@ -634,6 +684,14 @@ onUnmounted(() => {
           <RuntimeSettingsPanel :form="form" />
         </fieldset>
 
+        <fieldset v-show="settingsTab === 'fusion'" class="settings-block">
+          <legend>
+            <span>融合闸门</span>
+            <small>证据硬闸门、范围守卫、流量留痕、情报自动同步与角色路由</small>
+          </legend>
+          <FusionSettingsPanel :form="form" :toast="toast" />
+        </fieldset>
+
         <fieldset v-show="settingsTab === 'security'" class="settings-block">
           <legend>
             <span>访问安全</span>
@@ -694,7 +752,7 @@ onUnmounted(() => {
           />
         </fieldset>
 
-        <div v-show="['llm','recon','runtime'].includes(settingsTab)" class="settings-actions">
+        <div v-show="['llm','recon','runtime','fusion'].includes(settingsTab)" class="settings-actions">
           <span class="settings-actions-hint">密钥留空不覆盖；输入完成后会随自动保存写入。改动约 1 秒自动保存。</span>
           <button type="submit" class="primary" :disabled="saving">
             {{ saving ? "保存中…" : "立即保存" }}

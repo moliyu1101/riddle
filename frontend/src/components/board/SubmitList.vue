@@ -1,5 +1,5 @@
 <script setup>
-import { effectiveSeverity } from "../../report.js";
+import { effectiveSeverity, impactMeta } from "../../report.js";
 import { fmtLocalTime } from "../../format.js";
 
 defineOptions({ name: "SubmitList" });
@@ -49,6 +49,12 @@ function diffTitle(d) {
           {{ f.title }}
           <span v-if="f.review?.submitted" class="tag-done">已提交</span>
           <span v-if="f.diff" class="diff-pill" :class="'diff-' + f.diff.tier" :title="diffTitle(f.diff)">{{ f.diff.score }} {{ f.diff.label }}</span>
+          <span
+            v-if="impactMeta(f.fusion_evidence)"
+            class="impact-pill"
+            :class="[impactMeta(f.fusion_evidence).level, { blocked: !impactMeta(f.fusion_evidence).allowed }]"
+            :title="impactMeta(f.fusion_evidence).tooltip"
+          >{{ impactMeta(f.fusion_evidence).level }} {{ impactMeta(f.fusion_evidence).shortLabel }}</span>
         </div>
         <div class="meta">{{ f.vuln_type }} · {{ f.target_url }}</div>
         <div class="meta rr-time">发现 {{ fmtLocalTime(f.created_at) }}<template v-if="f.llm_model"> · 模型 {{ f.llm_model }}</template></div>

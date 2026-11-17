@@ -437,9 +437,15 @@ def _probe_target_liveness(url: str, host: str, timeout: float) -> dict:
         "reason": "派发前探活失败：死链/连接超时/无响应",
     }
 
-def _llm_for_task(task: Task, on_provider_failure=None, on_provider_selected=None) -> LLMClient:
+def _llm_for_task(
+    task: Task,
+    on_provider_failure=None,
+    on_provider_selected=None,
+    role: str | None = None,
+) -> LLMClient:
     return llm_client_for_task(
         task,
         on_provider_failure=on_provider_failure,
         on_provider_selected=on_provider_selected,
+        role=role,
     )

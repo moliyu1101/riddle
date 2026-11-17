@@ -1,14 +1,6 @@
 import { createApp } from "vue";
 import { createRouter, createWebHashHistory } from "vue-router";
 import App from "./App.vue";
-import LoginView from "./views/LoginView.vue";
-import TasksView from "./views/TasksView.vue";
-import BoardView from "./views/BoardView.vue";
-import SettingsView from "./views/SettingsView.vue";
-import IntelView from "./views/IntelView.vue";
-import VulnsView from "./views/VulnsView.vue";
-import RuntimeLogsView from "./views/RuntimeLogsView.vue";
-import FusionView from "./views/FusionView.vue";
 import { authReadyRef, authRoleRef, loadAuthRole } from "./api.js";
 import "./styles/base.css";
 import "./styles/layout.css";
@@ -18,6 +10,16 @@ import "./styles/responsive.css";
 import "./styles/intel.css";
 import "./styles/create.css";
 import "./styles/login.css";
+
+// 按路由懒加载视图，避免首屏打包成单一巨型 chunk
+const LoginView = () => import("./views/LoginView.vue");
+const TasksView = () => import("./views/TasksView.vue");
+const BoardView = () => import("./views/BoardView.vue");
+const SettingsView = () => import("./views/SettingsView.vue");
+const IntelView = () => import("./views/IntelView.vue");
+const VulnsView = () => import("./views/VulnsView.vue");
+const RuntimeLogsView = () => import("./views/RuntimeLogsView.vue");
+const FusionView = () => import("./views/FusionView.vue");
 
 const router = createRouter({
   history: createWebHashHistory(),

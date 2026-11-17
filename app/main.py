@@ -13,6 +13,7 @@ import logging
 import os
 import signal
 import sys
+import threading
 from contextlib import asynccontextmanager
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -44,6 +45,7 @@ from app.security import SECURITY_HEADERS, auth_enabled, protected_path, request
 from app.waf import WAF_BLOCK_MODE, inspect_request, waf_headers
 from app.workdir_cleanup import run_periodic_cleanup
 from app.memory import run_periodic_memory_reclaim
+from app.fusion.vulnintel import run_periodic_intel_sync
 from app.workfiles import workfile_response
 
 # Vite 构建产物目录（多阶段构建拷贝到此）
@@ -93,8 +95,11 @@ def _install_diagnostics(loop) -> None:
         except Exception as exc:
             DIAG_LOG.exception("failed to dump thread traceback: %s", exc)
 
-    if hasattr(signal, "SIGUSR1"):
-        signal.signal(signal.SIGUSR1, _dump_runtime)
+    if hasattr(signal, "SIGUSR1") and threading.current_thread() is threading.main_thread():
+        try:
+            signal.signal(signal.SIGUSR1, _dump_runtime)
+        except (ValueError, RuntimeError) as exc:
+            DIAG_LOG.warning("failed to register SIGUSR1 diagnostics: %s", exc)
 
 
 async def _loop_lag_monitor() -> None:
@@ -125,6 +130,7 @@ async def lifespan(app: FastAPI):
     cleanup_task = asyncio.create_task(run_periodic_cleanup())
     memory_task = asyncio.create_task(run_periodic_memory_reclaim())
     backup_task = asyncio.create_task(run_periodic_backup())
+    intel_sync_task = asyncio.create_task(run_periodic_intel_sync())
     await init_db()
     await init_settings_cache()
     DIAG_LOG.info(
@@ -156,7 +162,8 @@ async def lifespan(app: FastAPI):
         cleanup_task.cancel()
         memory_task.cancel()
         backup_task.cancel()
-        for t in (lag_monitor, cleanup_task, memory_task, backup_task):
+        intel_sync_task.cancel()
+        for t in (lag_monitor, cleanup_task, memory_task, backup_task, intel_sync_task):
             try:
                 await t
             except asyncio.CancelledError:
@@ -165,7 +172,15 @@ async def lifespan(app: FastAPI):
         default_executor.shutdown(wait=False, cancel_futures=True)
 
 
-app = FastAPI(title="知蠹 Riddle", version="0.1", lifespan=lifespan)
+def _read_version() -> str:
+    try:
+        return (Path(__file__).resolve().parent.parent / "VERSION").read_text(encoding="utf-8").strip() or "0.2.0"
+    except OSError:
+        return "0.2.0"
+
+
+APP_VERSION = _read_version()
+app = FastAPI(title="知蠹 Riddle", version=APP_VERSION, lifespan=lifespan)
 # 真实浏览器截图静态目录：/workfiles/<任务目录>/evidence/screenshots/*.png。
 # 安全静态服务：/workfiles 已纳入 security_middleware 鉴权（full/readonly 可访问，
 # observer 与未认证拒绝）；<img> 为同源请求自动携带 riddle_token cookie，无需
@@ -238,6 +253,7 @@ CREDIT = "Powered By moliyu1101"
 async def about():
     return {
         "name": "知蠹 Riddle",
+        "version": APP_VERSION,
         "description": "AI 自主漏洞挖掘平台",
         "author": "moliyu1101",
         "license": "CC BY-NC 4.0",

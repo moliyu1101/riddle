@@ -146,6 +146,23 @@ def _diff_score_dict(f: Finding) -> dict:
         return {"score": 50.0, "tier": "normal", "label": "普通", "reasons": [], "common_hits": [], "suggestions": []}
 
 
+def _fusion_evidence_dict(f: Finding, r: Review | None = None) -> dict:
+    """融合层 L1-L4 影响分级与机械凭据试算（纯规则实时计算，不落库）。"""
+    try:
+        from app.fusion.evidence_gate import check_finding_with_review
+        return check_finding_with_review(f, r)
+    except Exception:
+        return {
+            "allowed": True,
+            "severity": "",
+            "impact_level": "L1",
+            "impact_label": "信息面（版本号/指纹/报错）",
+            "required_level": None,
+            "evidence": [],
+            "reasons": [],
+        }
+
+
 def _enrich_evidence(evidence: Any, target_url: str | None) -> Any:
     """给 evidence.snapshot.screenshot 补可访问 URL（/workfiles/<safe_name>/<ref>）。
 
@@ -186,6 +203,8 @@ def _finding_dict(f: Finding, r: Review | None, *, compact: bool = False) -> dic
         "llm_base_url": getattr(f, "llm_base_url", "") or "",
         # 差异化分：大众洞识别，供提交优先级参考（纯规则实时计算，不落库）
         "diff": _diff_score_dict(f),
+        # 融合层 L1-L4 影响分级与机械凭据试算（纯规则实时计算，不落库）
+        "fusion_evidence": _fusion_evidence_dict(f, r),
         "review": None if not r else {
             "verdict": r.verdict,
             "confidence": r.confidence,
@@ -347,6 +366,11 @@ async def get_finding(finding_id: str, session: AsyncSession = Depends(get_sessi
     if not d.get("edu_school"):
         d["edu_school"] = await _resolve_edu_school_async(f.target_url)
     d["score_breakdown"] = score_breakdown(f, r)
+    try:
+        from app.fusion import goal_gate
+        d["fusion_goals"] = (await goal_gate.evaluate_task_goals(session, [f.task_id])).get(f.task_id)
+    except Exception:
+        d["fusion_goals"] = None
     return d
 
 

@@ -218,7 +218,7 @@ def _is_cluster_deadish(t: Target) -> bool:
 
 
 def _llm_for_task(task: Task, on_provider_failure=None) -> LLMClient | None:
-    return llm_client_for_task_optional(task, on_provider_failure=on_provider_failure)
+    return llm_client_for_task_optional(task, on_provider_failure=on_provider_failure, role="planner")
 
 
 async def _resolve_query(task: Task, llm: LLMClient | None) -> tuple[str, str]:

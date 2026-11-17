@@ -773,6 +773,7 @@ class WorkersMixin:
                 on_provider_selected=self._provider_selected_callback(
                     loop, target_id, "挖掘模型"
                 ),
+                role="worker",
             )
             self._live[target_id].update(self._llm_payload(llm, "挖掘模型"))
             prompt_version = resolve_worker_prompt_version(task_obj)

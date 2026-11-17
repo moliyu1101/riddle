@@ -22,7 +22,7 @@ EDITABLE_BOOL = (
     "skill_index_enabled", "role_routing_enabled", "intel_sync_enabled",
     "traffic_enabled", "graphs_enabled", "report_enabled",
 )
-EDITABLE_INT = ("intel_lookback_days",)
+EDITABLE_INT = ("intel_lookback_days", "intel_sync_interval_hours")
 EDITABLE_FLOAT = ("intel_fastlane_cvss", "intel_timeout")
 EDITABLE = (*EDITABLE_BOOL, *EDITABLE_INT, *EDITABLE_FLOAT, "role_models")
 
@@ -55,6 +55,7 @@ class FusionConfig:
     graphs_enabled: bool = True
     report_enabled: bool = True
     intel_lookback_days: int = 7
+    intel_sync_interval_hours: int = 0
     intel_fastlane_cvss: float = 9.0
     intel_timeout: float = 12.0
     nvd_api_key: str = ""
@@ -80,8 +81,9 @@ def _coerce(name: str, value, base: FusionConfig):
         return value if isinstance(value, bool) else str(value).strip().lower() in _TRUE
     if name in EDITABLE_INT:
         # 与 .env 的 _number 同一组上下界，避免 DB overlay 绕过数值约束
+        lo, hi = (0, 720) if name == "intel_sync_interval_hours" else (1, 90)
         try:
-            return max(1, min(90, int(value)))
+            return max(lo, min(hi, int(value)))
         except (TypeError, ValueError):
             return getattr(base, name)
     if name in EDITABLE_FLOAT:
@@ -107,6 +109,7 @@ def load_config(overlay: dict | None = None) -> FusionConfig:
         graphs_enabled=_flag("FUSION_GRAPHS", True),
         report_enabled=_flag("FUSION_REPORT", True),
         intel_lookback_days=_number("FUSION_INTEL_LOOKBACK_DAYS", 7, 1, 90, as_int=True),
+        intel_sync_interval_hours=_number("FUSION_INTEL_SYNC_INTERVAL_HOURS", 0, 0, 720, as_int=True),
         intel_fastlane_cvss=_number("FUSION_INTEL_FASTLANE_CVSS", 9.0, 0.0, 10.0),
         intel_timeout=_number("FUSION_INTEL_TIMEOUT", 12.0, 1.0, 60.0),
         nvd_api_key=os.getenv("NVD_API_KEY", "").strip(),
@@ -166,6 +169,7 @@ def public_config(overlay: dict | None = None) -> dict:
         "graphs_enabled": cfg.graphs_enabled,
         "report_enabled": cfg.report_enabled,
         "intel_lookback_days": cfg.intel_lookback_days,
+        "intel_sync_interval_hours": cfg.intel_sync_interval_hours,
         "intel_fastlane_cvss": cfg.intel_fastlane_cvss,
         "intel_timeout": cfg.intel_timeout,
         "nvd_api_key_configured": bool(cfg.nvd_api_key),

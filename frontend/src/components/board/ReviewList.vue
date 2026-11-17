@@ -1,5 +1,5 @@
 <script setup>
-import { effectiveSeverity } from "../../report.js";
+import { effectiveSeverity, impactMeta } from "../../report.js";
 import { fmtLocalTime } from "../../format.js";
 
 defineOptions({ name: "ReviewList" });
@@ -23,7 +23,15 @@ function sevClass(f) {
     <div v-for="f in items" :key="f.id" class="result-row" :class="`rr-${sevClass(f)}`" @click="emit('open', f.id)">
       <span class="sev-pill" :class="effectiveSeverity(f)">{{ effectiveSeverity(f) }}</span>
       <div class="rr-main">
-        <div class="rr-title">{{ f.title }}</div>
+        <div class="rr-title">
+          {{ f.title }}
+          <span
+            v-if="impactMeta(f.fusion_evidence)"
+            class="impact-pill"
+            :class="[impactMeta(f.fusion_evidence).level, { blocked: !impactMeta(f.fusion_evidence).allowed }]"
+            :title="impactMeta(f.fusion_evidence).tooltip"
+          >{{ impactMeta(f.fusion_evidence).level }} {{ impactMeta(f.fusion_evidence).shortLabel }}</span>
+        </div>
         <div class="meta">{{ f.vuln_type }} · {{ f.target_url }}</div>
         <div class="meta rr-time">发现 {{ fmtLocalTime(f.created_at) }}<template v-if="f.llm_model"> · 模型 {{ f.llm_model }}</template></div>
       </div>

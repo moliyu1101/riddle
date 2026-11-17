@@ -328,6 +328,11 @@ watch(hasRunning, () => syncPoller());
               <span v-if="t.status === 'running'" class="pulse"></span>
               <b>{{ t.name }}</b>
             </div>
+            <div v-if="t.goal_summary?.configured" class="goal-badge"
+                 :class="t.goal_summary.goal_met ? 'met' : 'incomplete'"
+                 :title="`目标闸门：${t.goal_summary.summary}（终态 ${t.goal_summary.terminal_state}）`">
+              {{ t.goal_summary.summary }} · {{ t.goal_summary.terminal_state }}
+            </div>
             <div v-if="t.pending_user_review > 0" class="review-badge"
                  :title="`${t.pending_user_review} 个漏洞待复审`">
               <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>

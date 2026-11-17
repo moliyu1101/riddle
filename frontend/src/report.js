@@ -29,3 +29,31 @@ export function severityToCn(value) {
   const v = String(value || "").trim();
   return SEV_CN[v] || v || "-";
 }
+
+const IMPACT_SHORT = {
+  L1: "信息面",
+  L2: "认证越权",
+  L3: "控制面",
+  L4: "数据资金",
+};
+
+export function impactMeta(fe) {
+  if (!fe || !fe.impact_level) return null;
+  const level = fe.impact_level;
+  const shortLabel = IMPACT_SHORT[level] || level;
+  const allowed = fe.allowed !== false;
+  const evidence = Array.isArray(fe.evidence) ? fe.evidence : [];
+  const reasons = Array.isArray(fe.reasons) ? fe.reasons : [];
+  const parts = [`${level} · ${fe.impact_label || shortLabel}`];
+  parts.push(`机械凭据：${evidence.length ? evidence.join("、") : "无"}`);
+  if (!allowed && reasons.length) parts.push(`闸门提示：${reasons.join("；")}`);
+  return {
+    level,
+    shortLabel,
+    allowed,
+    evidence,
+    evidenceText: evidence.length ? evidence.join("、") : "无",
+    reasons,
+    tooltip: parts.join("\n"),
+  };
+}

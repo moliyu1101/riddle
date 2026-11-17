@@ -1,5 +1,6 @@
 """设置页新增接口：引擎连接测试 / 配置导入导出 / 全局健康总览。"""
 import asyncio
+import socket
 import unittest
 from unittest import mock
 
@@ -49,7 +50,9 @@ class EngineTestTests(unittest.TestCase):
         engine.test_connection = mock.AsyncMock(
             return_value={"ok": True, "engine": "fofa", "latency_ms": 50, "size": 10}
         )
-        with mock.patch("app.api.settings.refresh_cache", new_callable=mock.AsyncMock), \
+        fake_infos = [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("120.55.1.2", 443))]
+        with mock.patch("app.tools.netguard.socket.getaddrinfo", return_value=fake_infos), \
+             mock.patch("app.api.settings.refresh_cache", new_callable=mock.AsyncMock), \
              mock.patch("app.api.settings.get_engine", return_value=engine):
             res = asyncio.run(settings_mod.test_engine(body, _FakeSession()))
         self.assertTrue(res["ok"])
@@ -60,7 +63,9 @@ class EngineTestTests(unittest.TestCase):
         body = EngineTestRequest(engine="fofa", key="test-key")
         engine = mock.Mock()
         engine.test_connection = mock.AsyncMock(side_effect=ValueError("invalid key"))
-        with mock.patch("app.api.settings.refresh_cache", new_callable=mock.AsyncMock), \
+        fake_infos = [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("120.55.1.2", 443))]
+        with mock.patch("app.tools.netguard.socket.getaddrinfo", return_value=fake_infos), \
+             mock.patch("app.api.settings.refresh_cache", new_callable=mock.AsyncMock), \
              mock.patch("app.api.settings.get_engine", return_value=engine):
             res = asyncio.run(settings_mod.test_engine(body, _FakeSession()))
         self.assertFalse(res["ok"])
@@ -70,7 +75,9 @@ class EngineTestTests(unittest.TestCase):
         body = EngineTestRequest(engine="fofa", key="test-key")
         engine = mock.Mock()
         engine.test_connection = mock.AsyncMock(side_effect=TimeoutError("connect timeout"))
-        with mock.patch("app.api.settings.refresh_cache", new_callable=mock.AsyncMock), \
+        fake_infos = [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("120.55.1.2", 443))]
+        with mock.patch("app.tools.netguard.socket.getaddrinfo", return_value=fake_infos), \
+             mock.patch("app.api.settings.refresh_cache", new_callable=mock.AsyncMock), \
              mock.patch("app.api.settings.get_engine", return_value=engine):
             res = asyncio.run(settings_mod.test_engine(body, _FakeSession()))
         self.assertFalse(res["ok"])

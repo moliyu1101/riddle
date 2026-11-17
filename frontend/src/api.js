@@ -309,6 +309,8 @@ export const api = {
   killsweepExport: (taskId, format) =>
     downloadFile("GET", `/api/tasks/${taskId}/killsweeps/export${qs({ format })}`),
   finding: (id) => req("GET", `/api/findings/${id}`),
+  taskFindings: (id, status, q, opts = {}) =>
+    req("GET", `/api/tasks/${id}/findings${qs({ status, q, ...opts })}`),
   findingReport: (id, srcType) => req("GET", `/api/findings/${id}/report${qs({ src_type: srcType })}`),
   // 报告 Markdown 内联文本（download=0 不触发下载）：抽屉预览与「复制 Markdown」共用，
   // 与导出文件同源——报告拼装只维护后端这一份实现。
@@ -390,9 +392,21 @@ export const api = {
   fusionGoals: (taskId) => req("GET", `/api/fusion/goals/${taskId}`),
   fusionSaveGoals: (taskId, goals) => req("PUT", `/api/fusion/goals/${taskId}`, { goals }),
   fusionEvaluateGoals: (taskId) => req("POST", `/api/fusion/goals/${taskId}/evaluate`),
+  fusionSuggestGoals: (payload = {}) => req("POST", "/api/fusion/goals/suggest", payload),
   fusionIntelRecent: (limit) => req("GET", `/api/fusion/intel/recent${qs({ limit })}`),
   fusionIntelSync: () => req("POST", "/api/fusion/intel/sync"),
-  fusionIntelMatch: (technologies) => req("POST", "/api/fusion/intel/match", { technologies }),
+  fusionIntelMatch: (technologies, includeUnaffected = false) =>
+    req("POST", "/api/fusion/intel/match", { technologies, include_unaffected: !!includeUnaffected }),
+  // 三层拦截与复测闭环
+  fusionInterceptCheck: (payload) => req("POST", "/api/fusion/intercept/check", payload),
+  fusionInterceptList: (opts = {}) => req("GET", `/api/fusion/intercept/list${qs(opts)}`),
+  fusionInterceptDecide: (itemId, decision, note = "") =>
+    req("POST", `/api/fusion/intercept/decide/${encodeURIComponent(itemId)}`, { decision, note }),
+  fusionRetests: (findingId) => req("GET", `/api/fusion/retests/${encodeURIComponent(findingId)}`),
+  fusionAddRetest: (findingId, payload) =>
+    req("POST", `/api/fusion/retests/${encodeURIComponent(findingId)}`, payload),
+  fusionDeleteRetest: (findingId, retestId) =>
+    req("DELETE", `/api/fusion/retests/${encodeURIComponent(findingId)}/${encodeURIComponent(retestId)}`),
   // 配置 / 双图 / 流量 / 公文报告
   fusionConfig: () => req("GET", "/api/fusion/config"),
   fusionSaveConfig: (config) => req("PUT", "/api/fusion/config", { config }),

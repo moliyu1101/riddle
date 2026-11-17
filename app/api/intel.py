@@ -17,7 +17,7 @@ from app.db.session import get_session
 router = APIRouter(prefix="/api/intel", tags=["intel"])
 
 # 知识库（knowledge）是独立模块，有专属接口（/knowledge）与前端页签，不应混入"情报沉淀"的统计与列表。
-_INTEL_KINDS = ("cred", "fingerprint", "endpoint", "profile", "lesson")
+_INTEL_KINDS = ("cred", "fingerprint", "endpoint", "profile", "lesson", "cve_feed")
 _KINDS = _INTEL_KINDS + ("knowledge",)
 
 

@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -22,7 +23,7 @@ from app.db.session import get_session
 from app.settings_service import effective_settings, update_settings
 from app.fusion import (
     config, docx_report, evidence_gate, goal_gate, graphs,
-    role_router, scope_guard, traffic_ledger, vulnintel,
+    intercept, retest, role_router, scope_guard, traffic_ledger, vulnintel,
 )
 
 router = APIRouter(prefix="/api/fusion", tags=["fusion"])
@@ -41,8 +42,45 @@ class GoalsReq(BaseModel):
     goals: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class GoalSuggestReq(BaseModel):
+    task_id: str = ""
+    name: str = ""
+    src_type: str = ""
+    vuln_types: list[str] = Field(default_factory=list)
+    targets: list[Any] = Field(default_factory=list)
+    fofa_query: str = ""
+
+
 class IntelMatchReq(BaseModel):
     technologies: list[str] = Field(default_factory=list)
+    include_unaffected: bool = False
+
+
+class InterceptCheckReq(BaseModel):
+    command: str = ""
+    tool: str = "run_shell"
+    cwd: str = ""
+    src_type: str = "edusrc"
+    task_id: str = ""
+    forbidden_ops: list[str] = Field(default_factory=list)
+    record: bool = True
+
+
+class InterceptDecideReq(BaseModel):
+    decision: str
+    note: str = ""
+
+
+class RetestCreateReq(BaseModel):
+    mode: str = "manual"
+    status: str = "reproduced"
+    url: str = ""
+    method: str = "GET"
+    headers: dict[str, str] = Field(default_factory=dict)
+    match_text: str = ""
+    status_code: int = 0
+    response_excerpt: str = ""
+    notes: str = ""
 
 
 def _goal_to_dict(row: FusionGoal) -> dict:
@@ -117,6 +155,8 @@ async def fusion_status(session: AsyncSession = Depends(get_session)):
             {"id": "graphs", "name": "双图架构", "desc": "资产图 × 探索图 + 血缘回溯 + 覆盖度"},
             {"id": "traffic", "name": "流量留痕", "desc": "逐请求 JSONL + baseline/proof/verification/supporting 四类绑定"},
             {"id": "docx_report", "name": "公文报告", "desc": "封面/目录域/页眉页脚/证据链/修复路线图"},
+            {"id": "intercept", "name": "三层拦截", "desc": "deny / judge / ask 窄视野裁决与人工审批队列"},
+            {"id": "retest", "name": "复测闭环", "desc": "手动登记与安全 HTTP 只读探测，联动公文报告"},
         ],
     }
 
@@ -194,6 +234,29 @@ async def evaluate_goals(task_id: str, session: AsyncSession = Depends(get_sessi
     return result
 
 
+@router.post("/goals/suggest")
+async def suggest_goals_api(req: GoalSuggestReq, session: AsyncSession = Depends(get_session)):
+    """按任务类型、漏洞方向与目标域名智能拆解可核验验收目标。"""
+    ctx: dict[str, Any] = {
+        "name": req.name,
+        "src_type": req.src_type,
+        "vuln_types": list(req.vuln_types or []),
+        "targets": list(req.targets or []),
+        "fofa_query": req.fofa_query,
+    }
+    if req.task_id:
+        task = (await session.execute(select(Task).where(Task.id == req.task_id))).scalar_one_or_none()
+        if task is not None:
+            ctx["name"] = ctx["name"] or (task.name or "")
+            ctx["src_type"] = req.src_type or (task.src_type or "edusrc")
+            ctx["vuln_types"] = ctx["vuln_types"] or list(task.vuln_types or [])
+            ctx["targets"] = ctx["targets"] or list(task.manual_targets or [])
+            ctx["fofa_query"] = ctx["fofa_query"] or (task.fofa_query or "")
+    ctx["src_type"] = ctx["src_type"] or "edusrc"
+    goals = goal_gate.suggest_goals(ctx)
+    return {"goals": goals, "count": len(goals)}
+
+
 @router.get("/intel/recent")
 async def intel_recent(limit: int = Query(50, ge=1, le=200), session: AsyncSession = Depends(get_session)):
     rows = (await session.execute(
@@ -213,24 +276,7 @@ async def intel_recent(limit: int = Query(50, ge=1, le=200), session: AsyncSessi
 @router.post("/intel/sync")
 async def intel_sync(session: AsyncSession = Depends(get_session)):
     """手动触发一次 CVE 时间流同步并落库；网络失败时明确回报，不静默。"""
-    result = vulnintel.sync()
-    if not result.get("rows"):
-        return {**result, "stored": 0}
-    stored = 0
-    for row in result["rows"]:
-        existing = (await session.execute(
-            select(Intel).where(Intel.kind == vulnintel.INTEL_KIND, Intel.dedup_hash == row["dedup_hash"])
-        )).scalar_one_or_none()
-        if existing:
-            existing.payload = row["payload"]
-            existing.summary = row["summary"]
-            existing.match_key = row["match_key"]
-            existing.hit_count = (existing.hit_count or 1) + 1
-        else:
-            session.add(Intel(**row))
-        stored += 1
-    await session.commit()
-    return {**result, "stored": stored}
+    return await vulnintel.sync_and_store(session)
 
 
 @router.post("/intel/match")
@@ -244,9 +290,14 @@ async def intel_match(req: IntelMatchReq, session: AsyncSession = Depends(get_se
         "cvss": (r.payload or {}).get("cvss", 0),
         "kev": (r.payload or {}).get("kev", False),
         "products": (r.payload or {}).get("products", []) + [r.match_key or ""],
+        "version_ranges": (r.payload or {}).get("version_ranges", []),
         "summary": r.summary or "",
     } for r in rows]
-    hints = vulnintel.match_fingerprint(entries, req.technologies)
+    hints = vulnintel.match_fingerprint(
+        entries,
+        req.technologies,
+        include_unaffected=req.include_unaffected,
+    )
     return {"count": len(hints), "hints": hints}
 
 
@@ -512,3 +563,126 @@ async def report_docx(finding_id: str, session: AsyncSession = Depends(get_sessi
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={"Content-Disposition": f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{quoted}'},
     )
+
+
+# ===========================================================================
+# 差距补齐：命令三层拦截与审批队列 / 漏洞复测闭环
+# ===========================================================================
+
+@router.post("/intercept/check")
+async def intercept_check(req: InterceptCheckReq):
+    """按三层规则（deny / judge / ask）试算命令判定，可选记入审批台账。"""
+    return intercept.evaluate_command(
+        req.command,
+        tool=req.tool,
+        cwd=req.cwd,
+        src_type=req.src_type,
+        task_id=req.task_id,
+        forbidden_ops=req.forbidden_ops,
+        record=req.record,
+    )
+
+
+@router.get("/intercept/list")
+async def intercept_list(task_id: str = "", status: str = ""):
+    items = intercept.list_intercepts(task_id=task_id, status=status)
+    return {"total": len(items), "items": items}
+
+
+@router.post("/intercept/decide/{item_id}")
+async def intercept_decide(item_id: str, req: InterceptDecideReq):
+    try:
+        updated = intercept.decide_intercept(item_id, req.decision, req.note)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if updated is None:
+        raise HTTPException(status_code=404, detail="审批项不存在")
+    return {"ok": True, "item": updated}
+
+
+@router.get("/retests/{finding_id}")
+async def list_retests(finding_id: str, session: AsyncSession = Depends(get_session)):
+    f = (await session.execute(select(Finding).where(Finding.id == finding_id))).scalar_one_or_none()
+    if f is None:
+        raise HTTPException(status_code=404, detail="漏洞不存在")
+    items = retest.get_finding_retests(f)
+    return {
+        "finding_id": finding_id,
+        "target_url": f.target_url,
+        "retests": items,
+        "summary": retest.summarize_retests(items),
+    }
+
+
+@router.post("/retests/{finding_id}")
+async def create_retest(finding_id: str, req: RetestCreateReq, session: AsyncSession = Depends(get_session)):
+    f = (await session.execute(select(Finding).where(Finding.id == finding_id))).scalar_one_or_none()
+    if f is None:
+        raise HTTPException(status_code=404, detail="漏洞不存在")
+    mode = (req.mode or "manual").strip().lower()
+    try:
+        if mode == "http_probe":
+            probe_url = (req.url or f.target_url or "").strip()
+            entry = await asyncio.to_thread(
+                retest.run_http_retest_probe,
+                probe_url,
+                method=req.method,
+                headers=req.headers,
+                match_text=req.match_text,
+                notes=req.notes,
+            )
+        elif mode == "manual":
+            entry = retest.create_manual_retest(
+                req.status,
+                notes=req.notes,
+                status_code=req.status_code,
+                url=req.url or f.target_url or "",
+                method=req.method,
+                response_excerpt=req.response_excerpt,
+            )
+        else:
+            raise ValueError(f"不支持的复测方式：{mode!r}")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    ev = dict(f.evidence or {})
+    items = list(ev.get("retests") or [])
+    items.append(entry)
+    ev["retests"] = items[-50:]
+    f.evidence = ev
+
+    review = (await session.execute(select(Review).where(Review.finding_id == finding_id))).scalar_one_or_none()
+    if review is not None:
+        if entry["status"] == "reproduced":
+            review.reproduced = True
+        elif entry["status"] == "fixed":
+            review.reproduced = False
+    await session.commit()
+    return {
+        "ok": True,
+        "finding_id": finding_id,
+        "item": entry,
+        "retests": items[-50:],
+        "summary": retest.summarize_retests(items[-50:]),
+    }
+
+
+@router.delete("/retests/{finding_id}/{retest_id}")
+async def delete_retest(finding_id: str, retest_id: str, session: AsyncSession = Depends(get_session)):
+    f = (await session.execute(select(Finding).where(Finding.id == finding_id))).scalar_one_or_none()
+    if f is None:
+        raise HTTPException(status_code=404, detail="漏洞不存在")
+    ev = dict(f.evidence or {})
+    before = list(ev.get("retests") or [])
+    after = [r for r in before if str((r or {}).get("id") or "") != retest_id]
+    if len(after) == len(before):
+        raise HTTPException(status_code=404, detail="复测记录不存在")
+    ev["retests"] = after
+    f.evidence = ev
+    await session.commit()
+    return {
+        "ok": True,
+        "finding_id": finding_id,
+        "retests": after,
+        "summary": retest.summarize_retests(after),
+    }

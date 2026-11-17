@@ -4,7 +4,7 @@ import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { api, canWrite, isReadonly } from "../api.js";
 import { copyText } from "../clipboard.js";
-import { CONF, effectiveSeverity, severityToCn, normalizeSteps } from "../report.js";
+import { CONF, effectiveSeverity, impactMeta, severityToCn, normalizeSteps } from "../report.js";
 import { fmtLocalTime } from "../format.js";
 
 const props = defineProps({ findingId: String, mode: String, srcType: String }); // mode: view | review | submit | rejected | archived
@@ -33,6 +33,13 @@ const assistantBusy = ref(false);
 const assistantMessages = ref([]);
 const assistantAbort = ref(null);
 const raLog = ref(null);
+const retests = ref([]);
+const retestSummary = ref(null);
+const retestBusy = ref(false);
+const retestMode = ref("http_probe");
+const retestStatus = ref("reproduced");
+const retestMatch = ref("");
+const retestNote = ref("");
 const DEFAULT_ASSISTANT_WELCOME = "我是这份漏洞的报告助手。点下面的快捷指令，或直接问证据、等级、复现怎么写。润色结果可以一键写进编辑器。";
 const ASSISTANT_PRESETS = [
   { label: "审证据", text: "判断这份报告证据链是否足够提交 SRC：缺什么、有没有像误报的地方、过审概率怎么看。" },
@@ -93,6 +100,7 @@ async function loadFinding() {
   } catch {
     report.value = null;   // 模板接口失败不阻断正文（退化为本地渲染）
   }
+  await loadRetests();
   activeSection.value = "";
   await nextTick();
   scrollToSection(sections.value?.[0]?.key || "overview", false);
@@ -139,6 +147,8 @@ const effSev = computed(() => {
 });
 const review = computed(() => f.value?.review || {});
 const confidenceText = computed(() => CONF[review.value.confidence] || review.value.confidence || "-");
+const impact = computed(() => impactMeta(f.value?.fusion_evidence));
+const goalSummary = computed(() => f.value?.fusion_goals || null);
 const readonly = computed(() => !canWrite());
 const readonlyOnly = computed(() => isReadonly());
 
@@ -408,6 +418,66 @@ async function exportReport(format) {
   }
 }
 
+async function exportFusionDocx() {
+  exportOpen.value = false;
+  try {
+    await api.fusionReportDocx(f.value.id);
+    emit("toast", "已导出公文级 Word（融合版）");
+  } catch (e) {
+    emit("toast", String(e.message || e).replace(/^\d+\s*/, ""));
+  }
+}
+
+async function loadRetests() {
+  if (!f.value?.id) { retests.value = []; retestSummary.value = null; return; }
+  try {
+    const res = await api.fusionRetests(f.value.id);
+    retests.value = res?.retests || [];
+    retestSummary.value = res?.summary || null;
+  } catch {
+    retests.value = f.value?.evidence?.retests || [];
+    retestSummary.value = null;
+  }
+}
+
+async function submitRetest() {
+  if (!f.value?.id || retestBusy.value || readonly.value) return;
+  retestBusy.value = true;
+  try {
+    const res = await api.fusionAddRetest(f.value.id, {
+      mode: retestMode.value,
+      status: retestStatus.value,
+      url: f.value.target_url || "",
+      match_text: retestMatch.value.trim(),
+      notes: retestNote.value.trim(),
+    });
+    retests.value = res?.retests || [];
+    retestSummary.value = res?.summary || null;
+    retestNote.value = "";
+    emit("toast", `复测已记录：${res?.item?.status_label || "完成"}`);
+    emit("updated");
+  } catch (e) {
+    emit("toast", String(e.message || e).replace(/^\d+\s*/, ""));
+  } finally {
+    retestBusy.value = false;
+  }
+}
+
+async function deleteRetest(retestId) {
+  if (!f.value?.id || retestBusy.value || readonly.value) return;
+  retestBusy.value = true;
+  try {
+    const res = await api.fusionDeleteRetest(f.value.id, retestId);
+    retests.value = res?.retests || [];
+    retestSummary.value = res?.summary || null;
+    emit("toast", "已移除复测记录");
+  } catch (e) {
+    emit("toast", String(e.message || e).replace(/^\d+\s*/, ""));
+  } finally {
+    retestBusy.value = false;
+  }
+}
+
 async function openVersions() {
   versionsOpen.value = true;
   versionsLoading.value = true;
@@ -612,6 +682,12 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
             <div class="rc-pills">
               <span class="sev-pill" :class="effSev">{{ effSev }}</span>
               <span class="conf-pill" :class="review.confidence">{{ confidenceText }}</span>
+              <span
+                v-if="impact"
+                class="impact-pill"
+                :class="[impact.level, { blocked: !impact.allowed }]"
+                :title="impact.tooltip"
+              >{{ impact.level }} · {{ impact.shortLabel }}<template v-if="!impact.allowed"> · 凭据不足</template></span>
             </div>
             <div class="rc-actions">
               <div v-if="!editing" class="view-switch" role="tablist" aria-label="报告视图">
@@ -629,6 +705,7 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
                   <button v-for="x in EXPORT_FORMATS" :key="x.key" type="button" @click="exportReport(x.key)">
                     <span>{{ x.label }}</span><small>{{ x.hint }}</small>
                   </button>
+                  <button type="button" @click="exportFusionDocx"><span>公文级 Word（融合版）</span><small>.docx</small></button>
                   <button type="button" @click="copyMd"><span>复制 Markdown</span><small>剪贴板</small></button>
                 </div>
               </div>
@@ -729,6 +806,26 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
                     <div><span>信度</span><b>{{ confidenceText }}</b></div>
                     <div><span>复现步骤</span><b>{{ stepList.length }}</b></div>
                     <div><span>攻击链路</span><b>{{ chainSteps.length }}</b></div>
+                  </div>
+                  <div v-if="impact || goalSummary?.configured" class="rc-fusion-strip">
+                    <div v-if="impact" class="rc-fusion-item">
+                      <span>影响分级</span>
+                      <b>
+                        <span class="impact-pill" :class="[impact.level, { blocked: !impact.allowed }]">{{ impact.level }}</span>
+                        {{ impact.shortLabel }}
+                      </b>
+                    </div>
+                    <div v-if="impact" class="rc-fusion-item">
+                      <span>机械凭据</span>
+                      <b>{{ impact.evidenceText }}</b>
+                    </div>
+                    <div v-if="goalSummary?.configured" class="rc-fusion-item">
+                      <span>目标达成</span>
+                      <b :class="goalSummary.goal_met ? 'ok' : 'warn'">{{ goalSummary.summary }} · {{ goalSummary.terminal_state }}</b>
+                    </div>
+                  </div>
+                  <div v-if="impact && !impact.allowed && impact.reasons?.length" class="rc-fusion-warn">
+                    <strong>证据闸门提示：</strong>{{ impact.reasons.join("；") }}
                   </div>
                   <div v-if="scoreParts.length" class="rc-breakdown">
                     <div class="rc-breakdown-head">
@@ -927,6 +1024,44 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
               </div>
             </div>
 
+            <!-- 漏洞复测验证闭环 -->
+            <section class="rc-retest">
+              <div class="rc-retest-head">
+                <div>
+                  <span>复测验证记录</span>
+                  <small>{{ retests.length ? `累计 ${retests.length} 次（最新：${retestSummary?.latest_label || retests[retests.length - 1]?.status_label || '-'}）` : "暂无独立复测记录，同步写入公文 Word" }}</small>
+                </div>
+              </div>
+              <div v-if="retests.length" class="rc-retest-list">
+                <div v-for="rt in retests.slice(-5).reverse()" :key="rt.id" class="rc-retest-row">
+                  <span class="rc-retest-tag" :class="rt.status">{{ rt.status_label || rt.status }}</span>
+                  <span class="rc-retest-note">{{ rt.mode === "http_probe" ? `HTTP ${rt.status_code || "-"}` : "手动" }} · {{ rt.notes || rt.created_at }}</span>
+                  <button v-if="!readonly" type="button" class="rc-retest-del" :disabled="retestBusy" @click="deleteRetest(rt.id)">✕</button>
+                </div>
+              </div>
+              <div v-if="!readonly" class="rc-retest-form">
+                <div class="rc-retest-controls">
+                  <select v-model="retestMode">
+                    <option value="http_probe">安全 HTTP 探测</option>
+                    <option value="manual">手动结论登记</option>
+                  </select>
+                  <select v-if="retestMode === 'manual'" v-model="retestStatus">
+                    <option value="reproduced">仍可复现</option>
+                    <option value="fixed">已修复</option>
+                    <option value="partial">部分缓解</option>
+                    <option value="error">探测异常</option>
+                  </select>
+                  <input v-else v-model="retestMatch" placeholder="可选命中关键字（如 uid=）" />
+                </div>
+                <div class="rc-retest-submit">
+                  <input v-model="retestNote" placeholder="复测备注（选填）" />
+                  <button type="button" class="mini-copy" :disabled="retestBusy" @click="submitRetest">
+                    {{ retestBusy ? "执行中…" : retestMode === "http_probe" ? "⚡ 复测" : "记录" }}
+                  </button>
+                </div>
+              </div>
+            </section>
+
             <!-- 报告助手 -->
             <section class="report-assistant">
               <div class="ra-head">
@@ -1024,3 +1159,85 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
     </Transition>
   </Teleport>
 </template>
+
+<style scoped>
+.rc-retest {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.rc-retest-head span {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.rc-retest-head small {
+  font-size: 11px;
+  color: var(--faint);
+}
+.rc-retest-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.rc-retest-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  background: var(--bg);
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+.rc-retest-tag {
+  flex: none;
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+.rc-retest-tag.fixed { background: var(--ok-bg); color: var(--ok); }
+.rc-retest-tag.reproduced { background: var(--danger-bg); color: var(--danger); }
+.rc-retest-note {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.rc-retest-del {
+  border: none;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+  padding: 0 4px;
+}
+.rc-retest-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.rc-retest-controls, .rc-retest-submit {
+  display: flex;
+  gap: 6px;
+}
+.rc-retest-controls select,
+.rc-retest-controls input,
+.rc-retest-submit input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  font-size: 11.5px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--ink);
+}
+</style>

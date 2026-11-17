@@ -339,22 +339,57 @@ def _llm_config_from_provider(item: dict[str, Any], default_temperature: float) 
     )
 
 
-def resolve_llm_providers(task: Task | None = None) -> list[LLMConfig]:
+def _apply_role_routing(
+    configs: list[LLMConfig], task: Task | None = None, role: str | None = None
+) -> list[LLMConfig]:
+    """根据融合层 role_router 为指定角色优先选路，并保留原有配置作 failover 灾备。"""
+    if not role or not configs:
+        return configs
+    try:
+        from app.fusion.config import load_config as load_fusion_config
+        from app.fusion.role_router import resolve_role_model
+
+        fcfg = load_fusion_config()
+        if not fcfg.role_routing_enabled:
+            return configs
+        mc = (task.model_config_json or {}) if task else {}
+        raw_overrides = mc.get("role_models")
+        overrides = raw_overrides if isinstance(raw_overrides, dict) else None
+        target_model = resolve_role_model(role, overrides=overrides)
+        if not target_model:
+            return configs
+    except Exception:
+        return configs
+
+    top_weight = max((c.weight for c in configs), default=1) + 10
+    matched = [c for c in configs if c.model == target_model]
+    others = [c for c in configs if c.model != target_model]
+    if matched:
+        lead = matched[0].model_copy(update={"weight": top_weight, "enabled": True})
+        return [lead, *matched[1:], *others]
+    lead = configs[0].model_copy(update={"model": target_model, "weight": top_weight, "enabled": True})
+    return [lead, *configs]
+
+
+def resolve_llm_providers(
+    task: Task | None = None, role: str | None = None
+) -> list[LLMConfig]:
     eff = effective_settings()["llm"]
     mc = (task.model_config_json or {}) if task else {}
     inherit_setting = mc.get("inherit_global")
     inherit_global = inherit_setting is True
     if inherit_global:
-        mc = {"inherit_global": True, "prompt_version": mc.get("prompt_version")}
+        mc = {"inherit_global": True, "prompt_version": mc.get("prompt_version"), "role_models": mc.get("role_models")}
     task_providers = _clean_llm_providers(
         mc.get("providers") or mc.get("providers_json") or []
     )
     if task_providers:
-        return [
+        configs = [
             _llm_config_from_provider(item, float(eff["temperature"]))
             for item in task_providers
             if item.get("enabled", True)
         ]
+        return _apply_role_routing(configs, task, role)
 
     task_has_single_override = any(
         str(mc.get(key) or "").strip()
@@ -363,11 +398,12 @@ def resolve_llm_providers(task: Task | None = None) -> list[LLMConfig]:
     implicit_global = inherit_setting is None and not task_has_single_override
     if (inherit_global or implicit_global) and normalize_llm_mode(eff.get("mode")) == "pool":
         providers = _clean_llm_providers(eff.get("providers") or [])
-        return [
+        configs = [
             _llm_config_from_provider(item, float(eff["temperature"]))
             for item in providers
             if item.get("enabled", True)
         ]
+        return _apply_role_routing(configs, task, role)
 
     base_url = mc.get("base_url") or eff["base_url"]
     model = mc.get("model") or eff["model"]
@@ -394,7 +430,7 @@ def resolve_llm_providers(task: Task | None = None) -> list[LLMConfig]:
             weight=10 if index == 0 else 1,
             enabled=True,
         ))
-    return configs
+    return _apply_role_routing(configs, task, role)
 
 
 def resolve_llm_runtime_mode(task: Task | None = None) -> str:
@@ -411,8 +447,8 @@ def resolve_llm_runtime_mode(task: Task | None = None) -> str:
     return "single"
 
 
-def resolve_llm_config(task: Task | None = None) -> LLMConfig:
-    providers = resolve_llm_providers(task)
+def resolve_llm_config(task: Task | None = None, role: str | None = None) -> LLMConfig:
+    providers = resolve_llm_providers(task, role=role)
     if providers:
         return providers[0]
     eff = effective_settings()["llm"]
@@ -575,6 +611,7 @@ def public_settings_view() -> dict[str, Any]:
             "base_url": base_url or "",
         }
 
+    from app.fusion import config as fusion_config
     return {
         "llm": {
             "mode": llm_mode,
@@ -606,6 +643,7 @@ def public_settings_view() -> dict[str, Any]:
             "skip_score_threshold": float(defaults.get("skip_score_threshold", -10)),
             "worker_prompt_version": normalize_worker_prompt_version(defaults.get("worker_prompt_version")),
             "engine": defaults.get("engine", get_default_engine()),
+            "fusion": fusion_config.public_config(),
         },
         "available_engines": list_engines(),
         "auth": {
@@ -782,6 +820,12 @@ async def update_settings(session: AsyncSession, payload: dict[str, Any]) -> dic
                     continue
             elif k == "deepen_cap":
                 defaults[k] = clamp_deepen_cap(v)
+            elif k == "fusion" and isinstance(v, dict):
+                from app.fusion import config as fusion_config
+                old_fusion = defaults.get("fusion") if isinstance(defaults.get("fusion"), dict) else {}
+                patch = fusion_config.writable_patch(v, old_fusion)
+                if patch:
+                    defaults["fusion"] = {**old_fusion, **patch}
             else:
                 defaults[k] = v
         row.defaults = defaults
@@ -817,11 +861,12 @@ def llm_client_for_task(
     task: Task | None = None,
     on_provider_failure=None,
     on_provider_selected=None,
+    role: str | None = None,
 ):
     """返回 LLMClient；无 key 时抛 RuntimeError（与旧行为一致）。"""
     from app.llm.client import LLMClient
 
-    providers = resolve_llm_providers(task)
+    providers = resolve_llm_providers(task, role=role)
     # 单端点多模型灾备：providers>1 时按池模式调度，失败自动切到同供应商其它模型。
     pool_mode = resolve_llm_runtime_mode(task) == "pool" or len(providers) > 1
     return LLMClient(
@@ -837,11 +882,12 @@ def llm_client_for_task_optional(
     task: Task | None = None,
     on_provider_failure=None,
     on_provider_selected=None,
+    role: str | None = None,
 ):
     """有 key 则返回 LLMClient，否则 None（collector 降级）。"""
     from app.llm.client import LLMClient
 
-    providers = resolve_llm_providers(task)
+    providers = resolve_llm_providers(task, role=role)
     if not providers:
         return None
     try:

@@ -15,6 +15,7 @@ import KillsweepList from "../components/board/KillsweepList.vue";
 import RejectedList from "../components/board/RejectedList.vue";
 import ArchivedList from "../components/board/ArchivedList.vue";
 import WorkerTraceDrawer from "../components/board/WorkerTraceDrawer.vue";
+import BoardFusionDrawer from "../components/board/BoardFusionDrawer.vue";
 
 defineOptions({ name: "BoardView" });
 
@@ -57,6 +58,8 @@ const traceEvents = ref([]);
 const traceLoading = ref(false);
 const directiveText = ref("");
 const directiveSending = ref(false);
+const fusionDrawerOpen = ref(false);
+const fusionDrawerTab = ref("goals");
 const cancellingEscalateId = ref(null);
 const expandedEventKeys = ref(new Set());
 const streamDetailLoading = ref({});
@@ -405,6 +408,7 @@ async function loadBoard() {
       if (b.fofa_config) task.value.fofa_config = b.fofa_config;
       if (b.model_config_data) task.value.model_config_data = b.model_config_data;
       if (b.llm_usage) task.value.llm_usage = b.llm_usage;
+      if (b.goal_summary !== undefined) task.value.goal_summary = b.goal_summary;
     }
     if (!events.value.length && b.events?.length) {
       const existingByKey = new Map(events.value.map((e) => [streamEventStableKey(e), e]));
@@ -566,6 +570,10 @@ function openReview(id) { drawerId.value = id; drawerMode.value = "review"; }
 function openSubmit(id) { drawerId.value = id; drawerMode.value = "submit"; }
 function openRejected(id) { drawerId.value = id; drawerMode.value = "rejected"; }
 function openArchived(id) { drawerId.value = id; drawerMode.value = "archived"; }
+function openFusionDrawer(subTab = "goals") {
+  fusionDrawerTab.value = subTab || "goals";
+  fusionDrawerOpen.value = true;
+}
 async function skipTarget(w) {
   if (readonly.value) return;
   const host = w.host || w.target_id;
@@ -1063,6 +1071,7 @@ const liveTargetIds = computed(() => new Set(liveWorkers.value.map((w) => w.targ
         @start="ctl('start')"
         @pause="ctl('pause')"
         @stop="ctl('stop')"
+        @open-fusion="openFusionDrawer"
       />
 
       <div class="board-body">
@@ -1251,6 +1260,16 @@ const liveTargetIds = computed(() => new Set(liveWorkers.value.map((w) => w.targ
 
       <ReportDrawer :finding-id="drawerId" :mode="drawerMode" :src-type="task.src_type"
         @close="drawerId = null" @updated="onDrawerUpdated" @toast="toast" />
+
+      <BoardFusionDrawer
+        :open="fusionDrawerOpen"
+        :task-id="props.id"
+        :initial-tab="fusionDrawerTab"
+        :readonly="readonly"
+        @close="fusionDrawerOpen = false"
+        @toast="toast"
+        @goal-updated="() => Promise.all([loadTask(), loadBoard()])"
+      />
 
       <!-- Worker 执行轨迹抽屉 -->
       <WorkerTraceDrawer

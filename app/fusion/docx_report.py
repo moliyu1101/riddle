@@ -14,7 +14,7 @@ from datetime import datetime
 from typing import Any
 from xml.sax.saxutils import escape
 
-from app.fusion import evidence_gate, traffic_ledger
+from app.fusion import evidence_gate, retest, traffic_ledger
 
 _SEVERITY_COLOR = {"critical": "C00000", "high": "E36C09", "medium": "BF9000", "low": "2F5496",
                    "严重": "C00000", "高危": "E36C09", "中危": "BF9000", "低危": "2F5496"}
@@ -73,6 +73,8 @@ def build_report_model(finding: dict, review: dict | None = None, goals_eval: di
         },
         "goals": goals_eval or {},
         "traffic": grouped,
+        "retests": (retests := retest.get_finding_retests(finding)),
+        "retest_summary": retest.summarize_retests(retests),
         "roadmap": [
             f"针对 {vuln_type} 复核服务端输入校验与鉴权链路，确认同类接口是否共用同一缺陷。",
             "在授权范围内做回归复测，保留本次原始请求包与响应作为对照基线。",
@@ -188,6 +190,18 @@ def render_document_xml(model: dict) -> str:
     body.append(_heading("六、复测记录", 1))
     body.append(_para(f'审核结论：{model["review"]["verdict"]}；独立复现：{"是" if model["review"]["reproduced"] else "否"}。'))
     body.append(_para(f'审核/人工备注：{model["review"]["notes"]}'))
+    retests_rows = model.get("retests") or []
+    if retests_rows:
+        for idx, rt in enumerate(retests_rows[:20], 1):
+            sha_part = f'｜sha256 {_t(rt.get("response_sha256"))[:16]}…' if rt.get("response_sha256") else ""
+            code_part = f' HTTP {rt.get("status_code")}' if rt.get("status_code") else ""
+            mode_cn = "HTTP 探测" if rt.get("mode") == "http_probe" else "手动复测"
+            line = f'#{idx} [{_t(rt.get("created_at"))}] {mode_cn} · {_t(rt.get("status_label") or rt.get("status"))}{code_part}{sha_part}'
+            body.append(_para(line, bullet=True))
+            if rt.get("notes"):
+                body.append(_para(f'复测说明：{_t(rt.get("notes"), 400)}', size=18))
+    else:
+        body.append(_para("尚无独立复测记录。可在报告抽屉或融合中心「公文报告」页发起复测闭环。"))
     body.append(_heading("七、修复路线图", 1))
     for item in model["roadmap"]:
         body.append(_para(item, bullet=True))

@@ -1,8 +1,9 @@
 """批次 6 安全修复回归：netguard IP 绑定、test-engine SSRF 校验、助手域边界。"""
+import socket
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -19,21 +20,19 @@ class PinnedOutboundTest(unittest.TestCase):
     """pinned_outbound_request：URL host 替换为校验通过的 IP，Host/SNI 保持原域名。"""
 
     def test_http_pin(self):
-        import socket
-        infos = socket.getaddrinfo("example.com", 80, proto=socket.IPPROTO_TCP)
-        first_ip = infos[0][4][0]
-        pinned = pinned_outbound_request("http://example.com/api/v1/x?k=1")
-        self.assertTrue(pinned["url"].startswith(f"http://{first_ip}"))
+        fake_infos = [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("93.184.216.34", 80))]
+        with patch("app.tools.netguard.socket.getaddrinfo", return_value=fake_infos):
+            pinned = pinned_outbound_request("http://example.com/api/v1/x?k=1")
+        self.assertTrue(pinned["url"].startswith("http://93.184.216.34"))
         self.assertIn("/api/v1/x?k=1", pinned["url"])
         self.assertEqual(pinned["headers"]["Host"], "example.com")
         self.assertEqual(pinned["extensions"], {})
 
     def test_https_pin_keeps_sni(self):
-        import socket
-        infos = socket.getaddrinfo("example.com", 443, proto=socket.IPPROTO_TCP)
-        first_ip = infos[0][4][0]
-        pinned = pinned_outbound_request("https://example.com/v1/models")
-        self.assertTrue(pinned["url"].startswith(f"https://{first_ip}"))
+        fake_infos = [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("93.184.216.34", 443))]
+        with patch("app.tools.netguard.socket.getaddrinfo", return_value=fake_infos):
+            pinned = pinned_outbound_request("https://example.com/v1/models")
+        self.assertTrue(pinned["url"].startswith("https://93.184.216.34"))
         self.assertEqual(pinned["extensions"]["sni_hostname"], "example.com")
         self.assertEqual(pinned["headers"]["Host"], "example.com")
 
@@ -134,7 +133,9 @@ class TestEngineSsrfTest(unittest.TestCase):
         engine = Mock()
         engine.test_connection = mock.AsyncMock(return_value={"ok": True})
         body = SimpleNamespace(engine="fofa", key="k", base_url="https://fofa.info")
-        with mock.patch.object(settings_mod, "get_engine", return_value=engine), \
+        fake_infos = [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("120.55.1.2", 443))]
+        with mock.patch("app.tools.netguard.socket.getaddrinfo", return_value=fake_infos), \
+             mock.patch.object(settings_mod, "get_engine", return_value=engine), \
              mock.patch.object(settings_mod, "resolve_engine_key", return_value="k"), \
              mock.patch.object(settings_mod, "refresh_cache", new=mock.AsyncMock()):
             res = asyncio.run(settings_mod.test_engine(body, None))

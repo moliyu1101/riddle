@@ -30,6 +30,7 @@ const KIND_META = {
   endpoint: { label: "端点", icon: "🧭", hue: "warn" },
   profile: { label: "画像", icon: "🪪", hue: "ok" },
   lesson: { label: "经验", icon: "📚", hue: "accent" },
+  cve_feed: { label: "CVE 情报", icon: "🛡", hue: "warn" },
 };
 
 const KIND_TABS = [
@@ -39,6 +40,7 @@ const KIND_TABS = [
   { id: "endpoint", label: "端点" },
   { id: "profile", label: "画像" },
   { id: "lesson", label: "经验" },
+  { id: "cve_feed", label: "CVE 情报" },
 ];
 
 async function loadStats() {
@@ -100,6 +102,11 @@ function primaryText(row) {
     const tag = p.lesson_type === "poc" ? "有效打法" : "易踩坑";
     return `${tag} [${p.vuln_type || "其他"}] ${p.title || ""}`.trim();
   }
+  if (row.kind === "cve_feed") {
+    const score = p.cvss ? `CVSS ${Number(p.cvss).toFixed(1)}` : "";
+    const kev = p.kev ? " · KEV" : "";
+    return `${p.cve_id || row.summary || "-"}${score ? ` · ${score}` : ""}${kev}`;
+  }
   return row.summary || "-";
 }
 
@@ -110,6 +117,10 @@ function secondaryText(row) {
   if (row.kind === "lesson") {
     if (p.lesson_type === "poc" && p.repro) return `复现：${p.repro}`;
     if (p.lesson_type === "pitfall" && p.reason) return p.reason;
+  }
+  if (row.kind === "cve_feed") {
+    const prods = Array.isArray(p.products) && p.products.length ? `受影响组件：${p.products.slice(0, 6).join(", ")}` : "";
+    return prods ? `${prods} · ${row.summary || ""}` : (row.summary || "");
   }
   return row.summary || "";
 }
@@ -418,9 +429,43 @@ watch(hardSearchDraft, (v) => {
   }, 160);
 });
 
+/* ---------- CVE 时间流同步 ---------- */
+const cveSyncing = ref(false);
+const cveSyncMsg = ref("");
+const cveSyncErr = ref("");
+const fusionIntervalHours = ref(0);
+const fusionLookbackDays = ref(7);
+
+async function loadFusionIntelConfig() {
+  try {
+    const res = await api.fusionConfig();
+    const cfg = res?.config || res || {};
+    fusionIntervalHours.value = Number(cfg.intel_sync_interval_hours || 0);
+    fusionLookbackDays.value = Number(cfg.intel_lookback_days || 7);
+  } catch { /* keep */ }
+}
+
+async function syncCveIntel() {
+  if (!writable.value || cveSyncing.value) return;
+  cveSyncing.value = true;
+  cveSyncErr.value = "";
+  cveSyncMsg.value = "";
+  try {
+    const res = await api.fusionIntelSync();
+    const errs = res?.errors?.length ? `（告警：${res.errors.join("；")}）` : "";
+    cveSyncMsg.value = `同步完成：条目 ${res?.entry_count ?? 0}，快通道 ${res?.fastlane_count ?? 0}，入库 ${res?.stored ?? 0}${errs}`;
+    await reloadIntel();
+    await loadFusionIntelConfig();
+  } catch (e) {
+    cveSyncErr.value = `同步失败：${e?.message || e}`;
+  } finally {
+    cveSyncing.value = false;
+  }
+}
+
 /* ---------- 公共 ---------- */
 async function reload() {
-  await Promise.all([reloadIntel(), reloadHard(), loadKbList()]);
+  await Promise.all([reloadIntel(), reloadHard(), loadKbList(), loadFusionIntelConfig()]);
 }
 
 onMounted(reload);
@@ -454,7 +499,7 @@ onActivated(() => {
         <span class="ops-tab-ico">🧠</span>
         <span class="ops-tab-txt">
           <b>情报沉淀</b>
-          <small>凭证 / 打法 / 端点 / 画像 / 经验</small>
+          <small>凭证 / 打法 / 端点 / 画像 / 经验 / CVE</small>
         </span>
         <span class="ops-tab-num">{{ stats.total }}</span>
       </button>
@@ -486,7 +531,7 @@ onActivated(() => {
           <b class="dash-v">{{ stats.total }}</b>
           <span class="dash-sub">已验证 {{ stats.verified }} · 被复用 {{ stats.reused }}</span>
         </div>
-        <div v-for="k in ['cred','fingerprint','endpoint','profile','lesson']" :key="k"
+        <div v-for="k in ['cred','fingerprint','endpoint','profile','lesson','cve_feed']" :key="k"
              class="dash-card" :class="KIND_META[k].hue"
              :data-active="kind === k"
              @click="kind = (kind === k ? 'all' : k)">
@@ -576,7 +621,29 @@ onActivated(() => {
           <option value="likely">仅疑似</option>
         </select>
         <button class="btn-ghost" @click="reloadIntel" :disabled="refreshing">{{ refreshing ? "刷新中…" : "刷新" }}</button>
+        <button class="btn-ghost" @click="syncCveIntel" :disabled="cveSyncing || !writable"
+                title="拉取 NVD / CISA KEV 近期漏洞情报写入 CVE 情报库">
+          {{ cveSyncing ? "同步 CVE 中…" : "同步 CVE 时间流" }}
+        </button>
         <button v-if="writable" class="btn-danger" @click="clearKind">清空当前类</button>
+      </div>
+
+      <div class="cve-sync-bar">
+        <div class="cve-sync-info">
+          <b>CVE 时间流</b>
+          <span>
+            <template v-if="fusionIntervalHours > 0">
+              已启用每 {{ fusionIntervalHours }} 小时自动同步（回溯 {{ fusionLookbackDays }} 天）
+            </template>
+            <template v-else>
+              当前为手动同步（回溯 {{ fusionLookbackDays }} 天；可在
+              <router-link class="cve-sync-link" to="/settings">设置 → 融合</router-link>
+              开启定时同步）
+            </template>
+          </span>
+        </div>
+        <span v-if="cveSyncMsg" class="cve-sync-msg ok">{{ cveSyncMsg }}</span>
+        <span v-else-if="cveSyncErr" class="cve-sync-msg err">{{ cveSyncErr }}</span>
       </div>
 
       <div class="curator-card">
@@ -819,3 +886,43 @@ onActivated(() => {
     </template>
   </section>
 </template>
+
+<style scoped>
+.cve-sync-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 14px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 12px;
+}
+.cve-sync-info {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+.cve-sync-info b {
+  font-size: 12.5px;
+  color: var(--ink);
+}
+.cve-sync-link {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.cve-sync-msg {
+  font-size: 12px;
+}
+.cve-sync-msg.ok {
+  color: var(--ok, var(--accent));
+}
+.cve-sync-msg.err {
+  color: var(--danger);
+}
+</style>

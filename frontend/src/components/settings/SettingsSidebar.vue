@@ -19,6 +19,7 @@ const TAB_ICONS = {
   llm: "M5.2 5.2h5.6v5.6H5.2zM8 2v3.2M8 10.8V14M2 8h3.2M10.8 8H14",
   recon: "M8 8m-5.5 0a5.5 5.5 0 1 0 11 0a5.5 5.5 0 1 0-11 0M8 5.8a2.2 2.2 0 1 0 0 4.4 2.2 2.2 0 0 0 0-4.4M2.5 8h1.8M11.7 8h1.8M8 2.5v1.8M8 11.7v1.8",
   runtime: "M2.5 4.5H6M10 4.5h3.5M6.5 4.5a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0M2.5 8h6M11.5 8h2M8 8a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0M2.5 11.5h2M9 11.5h4M5 11.5a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0",
+  fusion: "M4.5 4.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm7 3a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm-7 4v2m7-7v2M6.2 5.8l3.6 2.4",
   security: "M8 1.8 3 3.6v3.4c0 3.4 2.2 5.6 5 6.6 2.8-1 5-3.2 5-6.6V3.6L8 1.8ZM6 8.2l1.4 1.4L10.2 6.6",
   data: "M3 4.2c0-1.1 2.2-2 5-2s5 .9 5 2v7.6c0 1.1-2.2 2-5 2s-5-.9-5-2V4.2ZM3 4.2c0 1.1 2.2 2 5 2s5-.9 5-2M3 8c0 1.1 2.2 2 5 2s5-.9 5-2",
   update: "M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 1.5v3h-3",
@@ -84,6 +85,29 @@ const diskBadge = computed(() => {
 });
 
 const diskBadgeOn = computed(() => !!props.healthOverview?.disk?.auto_cleanup);
+
+const fusionHardCount = computed(() => {
+  const f = props.form.fusion || {};
+  return (f.evidence_gate_hard ? 1 : 0) + (f.scope_guard_hard ? 1 : 0);
+});
+
+const fusionText = computed(() => {
+  const f = props.form.fusion || {};
+  const parts = [`硬闸门 ×${fusionHardCount.value}`];
+  parts.push(f.traffic_enabled ? "留痕开启" : "留痕关闭");
+  return parts.join(" · ");
+});
+
+const fusionBadge = computed(() => {
+  const f = props.form.fusion || {};
+  if (fusionHardCount.value > 0 || f.traffic_enabled) return "已启用";
+  return "默认旁路";
+});
+
+const fusionBadgeOn = computed(() => {
+  const f = props.form.fusion || {};
+  return fusionHardCount.value > 0 || !!f.traffic_enabled;
+});
 </script>
 
 <template>
@@ -145,6 +169,14 @@ const diskBadgeOn = computed(() => !!props.healthOverview?.disk?.auto_cleanup);
         <b>{{ diskText }}</b>
       </div>
       <i v-if="diskBadge" :class="{ on: diskBadgeOn }">{{ diskBadge }}</i>
+    </div>
+
+    <div class="settings-health">
+      <div>
+        <span>融合</span>
+        <b>{{ fusionText }}</b>
+      </div>
+      <i :class="{ on: fusionBadgeOn }">{{ fusionBadge }}</i>
     </div>
 
     <p class="settings-note">任务创建时可覆盖模型与调度默认值。外观写入本实例数据库与数据卷。</p>

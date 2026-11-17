@@ -128,6 +128,34 @@ def check_finding(item: Any) -> dict:
     }
 
 
+def check_finding_with_review(finding: Any, review: Any = None) -> dict:
+    """结合人工/AI 复审覆盖字段（有效等级与改稿）试算证据闸门，供列表与报告共用。"""
+    if review is None:
+        return check_finding(finding)
+    edits = _field(review, "user_edits", None) or {}
+    if not isinstance(edits, dict):
+        edits = {}
+    sev = _field(review, "user_severity", "") or _field(review, "severity_final", "") or _severity(finding)
+    steps = edits.get("steps")
+    if steps in (None, ""):
+        steps = _field(finding, "steps", []) or []
+    merged = {
+        "title": edits.get("title") or _field(finding, "title", ""),
+        "description": edits.get("description") if edits.get("description") not in (None, "") else _field(finding, "description", ""),
+        "vuln_type": _field(finding, "vuln_type", ""),
+        "severity_claimed": sev,
+        "affected_scope": edits.get("affected_scope") if edits.get("affected_scope") not in (None, "") else _field(finding, "affected_scope", ""),
+        "poc": edits.get("poc") if edits.get("poc") not in (None, "") else _field(finding, "poc", ""),
+        "poc_http": edits.get("poc_http") if edits.get("poc_http") not in (None, "") else _field(finding, "poc_http", ""),
+        "raw_request": _field(finding, "raw_request", ""),
+        "raw_response": _field(finding, "raw_response", ""),
+        "owner": _field(finding, "owner", ""),
+        "steps": steps,
+        "evidence": _field(finding, "evidence", {}) or {},
+    }
+    return check_finding(merged)
+
+
 def evaluate_findings(items: list[Any]) -> dict:
     """批量试算，返回统计与逐条结论。"""
     rows = [check_finding(i) for i in (items or [])]

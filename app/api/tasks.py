@@ -27,6 +27,7 @@ from app.agents.auth_bootstrap import preview_auth_batch
 from app.agents.manual_targets import clean_manual_target_lines, preview_manual_targets
 from app.agents.query_analyzer import analyze_query
 from app.agents.prompts import normalize_src_type
+from app.fusion import goal_gate
 from app.tools.guard import _FORBIDDEN_OP_DEFS, forbidden_ops_labels, normalize_guard_ops, parse_forbidden_ops
 from app.db.models import Finding, Killsweep, ReportVersion, Review, Target, Task, TaskEvent, to_cst, to_cst_iso
 from app.db.session import get_session
@@ -436,7 +437,8 @@ def _timeline_buckets(items: list, bucket: str, limit: int) -> list[dict]:
 
 def _task_to_dto(t: Task, stats: TaskStats | None = None,
                  pending_user_review: int = 0, observer: bool = False,
-                 total_targets: int = 0, total_vulns: int = 0, progress: int = 0) -> TaskResponse:
+                 total_targets: int = 0, total_vulns: int = 0, progress: int = 0,
+                 goal_summary: dict | None = None) -> TaskResponse:
     model_config = _public_model_config(t)
     if observer:
         model_config = _observer_model_config()
@@ -456,6 +458,7 @@ def _task_to_dto(t: Task, stats: TaskStats | None = None,
         created_at=to_cst_iso(t.created_at), updated_at=to_cst_iso(t.updated_at),
         stats=stats, pending_user_review=pending_user_review,
         total_targets=total_targets, total_vulns=total_vulns, progress=progress,
+        goal_summary=None if observer else goal_summary,
     )
 
 
@@ -725,6 +728,7 @@ async def list_tasks(request: Request, session: AsyncSession = Depends(get_sessi
         tcount_map.setdefault(tid, {})[status] = cnt
 
     observer = _is_observer(request)
+    goal_map = {} if observer else await goal_gate.evaluate_task_goals(session, [t.id for t in tasks])
     return [
         _task_to_dto(
             t,
@@ -733,6 +737,7 @@ async def list_tasks(request: Request, session: AsyncSession = Depends(get_sessi
             total_vulns=vuln_map.get(t.id, 0),
             progress=_task_progress(tcount_map.get(t.id, {})),
             observer=observer,
+            goal_summary=goal_map.get(t.id),
         )
         for t in tasks
     ]
@@ -841,12 +846,15 @@ async def get_task(task_id: str, request: Request, session: AsyncSession = Depen
         raise HTTPException(404, "任务不存在")
     stats = await _compute_stats(session, task_id)
     counts = _stats_counts(stats)
+    observer = _is_observer(request)
+    goal_map = {} if observer else await goal_gate.evaluate_task_goals(session, [task_id])
     return _task_to_dto(
         task, stats,
         total_targets=sum(counts.values()),
         total_vulns=_stats_int(stats, "findings_total"),
         progress=_task_progress(counts),
-        observer=_is_observer(request),
+        observer=observer,
+        goal_summary=goal_map.get(task_id),
     )
 
 
@@ -1227,6 +1235,7 @@ async def task_board(
                     site_overview["blackboard"] = snap
 
     fofa_cfg = _observer_fofa_config() if observer else _public_fofa_config(task)
+    goal_map = {} if observer else await goal_gate.evaluate_task_goals(session, [task_id])
     return {
         "task_status": task.status,
         "live_workers": live,
@@ -1243,6 +1252,7 @@ async def task_board(
         "llm_usage": {} if observer else usage_snapshot(task.id, resolve_llm_config(task).model),
         "events": events,
         "site_collab": site_overview,
+        "goal_summary": goal_map.get(task_id),
     }
 
 

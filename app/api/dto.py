@@ -229,6 +229,7 @@ class TaskResponse(BaseModel):
     total_vulns: int = 0
     # 看板端点返回 dict（分阶段进度），任务列表返回 int——兼容两种形态
     progress: Any = 0
+    goal_summary: Optional[dict[str, Any]] = None
 
 
 class LLMSettingsDTO(BaseModel):
@@ -262,6 +263,7 @@ class DefaultsSettingsDTO(BaseModel):
     skip_score_threshold: Optional[float] = None
     worker_prompt_version: Optional[str] = None
     engine: Optional[str] = None
+    fusion: Optional[dict[str, Any]] = None
 
 
 class UiSettingsDTO(BaseModel):

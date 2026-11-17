@@ -227,6 +227,7 @@ class ReviewMixin:
                 on_provider_failure=self._provider_failure_callback(
                     loop, "reviewer", finding_id=finding_id
                 ),
+                role="reviewer",
             )
 
         def emit(kind: str, data: dict):

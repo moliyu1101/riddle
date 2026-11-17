@@ -12,11 +12,12 @@ const props = defineProps({
   timeline: { type: Array, default: () => [] },
   vulnDist: { type: Array, default: () => [] },
 });
-const emit = defineEmits(["edit", "start", "pause", "stop"]);
+const emit = defineEmits(["edit", "start", "pause", "stop", "openFusion"]);
 
 const stats = computed(() => props.task.stats || {});
 const progress = computed(() => props.task.progress || null);
 const collectorCfg = computed(() => props.task.fofa_config || {});
+const goalSummary = computed(() => props.task.goal_summary || null);
 
 const totalTargets = computed(() =>
   (stats.value.queued ?? 0) + (stats.value.scanning ?? 0) +
@@ -153,6 +154,26 @@ function vdPct(count) {
         <span v-if="task.target_source !== 'manual' && task.target_source !== 'site'" class="engine-badge">{{ engineName }}</span>
         <span>并发 {{ task.concurrency }}</span>
         <span>深挖 ×{{ task.deepen_cap ?? 2 }}</span>
+        <button
+          v-if="goalSummary?.configured && authRole !== 'observer'"
+          type="button"
+          class="goal-chip"
+          :class="goalSummary.goal_met ? 'met' : 'incomplete'"
+          :title="`点击打开任务融合控制：${goalSummary.summary}（${goalSummary.terminal_state}）`"
+          @click="emit('openFusion', 'goals')"
+        >{{ goalSummary.summary }} · {{ goalSummary.terminal_state }}</button>
+        <button
+          v-else-if="authRole !== 'observer'"
+          type="button"
+          class="goal-chip add"
+          title="配置本任务验收目标，或快速切换硬闸门 / 流量留痕"
+          @click="emit('openFusion', 'goals')"
+        >+ 验收目标 / 融合控制</button>
+        <span
+          v-else-if="goalSummary?.configured"
+          class="goal-chip"
+          :class="goalSummary.goal_met ? 'met' : 'incomplete'"
+        >{{ goalSummary.summary }} · {{ goalSummary.terminal_state }}</span>
         <span class="deck-scope" :title="missionScopeText">{{ missionScopeText }}</span>
       </div>
     </header>
