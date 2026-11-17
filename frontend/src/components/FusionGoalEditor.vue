@@ -165,18 +165,18 @@ function updateField(idx, field, val) {
 .fge-wrap { display: flex; flex-direction: column; gap: 10px; }
 .fge-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
 .fge-presets, .fge-actions-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.fge-lbl { font-size: 11.5px; color: var(--muted); }
+.fge-lbl { font-size: 13px; color: var(--muted); }
 .fge-preset-btn, .fge-add-btn, .fge-suggest-btn {
-  padding: 4px 10px; border-radius: 999px; font-size: 11.5px; cursor: pointer;
+  padding: 4px 10px; border-radius: 999px; font-size: 13px; cursor: pointer;
   border: 1px solid var(--border); background: var(--bg); color: var(--ink-2);
 }
 .fge-preset-btn:hover, .fge-suggest-btn:hover { border-color: var(--accent); color: var(--accent-ink); }
 .fge-suggest-btn { background: color-mix(in oklch, var(--accent) 12%, var(--surface)); border-color: color-mix(in oklch, var(--accent) 40%, var(--border)); color: var(--accent-ink); font-weight: 600; }
-.fge-err { font-size: 11.5px; color: var(--danger); }
+.fge-err { font-size: 13px; color: var(--danger); }
 .fge-add-btn { background: var(--accent-bg); border-color: color-mix(in oklch, var(--accent) 45%, var(--border)); color: var(--accent-ink); font-weight: 600; }
 .fge-empty {
   padding: 10px 12px; border: 1px dashed var(--border); border-radius: 10px;
-  font-size: 12px; color: var(--muted); line-height: 1.5; background: var(--bg);
+  font-size: 13.5px; color: var(--muted); line-height: 1.5; background: var(--bg);
 }
 .fge-list { display: flex; flex-direction: column; gap: 8px; }
 .fge-card {
@@ -184,24 +184,24 @@ function updateField(idx, field, val) {
   background: var(--bg); display: flex; flex-direction: column; gap: 8px;
 }
 .fge-card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.fge-idx { font-size: 11px; font-family: "IBM Plex Mono", monospace; color: var(--accent-ink); font-weight: 600; }
+.fge-idx { font-size: 13px; font-family: var(--font-mono); color: var(--accent-ink); font-weight: 600; }
 .fge-eval-pill {
-  font-size: 11px; padding: 2px 8px; border-radius: 999px; max-width: 100%;
+  font-size: 13px; padding: 2px 8px; border-radius: 999px; max-width: 100%;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .fge-eval-pill.met { background: var(--ok-bg); color: var(--ok); }
 .fge-eval-pill.unmet { background: var(--warn-bg); color: var(--warn); }
 .fge-del-btn {
-  margin-left: auto; padding: 2px 8px; border-radius: 6px; font-size: 11px; cursor: pointer;
+  margin-left: auto; padding: 2px 8px; border-radius: 6px; font-size: 13px; cursor: pointer;
   border: 1px solid var(--border); background: transparent; color: var(--muted);
 }
 .fge-del-btn:hover { color: var(--danger); border-color: var(--danger); }
 .fge-row-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .fge-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .fge-field.wide { grid-column: 1 / -1; }
-.fge-field span { font-size: 11px; color: var(--muted); }
+.fge-field span { font-size: 13px; color: var(--muted); }
 .fge-field input, .fge-field select {
-  width: 100%; box-sizing: border-box; padding: 7px 9px; font-size: 12px;
+  width: 100%; box-sizing: border-box; padding: 7px 9px; font-size: 13.5px;
   border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--ink);
 }
 @media (max-width: 700px) { .fge-row-grid { grid-template-columns: 1fr; } }

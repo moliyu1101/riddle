@@ -109,65 +109,61 @@ const navSections = computed(() => {
   const allowPriv = role === "full" || role === "readonly";
   const sections = [
     {
-      id: "ops",
-      title: "作战调度",
+      id: "func",
+      title: "功能",
       items: [
         {
           id: "tasks",
-          label: "作战指挥台",
+          label: "仪表盘",
           to: "/",
           exact: true,
           badge: p.runningTasks,
           badgeKind: p.runningTasks > 0 ? "live" : "",
           icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>`,
         },
+        ...(allowPriv ? [
+          {
+            id: "vulns",
+            label: "漏洞发现",
+            to: "/vulns",
+            badge: p.pendingReview,
+            badgeKind: p.pendingReview > 0 ? "warn" : "",
+            icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>`,
+          },
+          {
+            id: "intel",
+            label: "情报与知识",
+            to: "/intel",
+            badge: p.distilledKb || p.hardTotal,
+            badgeKind: p.distilledKb > 0 ? "accent" : p.hardTotal > 0 ? "warn" : "",
+            icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 0-4 12.7V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.3A7 7 0 0 0 12 2z"/><path d="M9 21h6"/></svg>`,
+          },
+          {
+            id: "fusion",
+            label: "融合与拦截",
+            to: "/fusion",
+            badge: p.pendingIntercepts,
+            badgeKind: p.pendingIntercepts > 0 ? "warn" : "",
+            icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M8.5 8.5 15.5 15.5M18 6v4M6 18v-4"/></svg>`,
+          },
+        ] : []),
       ],
     },
     ...(allowPriv ? [{
-      id: "evo",
-      title: "知识与自进化",
+      id: "sys",
+      title: "系统",
       items: [
-        {
-          id: "intel",
-          label: "知识与进化中心",
-          to: "/intel",
-          badge: p.distilledKb || p.hardTotal,
-          badgeKind: p.distilledKb > 0 ? "accent" : p.hardTotal > 0 ? "warn" : "",
-          icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 0-4 12.7V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.3A7 7 0 0 0 12 2z"/><path d="M9 21h6"/></svg>`,
-        },
-        {
-          id: "vulns",
-          label: "过审漏洞档案",
-          to: "/vulns",
-          badge: 0,
-          badgeKind: "",
-          icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>`,
-        },
-      ],
-    },
-    {
-      id: "gov",
-      title: "融合治理与系统",
-      items: [
-        {
-          id: "fusion",
-          label: "融合治理中枢",
-          to: "/fusion",
-          badge: p.pendingIntercepts,
-          badgeKind: p.pendingIntercepts > 0 ? "warn" : "",
-          icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M8.5 8.5 15.5 15.5M18 6v4M6 18v-4"/></svg>`,
-        },
         {
           id: "runtime-logs",
-          label: "运行异常监控",
+          label: "运行日志",
           to: "/runtime-logs",
           badge: p.runtimeErrors,
           badgeKind: p.runtimeErrors > 0 ? "danger" : "",
-          icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
+          icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`,
         },
         {
           id: "settings",
-          label: "引擎与系统设置",
+          label: "系统配置",
           to: "/settings",
           badge: 0,
           badgeKind: "",
@@ -185,13 +181,13 @@ function isActiveNav(item) {
 }
 
 const currentAreaLabel = computed(() => {
-  if (route.path === "/") return "全局作战指挥台";
-  if (route.path.startsWith("/task/")) return "单任务协同作战看板";
-  if (route.path.startsWith("/intel")) return "自主知识与进化中心";
-  if (route.path.startsWith("/vulns")) return "过审漏洞档案库";
-  if (route.path.startsWith("/fusion")) return "融合治理中枢";
-  if (route.path.startsWith("/runtime-logs")) return "全局运行异常监控";
-  if (route.path.startsWith("/settings")) return "系统设置与引擎池";
+  if (route.path === "/") return "仪表盘";
+  if (route.path.startsWith("/task/")) return "任务作战详情";
+  if (route.path.startsWith("/intel")) return "情报与知识";
+  if (route.path.startsWith("/vulns")) return "漏洞发现";
+  if (route.path.startsWith("/fusion")) return "融合与拦截";
+  if (route.path.startsWith("/runtime-logs")) return "运行日志";
+  if (route.path.startsWith("/settings")) return "系统配置";
   return "工作台";
 });
 
@@ -234,8 +230,8 @@ onUnmounted(() => {
             <img src="/logo.png" alt="知蠹 Riddle" width="28" height="28" />
           </div>
           <div v-show="!sidebarCollapsed" class="brand-text">
-            <b>知蠹 RIDDLE</b>
-            <small>SOLARIS STUDIO</small>
+            <b>知蠹 Riddle</b>
+            <small>自主安全渗透平台</small>
           </div>
           <button
             type="button"
@@ -275,7 +271,7 @@ onUnmounted(() => {
             @click="openCreateTask(); mobileNavOpen = false"
           >
             <span>＋</span>
-            <span v-show="!sidebarCollapsed">新建作战任务</span>
+            <span v-show="!sidebarCollapsed">新建任务</span>
           </button>
         </div>
 
@@ -283,13 +279,13 @@ onUnmounted(() => {
         <div class="tac-sidebar-foot">
           <div v-if="!sidebarCollapsed && authRoleRef !== 'observer'" class="tac-pulse-card">
             <div class="tpc-head">
-              <span>闭环自进化脉搏</span>
+              <span>闭环进化实时态</span>
               <i>LIVE</i>
             </div>
             <div class="tpc-grid">
               <div><b>{{ pulse.runningTasks }}</b><small>在侦</small></div>
-              <div><b>{{ pulse.pendingReview }}</b><small>待审</small></div>
-              <div><b>{{ pulse.distilledKb }}</b><small>蒸馏KB</small></div>
+              <div><b>{{ pulse.pendingReview }}</b><small>待复审</small></div>
+              <div><b>{{ pulse.distilledKb }}</b><small>蒸馏知识</small></div>
               <div><b>{{ pulse.hardTotal }}</b><small>硬骨头</small></div>
             </div>
           </div>
@@ -302,54 +298,68 @@ onUnmounted(() => {
 
       <!-- 右侧主工作台区 -->
       <div class="tac-workspace">
-        <!-- 顶部态势状态栏 -->
+        <!-- 顶部导航栏（对齐 Pojun Header 结构） -->
         <header class="tac-topbar">
           <div class="tac-topbar-left">
             <button type="button" class="tac-menu-btn" aria-label="打开菜单" @click="mobileNavOpen = !mobileNavOpen">☰</button>
+            <button type="button" class="tac-topbar-toggle" :title="sidebarCollapsed ? '展开侧栏' : '收起侧栏'" aria-label="切换侧栏" @click="toggleSidebar">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                <line x1="9" y1="3" x2="9" y2="21"/>
+              </svg>
+            </button>
+            <span class="tac-topbar-sep" aria-hidden="true"></span>
             <div class="tac-area">
               <span class="tac-area-dot" :class="{ live: pulse.runningTasks > 0 }"></span>
               <b>{{ currentAreaLabel }}</b>
             </div>
           </div>
 
-          <!-- 顶部等宽遥测脉冲带 -->
-          <nav v-if="authRoleRef !== 'observer'" class="tac-loop-rail" aria-label="系统遥测与闭环直达">
-            <span class="tel-sys"><i>●</i>SYS:ONLINE</span>
-            <span class="loop-sep">|</span>
-            <router-link to="/" class="loop-step">
-              <span>RUN</span><b>{{ pulse.runningTasks }}</b>
-            </router-link>
-            <router-link to="/" class="loop-step warn">
-              <span>REV</span><b>{{ pulse.pendingReview }}</b>
-            </router-link>
-            <router-link :to="{ path: '/intel', query: { tab: 'kb', origin: 'distilled' } }" class="loop-step accent">
-              <span>KB_DISTILL</span><b>{{ pulse.distilledKb }}</b>
-            </router-link>
-            <router-link :to="{ path: '/intel', query: { tab: 'hard' } }" class="loop-step info">
-              <span>HARD_POOL</span><b>{{ pulse.hardTotal }}</b>
-            </router-link>
-            <router-link v-if="pulse.pendingIntercepts > 0" :to="{ path: '/fusion', query: { tab: 'gates' } }" class="loop-step warn">
-              <span>INTERCEPT</span><b>{{ pulse.pendingIntercepts }}</b>
-            </router-link>
-          </nav>
-
           <div class="tac-topbar-right">
+            <!-- 实时闭环状态胶囊 -->
+            <nav v-if="authRoleRef !== 'observer'" class="tac-loop-rail" aria-label="系统实时状态直达">
+              <router-link to="/" class="loop-step">
+                <span>在侦</span><b>{{ pulse.runningTasks }}</b>
+              </router-link>
+              <router-link to="/vulns" class="loop-step warn">
+                <span>待复审</span><b>{{ pulse.pendingReview }}</b>
+              </router-link>
+              <router-link :to="{ path: '/intel', query: { tab: 'kb', origin: 'distilled' } }" class="loop-step accent">
+                <span>知识蒸馏</span><b>{{ pulse.distilledKb }}</b>
+              </router-link>
+              <router-link :to="{ path: '/intel', query: { tab: 'hard' } }" class="loop-step info">
+                <span>硬骨头</span><b>{{ pulse.hardTotal }}</b>
+              </router-link>
+              <router-link v-if="pulse.pendingIntercepts > 0" :to="{ path: '/fusion', query: { tab: 'gates' } }" class="loop-step warn">
+                <span>待审批</span><b>{{ pulse.pendingIntercepts }}</b>
+              </router-link>
+            </nav>
+
+            <button
+              v-if="authRoleRef === 'full'"
+              type="button"
+              class="tac-top-create"
+              @click="openCreateTask()"
+            >
+              ＋ 新建任务
+            </button>
+
             <button
               class="cmd-icon-btn"
               @click="toggleTheme"
-              :title="theme === 'dark' ? '切换到亮色' : '切换到暗色'"
-              :aria-label="theme === 'dark' ? '切换到亮色主题' : '切换到暗色主题'"
+              :title="theme === 'dark' ? '切换到浅色模式' : '切换到深色模式'"
+              :aria-label="theme === 'dark' ? '切换到浅色模式' : '切换到深色模式'"
             >
-              <svg v-if="theme === 'dark'" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <svg v-if="theme === 'dark'" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <circle cx="12" cy="12" r="4"/>
                 <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>
               </svg>
-              <svg v-else viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <svg v-else viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
               </svg>
             </button>
             <a class="cmd-icon-btn" href="https://github.com/moliyu1101/Riddle" target="_blank" rel="noopener noreferrer" title="GitHub" aria-label="在 GitHub 上查看项目">
-              <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+              <svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true">
                 <path fill="currentColor" fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/>
               </svg>
             </a>
@@ -358,11 +368,9 @@ onUnmounted(() => {
 
         <main class="tac-main">
           <router-view v-slot="{ Component }">
-            <transition name="route" mode="out-in">
-              <keep-alive :include="KEEP_ALIVE_VIEWS" :max="6">
-                <component :is="Component" :key="route.path" />
-              </keep-alive>
-            </transition>
+            <keep-alive :include="KEEP_ALIVE_VIEWS" :max="6">
+              <component :is="Component" :key="route.path" />
+            </keep-alive>
           </router-view>
         </main>
 
@@ -370,8 +378,6 @@ onUnmounted(() => {
           <span>Powered By <b>moliyu1101</b></span>
           <span class="dot">·</span>
           <span>CC BY-NC 4.0</span>
-          <span class="dot">·</span>
-          <span>Solaris &amp; Obsidian Studio</span>
         </footer>
       </div>
     </template>

@@ -313,7 +313,7 @@ async function importTaskTraffic() {
   padding: 16px 20px; border-bottom: 1px solid var(--border);
 }
 .bfd-head h3 { margin: 0; font-size: 16px; color: var(--ink); }
-.bfd-head small { color: var(--muted); font-size: 11.5px; font-family: "IBM Plex Mono", monospace; }
+.bfd-head small { color: var(--muted); font-size: 13px; font-family: var(--font-mono); }
 .bfd-close {
   width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border);
   background: var(--bg); color: var(--muted); font-size: 18px; cursor: pointer;
@@ -333,7 +333,7 @@ async function importTaskTraffic() {
 }
 .bfd-eval-banner.met { background: var(--ok-bg); color: var(--ok); border-color: color-mix(in oklch, var(--ok) 35%, transparent); }
 .bfd-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-.bfd-link { margin-left: auto; font-size: 12px; color: var(--accent-ink); text-decoration: none; font-weight: 600; }
+.bfd-link { margin-left: auto; font-size: 13.5px; color: var(--accent-ink); text-decoration: none; font-weight: 600; }
 .bfd-link:hover { text-decoration: underline; }
 .bfd-switches { display: grid; gap: 10px; }
 .bfd-switch-card {
@@ -342,11 +342,11 @@ async function importTaskTraffic() {
 }
 .bfd-switch-card.on { border-color: color-mix(in oklch, var(--ok) 45%, var(--border)); background: color-mix(in oklch, var(--ok) 6%, var(--bg)); }
 .bfd-switch-card strong { display: block; font-size: 13px; color: var(--ink); }
-.bfd-switch-card small { display: block; font-size: 11.5px; color: var(--muted); margin-top: 2px; }
-.bfd-switch-card em { font-style: normal; font-size: 11.5px; padding: 3px 9px; border-radius: 999px; background: var(--surface-2); color: var(--muted); flex: none; }
+.bfd-switch-card small { display: block; font-size: 13px; color: var(--muted); margin-top: 2px; }
+.bfd-switch-card em { font-style: normal; font-size: 13px; padding: 3px 9px; border-radius: 999px; background: var(--surface-2); color: var(--muted); flex: none; }
 .bfd-switch-card.on em { background: var(--ok-bg); color: var(--ok); font-weight: 600; }
 .bfd-interval-box { padding: 12px; border: 1px solid var(--border-soft); border-radius: 10px; background: var(--bg); }
-.bfd-interval-box span { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.bfd-interval-box span { display: block; font-size: 13.5px; color: var(--muted); margin-bottom: 6px; }
 .bfd-interval-row { display: flex; gap: 8px; }
 .bfd-interval-row input { flex: 1; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--ink); }
 .bfd-ops-cards { display: grid; gap: 10px; }
@@ -355,6 +355,6 @@ async function importTaskTraffic() {
   display: flex; flex-direction: column; gap: 8px; align-items: flex-start;
 }
 .bfd-op-card strong { display: block; font-size: 13px; color: var(--ink); }
-.bfd-op-card small { display: block; font-size: 11.5px; color: var(--muted); margin-top: 2px; }
-.bfd-op-res { margin: 0; font-size: 12px; color: var(--ok); }
+.bfd-op-card small { display: block; font-size: 13px; color: var(--muted); margin-top: 2px; }
+.bfd-op-res { margin: 0; font-size: 13.5px; color: var(--ok); }
 </style>

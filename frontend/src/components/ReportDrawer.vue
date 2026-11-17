@@ -1201,12 +1201,12 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
 }
 .rc-retest-head span {
   display: block;
-  font-size: 12px;
+  font-size: 13.5px;
   font-weight: 700;
   color: var(--ink);
 }
 .rc-retest-head small {
-  font-size: 11px;
+  font-size: 13px;
   color: var(--faint);
 }
 .rc-retest-list {
@@ -1218,14 +1218,14 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11.5px;
+  font-size: 13px;
   background: var(--bg);
   padding: 4px 8px;
   border-radius: 6px;
 }
 .rc-retest-tag {
   flex: none;
-  font-size: 10.5px;
+  font-size: 12.5px;
   padding: 1px 6px;
   border-radius: 999px;
   background: var(--warn-bg);
@@ -1263,7 +1263,7 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
   flex: 1;
   min-width: 0;
   padding: 5px 8px;
-  font-size: 11.5px;
+  font-size: 13px;
   border-radius: 6px;
   border: 1px solid var(--border);
   background: var(--bg);

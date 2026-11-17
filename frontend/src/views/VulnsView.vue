@@ -186,27 +186,22 @@ onActivated(() => {
 
     <header class="vuln-head">
       <div>
-        <div class="vh-crumb">
-          <span>COMMAND CENTER</span>
-          <span>/</span>
-          <b>VULNERABILITY ARCHIVE</b>
-        </div>
         <div class="vh-title-row">
-          <h2>漏洞档案库</h2>
-          <span class="vh-chip">VERIFIED LEDGER</span>
+          <h2>漏洞发现与档案库</h2>
+          <span class="vh-chip">已过审成果账本</span>
         </div>
-        <p class="vh-sub">跨任务汇总人工审核通过的高危/疑似成果 · 统一分级评分 · 一键脱敏蒸馏入库与公文报告导出。</p>
+        <p class="vh-sub">跨任务汇总人工审核通过的高危与疑似发现 · 统一分级评分 · 一键脱敏蒸馏入库与公文报告导出。</p>
       </div>
-      <router-link class="btn-vuln-ghost" to="/">← 返回作战台</router-link>
+      <router-link class="btn-vuln-ghost" to="/">← 返回仪表盘</router-link>
     </header>
 
     <!-- Spectral Summary Band -->
     <div class="vuln-spectrum-band">
       <div class="vsb-total">
-        <span class="vsb-k">过审漏洞归档 / ARCHIVED</span>
+        <span class="vsb-k">过审漏洞归档</span>
         <div class="vsb-v-row">
           <b>{{ statTotal }}</b>
-          <span class="vsb-sub-tag">已过审成果</span>
+          <span class="vsb-sub-tag">已确认</span>
         </div>
       </div>
 
@@ -222,7 +217,7 @@ onActivated(() => {
 
       <div class="vsb-spectrum">
         <div class="vsb-spec-head">
-          <span class="vsb-k">五级危害光谱 / SEVERITY DISTRIBUTION</span>
+          <span class="vsb-k">五级危害分布</span>
           <span class="vsb-spec-hint">点击等级图例快速筛选</span>
         </div>
         <div class="vsb-bar" role="img" aria-label="漏洞等级分布">
@@ -402,7 +397,7 @@ onActivated(() => {
 .vuln-studio {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
 }
 
 .vuln-head {
@@ -410,52 +405,41 @@ onActivated(() => {
   align-items: flex-end;
   justify-content: space-between;
   gap: 16px;
-  padding-bottom: 12px;
+  padding-bottom: 14px;
   border-bottom: 1px solid var(--border);
 }
-.vh-crumb {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.08em;
-  color: var(--muted);
-  margin-bottom: 4px;
-}
-.vh-crumb b { color: var(--ink); }
-.vh-title-row { display: flex; align-items: center; gap: 10px; }
-.vh-title-row h2 { margin: 0; font-size: 20px; font-weight: 700; color: var(--ink); }
+.vh-title-row { display: flex; align-items: center; gap: 12px; }
+.vh-title-row h2 { margin: 0; font-size: 24px; font-weight: 700; color: var(--ink); }
 .vh-chip {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 700;
-  padding: 2px 7px;
-  border-radius: 3px;
-  background: color-mix(in srgb, var(--accent2) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent2) 32%, var(--border));
-  color: var(--accent2);
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--accent2-bg);
+  border: 1px solid color-mix(in srgb, var(--accent2) 30%, var(--border));
+  color: var(--accent2-ink);
 }
-.vh-sub { margin: 4px 0 0; font-size: 12.5px; color: var(--muted); }
+.vh-sub { margin: 5px 0 0; font-size: 14px; color: var(--muted); }
 
 /* Top Spectral Summary Band */
 .vuln-spectrum-band {
   display: grid;
-  grid-template-columns: 190px 145px 145px minmax(0, 1fr);
+  grid-template-columns: 205px 155px 155px minmax(0, 1fr);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: 12px;
   background: var(--surface);
   overflow: hidden;
+  box-shadow: var(--shadow-sm);
 }
 .vsb-total,
 .vsb-stat,
 .vsb-spectrum {
-  padding: 12px 16px;
+  padding: 16px 18px;
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 6px;
+  gap: 7px;
 }
 .vsb-spectrum { border-right: none; }
 .vsb-stat {
@@ -464,6 +448,7 @@ onActivated(() => {
   border-top: none;
   border-bottom: none;
   border-left: none;
+  border-radius: 0;
   text-align: left;
   cursor: pointer;
   transition: background 0.12s ease;
@@ -471,25 +456,24 @@ onActivated(() => {
 .vsb-stat:hover { background: var(--bg-soft); }
 .vsb-stat.on {
   background: color-mix(in srgb, var(--accent) 7%, var(--surface));
-  box-shadow: inset 0 -2.5px 0 var(--accent);
+  box-shadow: inset 0 -3px 0 var(--accent);
 }
 .vsb-k {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  font-size: 13px;
+  font-weight: 600;
   color: var(--muted);
 }
 .vsb-v-row { display: flex; align-items: baseline; gap: 8px; }
 .vsb-total b,
 .vsb-stat b {
-  font-family: var(--font-mono);
-  font-size: 24px;
+  font-size: 28px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
   line-height: 1.05;
   color: var(--ink);
 }
 .vsb-stat b.warn-txt { color: var(--warn); }
-.vsb-sub-tag { font-size: 11px; color: var(--ok); font-weight: 600; }
+.vsb-sub-tag { font-size: 13px; color: var(--ok); font-weight: 600; }
 
 .vsb-spec-head {
   display: flex;
@@ -497,7 +481,7 @@ onActivated(() => {
   justify-content: space-between;
   gap: 8px;
 }
-.vsb-spec-hint { font-size: 11px; color: var(--muted); }
+.vsb-spec-hint { font-size: 12.5px; color: var(--muted); }
 .vsb-bar {
   display: flex;
   height: 8px;
@@ -514,126 +498,126 @@ onActivated(() => {
 .vsb-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
 }
 .vsb-leg-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 2px 8px;
-  border-radius: 4px;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 6px;
   border: 1px solid var(--border);
   background: var(--bg-soft);
-  font-size: 11px;
+  font-size: 13px;
   color: var(--ink);
   cursor: pointer;
 }
 .vsb-leg-btn.on {
   border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  background: var(--accent-bg);
 }
-.vsb-leg-btn i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); display: inline-block; }
+.vsb-leg-btn i { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); display: inline-block; }
 .vsb-leg-btn.danger i, .vsb-leg-btn.critical i { background: #dc2626; }
 .vsb-leg-btn.high i { background: #ea580c; }
 .vsb-leg-btn.warn i, .vsb-leg-btn.medium i { background: #d97706; }
 .vsb-leg-btn.info i, .vsb-leg-btn.low i { background: #0284c7; }
-.vsb-leg-btn b { font-family: var(--font-mono); }
+.vsb-leg-btn b { font-variant-numeric: tabular-nums; }
 
 /* Asymmetric 2-Column Layout */
 .vuln-studio-grid {
   display: grid;
-  grid-template-columns: 248px minmax(0, 1fr);
-  gap: 16px;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 18px;
   align-items: start;
 }
 
 .vuln-rail {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 12px;
+  border-radius: 12px;
+  padding: 14px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
   position: sticky;
-  top: 64px;
+  top: 70px;
+  box-shadow: var(--shadow-sm);
 }
 .vr-block {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding-bottom: 12px;
+  gap: 10px;
+  padding-bottom: 14px;
   border-bottom: 1px solid var(--border);
 }
 .vr-block:last-child { padding-bottom: 0; border-bottom: none; }
 .vr-label {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-size: 13px;
+  font-weight: 600;
   color: var(--muted);
 }
 .vr-search {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  border-radius: 5px;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
   border: 1px solid var(--border);
   background: var(--bg-soft);
 }
-.vr-search span { color: var(--muted); }
+.vr-search span { color: var(--muted); font-size: 15px; }
 .vr-search input {
   width: 100%;
   border: none;
   background: transparent;
   outline: none;
   color: var(--ink);
-  font-size: 12.5px;
+  font-size: 14px;
+  padding: 0;
 }
 .vr-facets { display: flex; flex-direction: column; gap: 4px; }
 .vr-facet {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 9px;
-  border-radius: 5px;
+  padding: 8px 10px;
+  border-radius: 6px;
   border: 1px solid transparent;
   background: transparent;
-  color: var(--ink);
-  font-size: 12px;
+  color: var(--ink-2);
+  font-size: 13.5px;
   cursor: pointer;
 }
-.vr-facet:hover { background: var(--bg-soft); }
+.vr-facet:hover { background: var(--bg-soft); color: var(--ink); }
 .vr-facet.on {
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  background: var(--accent-bg);
   border-color: color-mix(in srgb, var(--accent) 28%, transparent);
-  color: var(--accent);
+  color: var(--accent-ink);
   font-weight: 600;
 }
-.vr-facet em { font-style: normal; font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+.vr-facet em { font-style: normal; font-variant-numeric: tabular-nums; font-size: 12.5px; color: var(--muted); }
 
-.vr-selects { display: flex; flex-direction: column; gap: 7px; }
+.vr-selects { display: flex; flex-direction: column; gap: 8px; }
 .vr-selects select {
   width: 100%;
-  padding: 7px 9px;
-  border-radius: 5px;
+  padding: 8px 10px;
+  border-radius: 8px;
   border: 1px solid var(--border);
   background: var(--bg-soft);
   color: var(--ink);
-  font-size: 12px;
+  font-size: 13.5px;
 }
 
 .btn-vuln-ghost {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 7px 12px;
-  border-radius: 5px;
+  padding: 8px 14px;
+  border-radius: 8px;
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--ink);
-  font-size: 12px;
+  font-size: 13.5px;
   font-weight: 600;
   cursor: pointer;
   text-decoration: none;
@@ -642,27 +626,27 @@ onActivated(() => {
 .btn-vuln-ghost.full { width: 100%; }
 
 /* Vulnerability Ledger Table */
-.vuln-main { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.vuln-main { min-width: 0; display: flex; flex-direction: column; gap: 14px; }
 .vuln-table-wrap {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: 12px;
   overflow-x: auto;
+  box-shadow: var(--shadow-sm);
 }
-.vuln-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.vuln-table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .vuln-table thead th {
   text-align: left;
-  padding: 9px 12px;
+  padding: 12px 16px;
   background: var(--bg-soft);
   border-bottom: 1px solid var(--border);
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 600;
   color: var(--muted);
   white-space: nowrap;
 }
 .vuln-table tbody td {
-  padding: 11px 12px;
+  padding: 14px 16px;
   border-bottom: 1px solid var(--border);
   vertical-align: top;
 }
@@ -670,13 +654,13 @@ onActivated(() => {
 .vl-row { cursor: pointer; transition: background 0.12s ease; }
 .vl-row:hover { background: color-mix(in srgb, var(--bg-soft) 75%, transparent); }
 
-.vl-sev-col { display: flex; flex-direction: column; gap: 5px; }
+.vl-sev-col { display: flex; flex-direction: column; gap: 6px; }
 .sev-badge {
   display: inline-block;
   width: fit-content;
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 6px;
+  font-size: 12.5px;
   font-weight: 700;
 }
 .sev-badge.danger, .sev-badge.critical { background: rgba(220, 38, 38, 0.12); color: #dc2626; }
@@ -684,28 +668,28 @@ onActivated(() => {
 .sev-badge.warn, .sev-badge.medium { background: rgba(217, 119, 6, 0.12); color: #d97706; }
 .sev-badge.info, .sev-badge.low { background: rgba(2, 132, 199, 0.12); color: #0284c7; }
 .sev-badge.muted { background: var(--bg-soft); color: var(--muted); }
-.vl-id { font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+.vl-id { font-family: var(--font-mono); font-size: 12.5px; color: var(--muted); }
 
-.vl-title-col { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
-.vl-title-line { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
-.vl-title { font-size: 13.5px; color: var(--ink); word-break: break-word; }
+.vl-title-col { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.vl-title-line { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.vl-title { font-size: 15px; color: var(--ink); word-break: break-word; }
 .conf-pill,
 .type-pill {
-  font-size: 10.5px;
-  padding: 1px 6px;
-  border-radius: 3px;
+  font-size: 12.5px;
+  padding: 2px 8px;
+  border-radius: 6px;
   border: 1px solid var(--border);
   background: var(--bg-soft);
   color: var(--muted);
 }
-.conf-pill.ok, .conf-pill.verified { background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok); border-color: transparent; font-weight: 600; }
+.conf-pill.ok, .conf-pill.verified { background: var(--ok-bg); color: var(--ok); border-color: transparent; font-weight: 600; }
 .vl-url {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: var(--accent);
+  font-size: 13px;
+  color: var(--accent-ink);
   text-decoration: none;
   word-break: break-all;
 }
@@ -714,91 +698,89 @@ onActivated(() => {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   margin-top: 2px;
 }
 .chain-lbl {
-  font-family: var(--font-mono);
-  font-size: 9.5px;
-  font-weight: 700;
+  font-size: 13.5px;
+  font-weight: 600;
   color: var(--muted);
   margin-right: 2px;
 }
 .chain-node {
   font-family: var(--font-mono);
-  font-size: 10.5px;
-  padding: 1px 6px;
-  border-radius: 3px;
+  font-size: 12.5px;
+  padding: 2px 8px;
+  border-radius: 4px;
   background: var(--bg-soft);
   border: 1px solid var(--border);
   color: var(--ink);
 }
-.chain-sep { color: var(--muted); font-size: 10.5px; }
+.chain-sep { color: var(--muted); font-size: 12.5px; }
 
-.vl-owner-col { display: flex; flex-direction: column; gap: 3px; }
-.vl-owner-col b { font-size: 12.5px; color: var(--ink); }
-.vl-owner-col small { font-size: 11px; color: var(--muted); }
+.vl-owner-col { display: flex; flex-direction: column; gap: 4px; }
+.vl-owner-col b { font-size: 14px; color: var(--ink); }
+.vl-owner-col small { font-size: 12.5px; color: var(--muted); }
 .vl-model {
   font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: var(--accent2);
+  font-size: 12.5px;
+  color: var(--accent2-ink);
   width: fit-content;
 }
 
-.vl-status-col { display: flex; flex-direction: column; gap: 5px; }
+.vl-status-col { display: flex; flex-direction: column; gap: 6px; }
 .sub-tag {
   display: inline-block;
   width: fit-content;
-  padding: 2px 7px;
-  border-radius: 4px;
-  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 6px;
+  font-size: 12.5px;
   font-weight: 600;
 }
-.sub-tag.ok { background: color-mix(in srgb, var(--ok) 13%, transparent); color: var(--ok); }
-.sub-tag.pending { background: color-mix(in srgb, var(--warn) 13%, transparent); color: var(--warn); }
-.vl-score-line { display: flex; flex-direction: column; gap: 2px; }
-.score-num { font-family: var(--font-mono); font-size: 11.5px; font-weight: 700; color: var(--ink); }
-.vl-score-line time { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
+.sub-tag.ok { background: var(--ok-bg); color: var(--ok); }
+.sub-tag.pending { background: var(--warn-bg); color: var(--warn); }
+.vl-score-line { display: flex; flex-direction: column; gap: 3px; }
+.score-num { font-size: 13.5px; font-weight: 700; color: var(--ink); }
+.vl-score-line time { font-size: 12.5px; color: var(--muted); }
 
-.vl-actions { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; }
+.vl-actions { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 .vl-btn {
-  padding: 4px 8px;
-  border-radius: 4px;
+  padding: 6px 11px;
+  border-radius: 6px;
   border: 1px solid var(--border);
   background: var(--bg-soft);
   color: var(--ink);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
 }
-.vl-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
-.vl-btn.done { background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok); border-color: color-mix(in srgb, var(--ok) 30%, var(--border)); }
-.vl-btn.detail { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.vl-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-ink); }
+.vl-btn.done { background: var(--ok-bg); color: var(--ok); border-color: color-mix(in srgb, var(--ok) 30%, var(--border)); }
+.vl-btn.detail { background: var(--ink); color: var(--bg); border-color: var(--ink); }
 
 .vl-pager {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 13.5px;
   color: var(--muted);
 }
 
 .vr-empty {
   background: var(--surface);
-  border: 1px dashed var(--border);
-  border-radius: var(--radius);
-  padding: 44px 24px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 12px;
+  padding: 48px 24px;
   text-align: center;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
-.vr-empty b { color: var(--ink); }
-.vr-empty span { font-size: 12.5px; color: var(--muted); }
+.vr-empty b { font-size: 16px; color: var(--ink); }
+.vr-empty span { font-size: 14px; color: var(--muted); }
 
 .vr-skeletons { display: flex; flex-direction: column; gap: 8px; }
-.vr-skel-row { height: 64px; border-radius: 6px; background: var(--surface); border: 1px solid var(--border); opacity: 0.6; }
+.vr-skel-row { height: 68px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); opacity: 0.6; }
 
 @media (max-width: 1024px) {
   .vuln-spectrum-band { grid-template-columns: repeat(2, minmax(0, 1fr)); }

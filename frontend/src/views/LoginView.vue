@@ -74,8 +74,8 @@ function enterDirectly() {
             <img src="/logo.png" alt="知蠹 Riddle" width="44" height="44" />
           </div>
           <div>
-            <b>知蠹 RIDDLE</b>
-            <small>SOLARIS STUDIO · AUTONOMOUS OPS</small>
+            <b>知蠹 Riddle</b>
+            <small>自主安全渗透与漏洞挖掘平台</small>
           </div>
         </div>
         <h1 class="brief-title">自主挖掘 · 知识自进化<br />全闭环安全作战工作台</h1>

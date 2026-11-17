@@ -1,58 +1,58 @@
 /** 外观偏好：服务端持久化，localStorage 只做启动缓存。 */
 
-export const UI_STORAGE_KEY = "riddle-ui-v3";
+export const UI_STORAGE_KEY = "riddle-ui-v4";
 export const THEME_STORAGE_KEY = "riddle-theme";
-const MIGRATED_KEY = "riddle-ui-v3-migrated";
+const MIGRATED_KEY = "riddle-ui-v4-migrated";
 
 export const ACCENT_PRESETS = [
-  { h: 26, name: "信号朱红" },
+  { h: 250, name: "极简靛蓝（默认）" },
   { h: 215, name: "钴蓝工控" },
-  { h: 168, name: "深青翡翠" },
+  { h: 162, name: "翡翠绿" },
+  { h: 26, name: "信号朱红" },
   { h: 38, name: "工业琥珀" },
   { h: 350, name: "赤红警戒" },
-  { h: 258, name: "靛蓝" },
 ];
 
 export const ACCENT2_PRESETS = [
-  { h: 168, name: "深青翡翠" },
+  { h: 162, name: "深青翡翠" },
   { h: 215, name: "钴蓝" },
+  { h: 250, name: "靛蓝" },
   { h: 38, name: "工业琥珀" },
   { h: 192, name: "天青" },
-  { h: 145, name: "矩阵绿" },
   { h: 26, name: "信号朱红" },
 ];
 
 export const BG_PRESETS = [
-  { h: 220, name: "极昼石英" },
+  { h: 220, name: "纯净曜黑" },
   { h: 210, name: "冷灰石墨" },
   { h: 235, name: "碳岩蓝黑" },
   { h: 195, name: "深海矿石" },
 ];
 
-/** 整套主题预设：Solaris & Obsidian Studio 六套架构风配色 */
+/** 整套主题预设 */
 export const THEME_PRESETS = [
-  { id: "solaris",  name: "信号朱红（默认）", accentHue: 26,  accent2Hue: 168, bgHue: 220, glow: 0.25, desc: "信号朱红 × 深青翡翠，锐利工业工程对比" },
-  { id: "studio",   name: "精工钴蓝",       accentHue: 215, accent2Hue: 168, bgHue: 218, glow: 0.25, desc: "钴蓝 × 翡翠绿，冷静数据分析视角" },
-  { id: "emerald",  name: "翡翠猎手",       accentHue: 162, accent2Hue: 26,  bgHue: 205, glow: 0.30, desc: "翡翠绿 × 信号橙，渗透工程终端感" },
-  { id: "amber",    name: "钨金指挥",       accentHue: 38,  accent2Hue: 210, bgHue: 225, glow: 0.30, desc: "琥珀金 × 钢蓝，长时间高密度审阅" },
-  { id: "crimson",  name: "赤红战备",       accentHue: 355, accent2Hue: 168, bgHue: 230, glow: 0.35, desc: "赤红 × 翠青，高危攻坚响应态" },
-  { id: "indigo",   name: "靛蓝实验室",     accentHue: 252, accent2Hue: 172, bgHue: 228, glow: 0.30, desc: "靛紫蓝 × 信号青，精密实验室质感" },
+  { id: "studio",   name: "精工极简（默认）", accentHue: 250, accent2Hue: 162, bgHue: 220, glow: 0.25, desc: "极简素雅浅灰白底 × 靛蓝翡翠，对齐现代工程工作台" },
+  { id: "cobalt",   name: "精工钴蓝",         accentHue: 215, accent2Hue: 162, bgHue: 218, glow: 0.25, desc: "钴蓝 × 翡翠绿，冷静数据分析视角" },
+  { id: "emerald",  name: "翡翠猎手",         accentHue: 162, accent2Hue: 250, bgHue: 205, glow: 0.30, desc: "翡翠绿 × 靛蓝，渗透工程终端感" },
+  { id: "solaris",  name: "信号朱红",         accentHue: 26,  accent2Hue: 168, bgHue: 220, glow: 0.25, desc: "朱红 × 深青翡翠，高对比警戒视觉" },
+  { id: "amber",    name: "钨金指挥",         accentHue: 38,  accent2Hue: 210, bgHue: 225, glow: 0.30, desc: "琥珀金 × 钢蓝，长时间高密度审阅" },
+  { id: "crimson",  name: "赤红战备",         accentHue: 355, accent2Hue: 162, bgHue: 230, glow: 0.35, desc: "赤红 × 翠青，高危攻坚响应态" },
 ];
 
 /** 界面缩放档位 */
 export const UI_SCALE_STEPS = [
-  { value: 0.85, label: "紧凑" },
-  { value: 0.925, label: "偏小" },
-  { value: 1, label: "标准" },
+  { value: 0.9,  label: "紧凑" },
+  { value: 0.95, label: "偏小" },
+  { value: 1,    label: "标准" },
   { value: 1.075, label: "偏大" },
   { value: 1.15, label: "最大" },
 ];
 
 export const DEFAULTS = {
-  v: 3,
+  v: 4,
   theme: "light",
-  accentHue: 26,
-  accent2Hue: 168,
+  accentHue: 250,
+  accent2Hue: 162,
   glow: 0.25,
   bgHue: 220,
   wallpaperKind: "none",
@@ -92,10 +92,10 @@ function clampScale(s) {
 }
 
 export function prefsFromApi(ui = {}) {
-  // 无感迁移至 v3 Solaris & Obsidian Studio 默认体系
-  const isLegacy = Number(ui.v || 1) < 3;
+  // 无感迁移至 v4 Pojun-aligned Studio 默认体系
+  const isLegacy = Number(ui.v || 1) < 4;
   return {
-    v: 3,
+    v: 4,
     theme: isLegacy ? DEFAULTS.theme : (ui.theme === "dark" ? "dark" : "light"),
     accentHue: isLegacy ? DEFAULTS.accentHue : clampHue(ui.accentHue),
     accent2Hue: isLegacy ? DEFAULTS.accent2Hue : clampHue(ui.accent2Hue, DEFAULTS.accent2Hue),
@@ -113,7 +113,7 @@ export function prefsFromApi(ui = {}) {
 
 export function prefsToApi(prefs) {
   return {
-    v: 3,
+    v: 4,
     theme: prefs.theme,
     accentHue: clampHue(prefs.accentHue),
     accent2Hue: clampHue(prefs.accent2Hue),

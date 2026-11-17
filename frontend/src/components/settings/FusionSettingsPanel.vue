@@ -196,7 +196,7 @@ async function syncNow() {
 <style scoped>
 .fusion-settings { display: grid; gap: 12px; }
 .fs-quick-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.fs-link { margin-left: auto; font-size: 12px; color: var(--accent-ink); text-decoration: none; font-weight: 600; }
+.fs-link { margin-left: auto; font-size: 13.5px; color: var(--accent-ink); text-decoration: none; font-weight: 600; }
 .fs-link:hover { text-decoration: underline; }
 .fs-hard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
 .fs-hard-card {
@@ -208,21 +208,21 @@ async function syncNow() {
 .fs-hard-head { display: flex; align-items: center; gap: 8px; }
 .fs-hard-head input { width: auto; accent-color: var(--accent); }
 .fs-hard-head strong { font-size: 13px; color: var(--ink); }
-.fs-state { margin-left: auto; font-style: normal; font-size: 11px; padding: 2px 7px; border-radius: 999px; background: var(--surface-2); color: var(--muted); }
+.fs-state { margin-left: auto; font-style: normal; font-size: 13px; padding: 2px 7px; border-radius: 999px; background: var(--surface-2); color: var(--muted); }
 .fs-hard-card.on .fs-state { background: var(--ok-bg); color: var(--ok); }
-.fs-hard-card p { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.5; }
-.fs-hard-card code { font-size: 10.5px; color: var(--faint); font-family: "IBM Plex Mono", monospace; }
+.fs-hard-card p { margin: 0; font-size: 13.5px; color: var(--muted); line-height: 1.5; }
+.fs-hard-card code { font-size: 12.5px; color: var(--faint); font-family: var(--font-mono); }
 .fs-interval-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
 .fs-presets { display: flex; flex-wrap: wrap; gap: 6px; }
 .fs-preset {
   padding: 5px 11px; border-radius: 999px; border: 1px solid var(--border);
-  background: var(--bg); color: var(--muted); font-size: 12px; cursor: pointer;
+  background: var(--bg); color: var(--muted); font-size: 13.5px; cursor: pointer;
 }
 .fs-preset.active { background: var(--accent-bg); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
 .fs-sync-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.fs-key-pill { font-size: 11px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); background: var(--bg); }
+.fs-key-pill { font-size: 13px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); background: var(--bg); }
 .fs-key-pill.on { color: var(--ok); border-color: color-mix(in oklch, var(--ok) 35%, transparent); background: var(--ok-bg); }
-.fs-sync-note { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--info-bg); color: var(--ink); font-size: 12px; }
+.fs-sync-note { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--info-bg); color: var(--ink); font-size: 13.5px; }
 .fs-modules-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; }
 .fs-mod-item {
   display: flex; align-items: flex-start; gap: 8px; padding: 9px 10px;
@@ -231,5 +231,5 @@ async function syncNow() {
 .fs-mod-item input { width: auto; margin-top: 2px; accent-color: var(--accent); }
 .fs-mod-item span { display: flex; flex-direction: column; gap: 2px; }
 .fs-mod-item strong { font-size: 12.5px; color: var(--ink); }
-.fs-mod-item small { font-size: 11px; color: var(--muted); line-height: 1.4; }
+.fs-mod-item small { font-size: 13px; color: var(--muted); line-height: 1.4; }
 </style>

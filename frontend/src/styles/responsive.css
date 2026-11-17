@@ -31,7 +31,7 @@
   }
   .github-link:active { transform: rotate(360deg); }
   .readonly-badge {
-    padding: 4px 8px; font-size: 10px;
+    padding: 4px 8px; font-size: 12.5px;
     max-width: 52px; text-align: center; line-height: 1.2;
   }
 
@@ -197,12 +197,12 @@
   }
 
   /* 指挥横幅：窄屏收紧进度环与按钮 */
-  .eyebrow { font-size: 9.5px; margin-bottom: 6px; letter-spacing: .12em; }
+  .eyebrow { font-size: 12.5px; margin-bottom: 6px; letter-spacing: .12em; }
   .progress-ring {
     width: 76px; height: 76px; border-radius: 50%;
   }
   .progress-ring b { font-size: 19px; }
-  .progress-ring span { font-size: 10px; }
+  .progress-ring span { font-size: 12.5px; }
   .mission-actions {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 6px;
@@ -222,7 +222,7 @@
     margin-bottom: 13px;
   }
   .collab-title { gap: 7px 8px; }
-  .collab-title small { flex: 1 1 100%; font-size: 11.5px; line-height: 1.45; }
+  .collab-title small { flex: 1 1 100%; font-size: 13px; line-height: 1.45; }
   /* 汇总数字独占一行，等分成条，扫一眼即可 */
   .collab-summary {
     gap: 8px;
@@ -237,7 +237,7 @@
     border-radius: 10px;
     background: var(--bg);
     border: 1px solid var(--border-soft);
-    font-size: 11px;
+    font-size: 13px;
   }
   .collab-summary i { font-size: 16px; }
   /* 阶段：纵向堆叠，用竖直 rail 串起来（连接线延伸到下一阶段） */
@@ -245,18 +245,18 @@
   .collab-phase { padding-right: 0; padding-bottom: 4px; }
   .collab-phase:last-child { padding-bottom: 0; }
   .phase-body { padding-bottom: 8px; }
-  .phase-desc { font-size: 11px; margin-bottom: 8px; }
+  .phase-desc { font-size: 13px; margin-bottom: 8px; }
   .phase-n { margin-left: 0; }
   .phase-routes { gap: 5px; max-height: min(200px, 32vh); }
-  .route-chip { padding: 8px 10px; font-size: 12px; min-height: 38px; }
+  .route-chip { padding: 8px 10px; font-size: 13.5px; min-height: 38px; }
   .route-status-dot { width: 8px; height: 8px; }
 
   /* 全宽工作区：手机端纵向堆叠 */
   .board-body { flex-direction: column; gap: 10px; }
   .v-topnav { gap: 6px; padding: 5px; }
-  .v-topnav button { padding: 9px 6px; font-size: 12px; gap: 6px; }
+  .v-topnav button { padding: 9px 6px; font-size: 13.5px; gap: 6px; }
   .v-subtabs { gap: 6px; padding: 5px; }
-  .v-subtabs button { padding: 8px 6px; font-size: 12px; gap: 6px; }
+  .v-subtabs button { padding: 8px 6px; font-size: 13.5px; gap: 6px; }
 
   .v-search {
     display: grid;
@@ -266,9 +266,9 @@
     border-radius: 14px;
   }
   .v-search .search-box { grid-column: 1 / -1; min-height: 44px; }
-  .v-search .search-stat { min-width: 0; text-align: left; font-size: 11.5px; }
+  .v-search .search-stat { min-width: 0; text-align: left; font-size: 13px; }
   .v-search .search-page-btn,
-  .v-search .search-sort { min-height: 38px; font-size: 12px; }
+  .v-search .search-sort { min-height: 38px; font-size: 13.5px; }
   .v-search .search-sort { justify-self: end; }
 
   /* 看板：单面板切换 */
@@ -300,7 +300,7 @@
   .board-mobile-switch button i {
     font-style: normal;
     margin-left: 5px;
-    font-size: 11px;
+    font-size: 13px;
     background: var(--surface-2);
     padding: 1px 6px;
     border-radius: 5px;
@@ -324,7 +324,7 @@
   .wc-meta { white-space: normal; }
   .wc-action {
     white-space: normal; overflow-wrap: anywhere;
-    font-size: 11px; line-height: 1.45;
+    font-size: 13px; line-height: 1.45;
   }
 
   .ev {
@@ -335,11 +335,11 @@
     padding: 8px 6px;
   }
   .ev-icon { grid-row: 1 / 3; align-self: start; padding-top: 2px; }
-  .ev-agent { grid-column: 2; font-size: 11px; min-width: 0; }
-  .ev-msg { grid-column: 2; font-size: 12px; line-height: 1.45; }
+  .ev-agent { grid-column: 2; font-size: 13px; min-width: 0; }
+  .ev-msg { grid-column: 2; font-size: 13.5px; line-height: 1.45; }
   .ev-time {
     grid-column: 2;
-    font-size: 10px;
+    font-size: 12.5px;
     justify-self: start;
     margin-top: 2px;
   }
@@ -355,7 +355,7 @@
   }
   .result-row:active { background: var(--surface-2); transform: none; }
   .rr-title { white-space: normal; line-height: 1.35; font-size: 13.5px; }
-  .rr-main .meta { overflow-wrap: anywhere; font-size: 12px; }
+  .rr-main .meta { overflow-wrap: anywhere; font-size: 13.5px; }
   .score { min-width: 36px; padding: 6px 8px; font-size: 13px; }
 
   .submit-toolbar {
@@ -417,7 +417,7 @@
     white-space: normal;
     overflow-wrap: anywhere;
     border-radius: 10px;
-    font-size: 12px;
+    font-size: 13.5px;
   }
   .markdown-body {
     padding: 14px 12px;
@@ -438,7 +438,7 @@
   .report-sec { padding: 13px 14px; border-radius: 14px; }
   .chain-node { width: 190px; min-width: 190px; }
   .chain-arrow { margin: 0 5px; }
-  .code-block { max-height: 260px; font-size: 11.5px; }
+  .code-block { max-height: 260px; font-size: 13px; }
   .step-list li { padding: 9px 10px; }
   .evid summary { padding: 9px 12px; }
 

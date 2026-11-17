@@ -49,7 +49,7 @@
 }
 .create-modal-title p {
   margin-top: 3px;
-  font-size: 12px;
+  font-size: 13.5px;
   color: var(--muted);
 }
 .create-modal-close {
@@ -209,7 +209,7 @@
 }
 .wizard-step:not(.on) .ws-txt b { color: var(--muted); }
 .ws-txt small {
-  font-size: 10.5px;
+  font-size: 12.5px;
   color: var(--faint);
   white-space: nowrap;
   overflow: hidden;
@@ -224,7 +224,7 @@
   justify-content: space-between;
   gap: 12px;
   padding: 7px 22px;
-  font-size: 12px;
+  font-size: 13.5px;
   color: var(--accent2-ink);
   background: var(--accent2-bg);
   border-bottom: 1px solid var(--border);
@@ -298,7 +298,7 @@
   letter-spacing: .3px;
 }
 .create-block-head small {
-  font-size: 11px;
+  font-size: 13px;
   color: var(--faint);
 }
 .mt-tools {
@@ -308,7 +308,7 @@
   margin-left: auto;
 }
 .mt-tools .linkish {
-  font-size: 11px;
+  font-size: 13px;
   color: var(--accent2-ink);
   background: none;
   border: none;
@@ -337,7 +337,7 @@
   gap: 8px;
 }
 .create-field > span {
-  font-size: 12px;
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--muted);
 }
@@ -355,7 +355,7 @@
 }
 .create-seg button {
   padding: 6px 14px;
-  font-size: 12px;
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--muted);
   background: transparent;
@@ -449,11 +449,11 @@
   min-width: 0;
   white-space: normal;   /* 标题完整显示，过窄时换行而不是省略号截断 */
 }
-.create-source small { font-size: 11px; color: var(--faint); line-height: 1.4; }
+.create-source small { font-size: 13px; color: var(--faint); line-height: 1.4; }
 .cs-tag {
   flex: none;   /* 标签不收缩，保证"广撒网"等标签完整显示 */
   font-style: normal;
-  font-size: 9.5px;
+  font-size: 12.5px;
   font-weight: 700;
   line-height: 1;
   color: var(--accent2-ink);
@@ -464,7 +464,7 @@
   vertical-align: 1px;
 }
 .cs-scene {
-  font-size: 10.5px;
+  font-size: 12.5px;
   color: var(--faint);
   line-height: 1.5;
   margin-top: 2px;
@@ -479,13 +479,13 @@
   margin: 2px 0 10px;
 }
 .qt-label {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--faint);
   margin-right: 2px;
 }
 .qt-chip {
-  font-size: 11px;
+  font-size: 13px;
   color: var(--accent2-ink);
   background: var(--accent2-bg);
   border: 1px solid transparent;
@@ -502,7 +502,7 @@
   box-shadow: var(--glow-accent);
 }
 .qt-group {
-  font-size: 10px;
+  font-size: 12.5px;
   font-weight: 700;
   letter-spacing: .3px;
   color: var(--faint);
@@ -530,13 +530,13 @@
   border: 1px solid var(--border);
 }
 .fs-label {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--faint);
   margin-right: 2px;
 }
 .fs-chip {
-  font-size: 11px;
+  font-size: 13px;
   color: var(--accent-ink);
   background: var(--accent-bg);
   border: 1px solid transparent;
@@ -547,8 +547,8 @@
 }
 .fs-chip em {
   font-style: normal;
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 9.5px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
   color: var(--muted);
   margin-left: 4px;
 }
@@ -556,7 +556,7 @@
 
 /* 语法不匹配警告 */
 .qp-mismatch {
-  font-size: 11.5px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--warn);
   background: color-mix(in oklch, var(--warn) 10%, transparent);
@@ -578,7 +578,7 @@
   margin-top: 10px;
 }
 .qp-summary {
-  font-size: 12px;
+  font-size: 13.5px;
   color: var(--ink);
   line-height: 1.6;
 }
@@ -588,8 +588,8 @@
   gap: 6px;
 }
 .qp-field {
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 10.5px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
   color: var(--accent-ink);
   background: var(--accent-bg);
   padding: 2px 7px;
@@ -605,12 +605,12 @@
   flex-wrap: wrap;
   align-items: baseline;
   gap: 6px 10px;
-  font-size: 11.5px;
+  font-size: 13px;
 }
 .qp-kw b {
   flex: none;
   min-width: 44px;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--accent2-ink);
   background: var(--accent2-bg);
@@ -619,28 +619,28 @@
   text-align: center;
 }
 .qp-kw span {
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: 13px;
   color: var(--muted);
   word-break: break-all;
 }
 
 /* 辅助文本 */
 .create-mini {
-  font-size: 11.5px;
+  font-size: 13px;
   color: var(--faint);
   line-height: 1.6;
 }
 .create-mini code, .field-hint code {
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: 13px;
   color: var(--accent2-ink);
   background: var(--accent2-bg);
   padding: 1px 5px;
   border-radius: 5px;
 }
 .field-hint {
-  font-size: 11.5px;
+  font-size: 13px;
   color: var(--faint);
   line-height: 1.6;
 }
@@ -672,7 +672,7 @@
   border: 1px solid color-mix(in oklch, var(--accent) 28%, var(--border));
 }
 .create-recap > span {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 800;
   letter-spacing: 1.5px;
   color: var(--accent-ink);
@@ -695,7 +695,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  font-size: 12px;
+  font-size: 13.5px;
 }
 .create-recap dt { color: var(--faint); }
 .create-recap dd {
@@ -705,7 +705,7 @@
   font-variant-numeric: tabular-nums;
 }
 .create-missing {
-  font-size: 12px;
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--warn);
   background: var(--warn-bg);
@@ -733,7 +733,7 @@
   align-items: center;
 }
 .dock-info p {
-  font-size: 12px;
+  font-size: 13.5px;
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -767,7 +767,7 @@
 }
 .auth-bindings-head strong { font-size: 12.5px; color: var(--ink); }
 .linkish {
-  font-size: 12px;
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--accent-ink);
   background: none;
@@ -799,7 +799,7 @@
 }
 .auth-target-label {
   flex: none;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--muted);
   letter-spacing: .3px;
@@ -809,8 +809,8 @@
   flex: 1;
   min-width: 0;
   padding: 7px 10px;
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: 13.5px;
   color: var(--ink);
   background: var(--bg);
   border: 1px solid var(--border);
@@ -824,7 +824,7 @@
 }
 .auth-target-all {
   flex: none;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--accent-ink);
   background: var(--accent-bg);
@@ -842,7 +842,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 12px;
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--muted);
 }
@@ -872,8 +872,8 @@
   gap: 6px;
   width: 100%;
   padding: 7px 10px;
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: 13.5px;
   text-align: left;
   color: var(--ink);
   background: none;
@@ -901,7 +901,7 @@
   flex: none;
   margin-left: auto;
   font-style: normal;
-  font-size: 10px;
+  font-size: 12.5px;
   font-weight: 700;
   color: var(--muted);
   border: 1px solid var(--border);
@@ -930,7 +930,7 @@
 }
 .icon-btn:hover { color: var(--danger); border-color: color-mix(in oklch, var(--danger) 45%, var(--border)); background: var(--danger-bg); }
 .auth-binding-row details summary {
-  font-size: 12px;
+  font-size: 13.5px;
   color: var(--accent2-ink);
   cursor: pointer;
   user-select: none;
@@ -939,7 +939,7 @@
   margin-left: 6px;
   padding: 1px 8px;
   font-style: normal;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--accent-ink);
   background: var(--accent-bg);
@@ -965,7 +965,7 @@
 }
 .auth-kind {
   font-style: normal;
-  font-size: 10.5px;
+  font-size: 12.5px;
   font-weight: 700;
   line-height: 1;
   padding: 3px 7px;
@@ -994,8 +994,8 @@
 .auth-import textarea {
   width: 100%;
   padding: 10px 12px;
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: 13.5px;
   line-height: 1.6;
   color: var(--ink);
   background: var(--bg);
@@ -1012,7 +1012,7 @@
 .auth-import-notice {
   margin: 0;
   padding: 6px 10px;
-  font-size: 12px;
+  font-size: 13.5px;
   color: var(--ok);
   background: var(--ok-bg);
   border: 1px solid color-mix(in oklch, var(--ok) 40%, var(--border));
@@ -1034,7 +1034,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 12px;
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--muted);
 }
@@ -1066,7 +1066,7 @@
 .create-layout textarea {
   resize: vertical;
   line-height: 1.6;
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 12.5px;
 }
 .create-layout input::placeholder,
@@ -1083,7 +1083,7 @@
   border: 1px dashed var(--border-strong);
 }
 .src-info-desc {
-  font-size: 12px;
+  font-size: 13.5px;
   color: var(--muted);
   line-height: 1.6;
 }
@@ -1096,13 +1096,13 @@
   display: flex;
   align-items: baseline;
   gap: 10px;
-  font-size: 11.5px;
+  font-size: 13px;
   line-height: 1.55;
 }
 .src-info-item b {
   flex: none;
   min-width: 56px;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--accent2-ink);
   background: var(--accent2-bg);
@@ -1126,7 +1126,7 @@
   gap: 8px;
 }
 .vuln-group-title {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
   letter-spacing: .5px;
   color: var(--faint);
@@ -1134,7 +1134,7 @@
 .vuln-group + .vuln-group { margin-top: 2px; }
 .vuln-hot {
   font-style: normal;
-  font-size: 9.5px;
+  font-size: 12.5px;
   font-weight: 700;
   line-height: 1;
   color: var(--on-accent);
@@ -1162,15 +1162,15 @@
   gap: 10px;
 }
 .tp-head b {
-  font-size: 12px;
+  font-size: 13.5px;
   font-weight: 700;
   color: var(--accent-ink);
 }
-.tp-loading { font-size: 11.5px; color: var(--faint); }
-.tp-ok { font-size: 12px; font-weight: 700; color: var(--accent2-ink); }
-.tp-warn { font-size: 12px; font-weight: 700; color: var(--warn); }
+.tp-loading { font-size: 13px; color: var(--faint); }
+.tp-ok { font-size: 13.5px; font-weight: 700; color: var(--accent2-ink); }
+.tp-warn { font-size: 13.5px; font-weight: 700; color: var(--warn); }
 .tp-error {
-  font-size: 11.5px;
+  font-size: 13px;
   color: var(--danger);
   background: var(--danger-bg);
   border: 1px solid color-mix(in oklch, var(--danger) 30%, transparent);
@@ -1181,7 +1181,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px 16px;
-  font-size: 11.5px;
+  font-size: 13px;
   color: var(--muted);
 }
 .tp-stats b { color: var(--ink); font-variant-numeric: tabular-nums; }
@@ -1195,10 +1195,10 @@
   background: var(--warn-bg);
   border: 1px solid color-mix(in oklch, var(--warn) 30%, transparent);
 }
-.tp-ignored b { font-size: 11.5px; color: var(--warn); }
+.tp-ignored b { font-size: 13px; color: var(--warn); }
 .tp-ignored code {
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: 13px;
   color: var(--warn);
   word-break: break-all;
 }
@@ -1216,30 +1216,30 @@
   display: flex;
   align-items: baseline;
   gap: 8px;
-  font-size: 11.5px;
+  font-size: 13px;
 }
 .tp-list code {
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: 13px;
   color: var(--ink);
   word-break: break-all;
 }
 .tp-note {
   flex: none;
-  font-size: 10.5px;
+  font-size: 12.5px;
   color: var(--accent2-ink);
   background: var(--accent2-bg);
   padding: 1px 6px;
   border-radius: 5px;
 }
-.tp-more { font-size: 11px; color: var(--faint); }
+.tp-more { font-size: 13px; color: var(--faint); }
 
 /* ============ 步骤3：规则与运行 ============ */
 /* 额外规则：字数统计 + 快捷规则 chips */
 .rule-count {
   flex: none;
   margin-left: auto;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--faint);
   border: 1px solid var(--border);
@@ -1266,7 +1266,7 @@
   flex: none;
   min-width: 52px;
   padding-top: 6px;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
   letter-spacing: .3px;
   color: var(--faint);
@@ -1280,7 +1280,7 @@
 }
 .rule-chip {
   padding: 5px 11px;
-  font-size: 12px;
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--muted);
   background: var(--surface);
@@ -1313,10 +1313,10 @@
   flex-wrap: wrap;
   gap: 4px 10px;
 }
-.fb-head b { font-size: 12px; font-weight: 700; }
+.fb-head b { font-size: 13.5px; font-weight: 700; }
 .fb-head em {
   font-style: normal;
-  font-size: 10.5px;
+  font-size: 12.5px;
   color: var(--faint);
 }
 .fb-chips {
@@ -1326,7 +1326,7 @@
 }
 .fb-chip {
   font-style: normal;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--danger);
   background: color-mix(in oklch, var(--danger) 12%, transparent);
@@ -1338,10 +1338,10 @@
 .fb-active .fb-head b { color: var(--danger); }
 .fb-idle { border-color: var(--border-soft); }
 .fb-idle .fb-head b { color: var(--muted); }
-.fb-note { font-size: 11px; color: var(--faint); line-height: 1.5; }
-.fb-loading { font-size: 11.5px; color: var(--faint); }
+.fb-note { font-size: 13px; color: var(--faint); line-height: 1.5; }
+.fb-loading { font-size: 13px; color: var(--faint); }
 .fb-error {
-  font-size: 11.5px;
+  font-size: 13px;
   color: var(--danger);
   background: var(--danger-bg);
   border: 1px solid color-mix(in oklch, var(--danger) 30%, transparent);
@@ -1379,7 +1379,7 @@
 .extra-head b { color: var(--ink); }
 .guard-block-head small,
 .extra-head small {
-  font-size: 10.5px;
+  font-size: 12.5px;
   color: var(--faint);
 }
 .guard-grid {
@@ -1393,7 +1393,7 @@
   align-items: center;
   gap: 8px;
   padding: 9px 11px;
-  font-size: 12px;
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--muted);
   background: var(--surface);
@@ -1422,12 +1422,12 @@
 .guard-empty {
   grid-column: 1 / -1;
   margin: 0;
-  font-size: 11.5px;
+  font-size: 13px;
   color: var(--faint);
 }
 .guard-summary {
   margin: 2px 0 8px;
-  font-size: 11px;
+  font-size: 13px;
   color: var(--faint);
 }
 .guard-summary b {
@@ -1443,7 +1443,7 @@
   gap: 4px 10px;
   margin: 10px 0 2px;
   padding: 8px 12px;
-  font-size: 12px;
+  font-size: 13.5px;
   color: var(--muted);
   background: var(--nav);
   border: 1px dashed var(--border-soft);
@@ -1451,8 +1451,8 @@
 }
 .model-inherit span { font-weight: 700; color: var(--faint); }
 .model-inherit code {
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 11.5px;
+  font-family: var(--font-mono);
+  font-size: 13px;
   color: var(--accent-ink);
   background: var(--accent-bg);
   padding: 1px 6px;
@@ -1460,13 +1460,13 @@
 }
 .model-inherit em {
   font-style: normal;
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: 13px;
   color: var(--muted);
   word-break: break-all;
 }
 .model-inherit small {
-  font-size: 10.5px;
+  font-size: 12.5px;
   color: var(--accent2-ink);
   background: var(--accent2-bg);
   padding: 1px 6px;
@@ -1476,7 +1476,7 @@
 /* 模型方案：模式说明 + 单端点测试连接 + 密钥徽标 */
 .model-mode-desc {
   margin: 10px 0 2px;
-  font-size: 12px;
+  font-size: 13.5px;
   color: var(--muted);
   background: var(--nav);
   border: 1px dashed var(--border-soft);
@@ -1493,7 +1493,7 @@
 .key-badge {
   flex: none;
   font-style: normal;
-  font-size: 10px;
+  font-size: 12.5px;
   font-weight: 700;
   color: var(--ok);
   border: 1px solid color-mix(in oklch, var(--ok) 45%, transparent);
@@ -1510,7 +1510,7 @@
 .model-test .ghost-btn {
   flex: none;
   padding: 7px 14px;
-  font-size: 12px;
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--accent-ink);
   background: var(--accent-bg);
@@ -1521,7 +1521,7 @@
 .model-test .ghost-btn:hover:not(:disabled) { box-shadow: var(--glow-accent); }
 .model-test .ghost-btn:disabled { opacity: .6; cursor: wait; }
 .model-test-result {
-  font-size: 12px;
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--muted);
 }
@@ -1533,7 +1533,7 @@
   margin-left: 8px;
   padding: 1px 6px;
   border-radius: 999px;
-  font-size: 10px;
+  font-size: 12.5px;
 }
 .tc-yes { color: var(--ok); background: color-mix(in oklch, var(--ok) 14%, transparent); }
 .tc-no { color: var(--danger); background: color-mix(in oklch, var(--danger) 14%, transparent); }
@@ -1542,7 +1542,7 @@
 .model-avail {
   display: block;
   margin-top: 8px;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--muted);
   line-height: 1.7;
@@ -1551,7 +1551,7 @@
   display: inline-block;
   font-style: normal;
   font-weight: 700;
-  font-size: 11px;
+  font-size: 13px;
   margin: 2px 4px 2px 0;
   padding: 2px 8px;
   border-radius: 999px;
@@ -1567,7 +1567,7 @@
 }
 .model-avail small {
   display: block;
-  font-size: 10px;
+  font-size: 12.5px;
   font-weight: 500;
   color: var(--muted);
   opacity: 0.8;
@@ -1617,7 +1617,7 @@
   color: var(--ink);
 }
 .provider-preset-card small {
-  font-size: 11px;
+  font-size: 13px;
   color: var(--muted);
 }
 .provider-preset-card code {
@@ -1625,8 +1625,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 10.5px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
   color: var(--accent-ink);
   background: var(--accent-bg);
   padding: 1px 6px;
@@ -1639,7 +1639,7 @@
 }
 .preset-tags em {
   font-style: normal;
-  font-size: 10px;
+  font-size: 12.5px;
   font-weight: 700;
   color: var(--muted);
   background: var(--nav);
@@ -1649,7 +1649,7 @@
 }
 .provider-preset-card i {
   font-style: normal;
-  font-size: 10.5px;
+  font-size: 12.5px;
   color: var(--accent2-ink);
   background: var(--accent2-bg);
   border-radius: 5px;
@@ -1664,7 +1664,7 @@
 }
 .wizard-nav .ghost-btn {
   padding: 7px 14px;
-  font-size: 12px;
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--muted);
   background: var(--nav);
@@ -1679,7 +1679,7 @@
   flex-wrap: wrap;
   gap: 4px 10px;
   padding: 8px 12px;
-  font-size: 12px;
+  font-size: 13.5px;
   color: var(--muted);
   background: var(--nav);
   border: 1px dashed var(--border-soft);
@@ -1688,8 +1688,8 @@
 .wizard-recap span { font-weight: 700; color: var(--faint); }
 .wizard-recap b { color: var(--ink); }
 .wizard-recap code {
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: 13px;
   color: var(--accent-ink);
   background: var(--accent-bg);
   padding: 1px 6px;
@@ -1704,7 +1704,7 @@
 }
 .backup-models-title {
   font-weight: 600;
-  font-size: 12px;
+  font-size: 13.5px;
   color: var(--ink);
 }
 .backup-models-chips {
@@ -1721,8 +1721,8 @@
   border: 1px solid var(--border-soft);
   border-radius: 999px;
   background: var(--surface-2);
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 11.5px;
+  font-family: var(--font-mono);
+  font-size: 13px;
   color: var(--ink);
 }
 .backup-chip-remove {
@@ -1737,7 +1737,7 @@
 .backup-chip-remove:hover { color: var(--danger, #e5484d); }
 .backup-models-empty {
   color: var(--faint);
-  font-size: 11.5px;
+  font-size: 13px;
 }
 .backup-models-add {
   display: flex;
@@ -1753,7 +1753,7 @@
   flex: 0 0 auto;
   white-space: nowrap;
   padding: 6px 10px;
-  font-size: 12px;
+  font-size: 13.5px;
 }
 
 /* temperature 智能推荐 */
@@ -1774,7 +1774,7 @@
 .temp-recommend {
   flex: none;
   padding: 6px 10px;
-  font-size: 12px;
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--accent-ink);
   background: var(--accent-bg);
@@ -1791,7 +1791,7 @@
   flex-wrap: wrap;
   gap: 6px 10px;
   padding: 7px 10px;
-  font-size: 11px;
+  font-size: 13px;
   color: var(--muted);
   background: var(--surface-2);
   border: 1px dashed var(--border-strong);
@@ -1813,7 +1813,7 @@
 }
 .tr-role {
   padding: 2px 8px;
-  font-size: 10.5px;
+  font-size: 12.5px;
   font-weight: 600;
   color: var(--muted);
   background: none;
@@ -1826,12 +1826,12 @@
   background: var(--accent-bg);
 }
 .tr-value { font-weight: 700; color: var(--ink); }
-.tr-value b { color: var(--accent); font-size: 12px; }
+.tr-value b { color: var(--accent); font-size: 13.5px; }
 .tr-reason { color: var(--muted); }
 .tr-apply {
   margin-left: auto;
   padding: 3px 10px;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--on-accent);
   background: var(--accent);
@@ -1917,8 +1917,8 @@
   .wizard-steps { margin: 8px 12px 0; padding: 8px 10px 6px; gap: 2px; }
   .wizard-step { padding: 0 8px 6px; gap: 5px; }
   .wizard-step::before { top: 12px; left: 50%; right: -50%; }
-  .ws-dot { width: 24px; height: 24px; font-size: 12px; }
-  .ws-txt b { font-size: 12px; }
+  .ws-dot { width: 24px; height: 24px; font-size: 13.5px; }
+  .ws-txt b { font-size: 13.5px; }
   .create-dock { padding: 10px 14px; }
   .dock-info p { display: none; }
   .dock-actions { width: 100%; justify-content: flex-end; }

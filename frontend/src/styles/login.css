@@ -1,5 +1,5 @@
 /* ============================================================
-   知蠹 Riddle — Solaris & Obsidian Studio / login.css
+   知蠹 Riddle — Modern Security Studio / login.css
    ============================================================ */
 
 .login-page {
@@ -16,7 +16,7 @@
 .login-shell {
   width: min(1040px, 100%);
   display: grid;
-  grid-template-columns: 1.25fr 0.95fr;
+  grid-template-columns: 1.2fr 0.95fr;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -25,15 +25,15 @@
   animation: modal-in .28s var(--ease-out);
 }
 
-/* 左侧：Obsidian 建筑架构面板 */
+/* 左侧：架构导览面板 */
 .login-brief {
-  padding: 34px 36px;
-  background: var(--rail-bg, #121417);
-  color: var(--rail-ink, #F3F4F6);
-  border-right: 1px solid var(--rail-border, rgba(255, 255, 255, 0.1));
+  padding: 36px 38px;
+  background: var(--surface-2);
+  color: var(--ink);
+  border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 20px;
 }
 
 .brief-head {
@@ -42,11 +42,11 @@
   gap: 12px;
 }
 .login-logo {
-  width: 46px;
-  height: 46px;
-  border-radius: 10px;
-  background: var(--rail-surface, #1A1D22);
-  border: 1px solid var(--rail-border, rgba(255, 255, 255, 0.12));
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
   display: grid;
   place-items: center;
 }
@@ -58,26 +58,23 @@
 }
 .brief-head b {
   display: block;
-  font-size: 16px;
-  letter-spacing: .04em;
-  color: var(--rail-ink, #F3F4F6);
+  font-size: 18px;
+  color: var(--ink);
 }
 .brief-head small {
-  font-family: var(--font-mono, "IBM Plex Mono", monospace);
-  font-size: 10.5px;
-  color: var(--accent, #E04826);
-  letter-spacing: .12em;
+  font-size: 12.5px;
+  color: var(--muted);
 }
 
 .brief-title {
-  font-size: 24px;
-  line-height: 1.3;
+  font-size: 26px;
+  line-height: 1.35;
   letter-spacing: -.02em;
-  color: var(--rail-ink, #F3F4F6);
+  color: var(--ink);
 }
 .brief-sub {
-  font-size: 13px;
-  color: var(--rail-muted, #9CA3AF);
+  font-size: 14.5px;
+  color: var(--muted);
   line-height: 1.6;
 }
 
@@ -88,95 +85,92 @@
 }
 .pillar-item {
   display: grid;
-  grid-template-columns: 74px 1fr;
+  grid-template-columns: 78px 1fr;
   gap: 12px;
   align-items: start;
-  padding: 10px 12px;
+  padding: 12px 14px;
   border-radius: var(--radius);
-  background: var(--rail-surface, #1A1D22);
-  border: 1px solid var(--rail-border, rgba(255, 255, 255, 0.08));
+  background: var(--surface);
+  border: 1px solid var(--border);
 }
 .pillar-tag {
-  font-family: var(--font-mono, "IBM Plex Mono", monospace);
-  font-size: 10px;
+  font-family: var(--font-mono);
+  font-size: 13.5px;
   font-weight: 700;
   text-align: center;
   padding: 3px 6px;
-  border-radius: 4px;
-  color: #fff;
-  background: color-mix(in srgb, var(--accent, #E04826) 85%, transparent);
-  letter-spacing: .08em;
+  border-radius: 6px;
+  color: var(--accent-ink);
+  background: var(--accent-bg);
 }
 .pillar-item strong {
   display: block;
-  font-size: 13px;
-  color: var(--rail-ink, #F3F4F6);
-  margin-bottom: 2px;
+  font-size: 14px;
+  color: var(--ink);
+  margin-bottom: 3px;
 }
 .pillar-item p {
-  font-size: 11.5px;
-  color: var(--rail-muted, #9CA3AF);
-  line-height: 1.45;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.5;
   margin: 0;
 }
 
 .brief-foot {
   margin-top: auto;
-  padding-top: 12px;
-  border-top: 1px solid var(--rail-border, rgba(255, 255, 255, 0.1));
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
   display: flex;
   gap: 8px;
-  font-size: 11.5px;
-  color: var(--rail-muted, #9CA3AF);
+  font-size: 13px;
+  color: var(--muted);
 }
-.brief-foot b { color: var(--rail-ink, #F3F4F6); }
+.brief-foot b { color: var(--ink); }
 
-/* 右侧：Solaris 纸张认证区 */
+/* 右侧：认证卡片 */
 .login-card {
-  padding: 38px 34px;
+  padding: 40px 36px;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 20px;
+  gap: 22px;
   background: var(--surface);
   color: var(--ink);
 }
 .login-kicker {
-  font-family: var(--font-mono, "IBM Plex Mono", monospace);
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: .16em;
-  color: var(--accent2);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--accent2-ink);
   display: block;
   margin-bottom: 6px;
 }
 .login-title h2 {
-  font-size: 21px;
+  font-size: 22px;
   color: var(--ink);
   margin-bottom: 6px;
 }
 .login-title p {
-  font-size: 12.5px;
+  font-size: 14px;
   color: var(--muted);
-  line-height: 1.5;
+  line-height: 1.55;
 }
 
-.login-form { display: flex; flex-direction: column; gap: 14px; }
-.login-field { display: flex; flex-direction: column; gap: 7px; }
+.login-form { display: flex; flex-direction: column; gap: 16px; }
+.login-field { display: flex; flex-direction: column; gap: 8px; }
 .login-field-label {
-  font-size: 11.5px;
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--ink);
 }
 .login-input-wrap { position: relative; display: flex; align-items: center; }
 .login-input {
   width: 100%;
-  padding: 11px 42px 11px 13px;
-  font-family: var(--font-mono, "IBM Plex Mono", monospace);
-  font-size: 13px;
-  background: var(--bg-soft);
+  padding: 11px 42px 11px 14px;
+  font-family: var(--font-mono);
+  font-size: 14.5px;
+  background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 8px;
   color: var(--ink);
 }
 .login-input:focus {
@@ -186,30 +180,30 @@
 .login-eye {
   position: absolute;
   right: 6px;
-  width: 32px; height: 32px;
+  width: 34px; height: 34px;
   display: grid; place-items: center;
   border: none; background: transparent;
   color: var(--muted);
   cursor: pointer;
 }
-.login-eye:hover { color: var(--ink); background: var(--bg-soft); border-radius: 4px; }
+.login-eye:hover { color: var(--ink); background: var(--bg-soft); border-radius: 6px; }
 
 .login-error {
-  font-size: 12.5px;
+  font-size: 13.5px;
   color: var(--danger);
-  padding: 9px 12px;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--danger-bg);
   border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
 }
 .login-submit {
   width: 100%;
   min-height: 44px;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
 }
 .login-hint {
-  font-size: 11.5px;
+  font-size: 13px;
   color: var(--muted);
   text-align: center;
 }
@@ -217,22 +211,22 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
-  padding: 16px;
+  padding: 18px;
   border-radius: var(--radius);
   background: var(--bg-soft);
   border: 1px solid var(--border);
 }
 .login-noauth-ico {
-  width: 36px; height: 36px;
+  width: 38px; height: 38px;
   border-radius: 8px;
   display: grid; place-items: center;
-  background: color-mix(in srgb, var(--ok) 15%, transparent);
+  background: var(--ok-bg);
   color: var(--ok);
   font-weight: 700;
 }
-.login-noauth p { font-size: 13px; color: var(--muted); margin: 0; }
+.login-noauth p { font-size: 14px; color: var(--muted); margin: 0; }
 .login-spinner {
-  width: 15px; height: 15px; border-radius: 50%;
+  width: 16px; height: 16px; border-radius: 50%;
   border: 2px solid color-mix(in currentColor 30%, transparent);
   border-top-color: currentColor;
   animation: spin .7s linear infinite;
