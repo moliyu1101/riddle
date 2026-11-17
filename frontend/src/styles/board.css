@@ -3007,6 +3007,23 @@
 .rc-ops-btns .deep { background: var(--accent-bg); border-color: color-mix(in oklch, var(--accent) 40%, transparent); color: var(--accent-ink); }
 .rc-ops-btns .deep:hover { background: var(--accent); color: var(--on-accent); }
 .rc-ops .deepen-box { border-top: 1px dashed var(--border); }
+.rc-ops-distill {
+  padding: 0 14px 12px;
+  display: grid;
+}
+.rc-ops-distill .distill {
+  padding: 8px 12px;
+  border-radius: 9px;
+  border: 1px solid color-mix(in oklch, var(--info) 38%, transparent);
+  background: color-mix(in oklch, var(--info) 10%, transparent);
+  color: var(--info);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform .1s, background .15s, color .15s, border-color .15s;
+}
+.rc-ops-distill .distill:hover:not(:disabled) { background: var(--info); color: var(--on-accent); transform: translateY(-1px); }
+.rc-ops-distill .distill:disabled { opacity: .6; cursor: not-allowed; }
 
 /* 版本历史弹层 */
 .rc-versions {

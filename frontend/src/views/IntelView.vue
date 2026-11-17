@@ -273,6 +273,7 @@ function kbCleanTitle(row) {
   return s || "未命名知识";
 }
 function kbOrigin(row) {
+  if (row?.origin === "distilled") return "⚡ 实战蒸馏";
   return row?.origin === "seed" ? "种子库导入" : "用户沉淀";
 }
 
@@ -685,7 +686,19 @@ onActivated(() => {
             <span class="ir-conf" :class="row.confidence">
               {{ row.confidence === 'verified' ? '✓ 已验证' : '· 疑似' }}
             </span>
-            <span class="ir-hit" v-if="row.hit_count > 1" title="被复用次数">×{{ row.hit_count }} 复用</span>
+            <div class="ir-metrics">
+              <span class="ir-utility" title="综合验证状态、命中转化率与人工复审反馈的实战效用分">
+                效用 {{ Number(row.utility_score || 0).toFixed(1) }}
+              </span>
+              <span
+                class="ir-conv"
+                v-if="(row.converted_count || 0) > 0"
+                title="注入给 Worker 后实际促成出洞的转化次数 / 注入次数"
+              >
+                转化 {{ row.converted_count }}/{{ row.injected_count || row.converted_count }}
+              </span>
+              <span class="ir-hit" v-if="row.hit_count > 1" title="被复用次数">×{{ row.hit_count }} 复用</span>
+            </div>
             <small class="ir-src">{{ row.source_host || '未知来源' }}</small>
             <time>{{ fmtTime(row.last_seen) }}</time>
           </div>

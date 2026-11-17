@@ -497,6 +497,14 @@ class PersistenceMixin:
                 payload={"key": "系统类型", "value": ", ".join(fps)},
                 summary="", source_host=host, source_task_id=src_task, confidence="likely",
             )
+        # 为命中当前目标且曾注入过的情报累计转化计数，形成效用闭环
+        conv_fb: list[str] = []
+        for f in findings or []:
+            if isinstance(f, dict):
+                conv_fb.extend(intel_lib.resolve_lesson_keys(f))
+        await intel_lib.record_intel_conversion(
+            session, root, fps, fallback_keys=conv_fb,
+        )
 
     async def _persist_worker_result(self, task_id: str, target_id: str, result: dict) -> None:
         async with SessionLocal() as session:

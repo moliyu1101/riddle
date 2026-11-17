@@ -9,8 +9,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.intel import intel_utility_score
 from app.agents.intel_curator import curate_intel
-from app.agents.knowledge import clear_kb_cache, refresh_kb_cache, sync_kb_from_files
+from app.agents.knowledge import (
+    clear_kb_cache,
+    distill_finding_to_kb,
+    refresh_kb_cache,
+    sync_kb_from_files,
+)
 from app.db.models import Intel, to_cst_iso
 from app.db.session import get_session
 
@@ -22,16 +28,21 @@ _KINDS = _INTEL_KINDS + ("knowledge",)
 
 
 def _intel_to_dict(it: Intel) -> dict:
+    pl = it.payload or {}
     return {
         "id": it.id,
         "kind": it.kind,
         "match_key": it.match_key,
-        "payload": it.payload or {},
+        "payload": pl,
         "summary": it.summary or "",
         "source_host": it.source_host or "",
         "source_task_id": it.source_task_id or "",
         "confidence": it.confidence or "likely",
         "hit_count": it.hit_count or 1,
+        "utility_score": round(intel_utility_score(it), 2),
+        "injected_count": int(pl.get("injected_count") or 0),
+        "converted_count": int(pl.get("converted_count") or 0),
+        "rejected_count": int(pl.get("rejected_count") or 0),
         "first_seen": to_cst_iso(it.first_seen),
         "last_seen": to_cst_iso(it.last_seen),
     }
@@ -283,6 +294,25 @@ async def sync_knowledge(session: AsyncSession = Depends(get_session)):
     result = await sync_kb_from_files(session)
     await refresh_kb_cache(session)
     return result
+
+
+@router.post("/knowledge/distill/{finding_id}")
+async def distill_knowledge_from_finding(
+    finding_id: str,
+    session: AsyncSession = Depends(get_session),
+):
+    """将一条实战漏洞（含人工编辑与复审备注）脱敏蒸馏为可复用的知识库篇目。"""
+    try:
+        item = await distill_finding_to_kb(session, finding_id, commit=True)
+    except ValueError:
+        raise HTTPException(404, "漏洞不存在")
+    return {
+        "ok": True,
+        "id": item["id"],
+        "name": item["name"],
+        "match_key": item["match_key"],
+        "item": item,
+    }
 
 
 @router.get("/knowledge/{knowledge_id}")

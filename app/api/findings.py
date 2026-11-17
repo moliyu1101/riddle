@@ -1817,6 +1817,7 @@ async def user_review(finding_id: str, req: UserReviewRequest,
         elif req.user_notes is not None and req.user_edits is None and req.user_severity is None:
             note = "补充人工复审备注"
         await _snapshot_report_version(session, f, r, source="user_edit", note=note)
+    auto_distilled = False
     if req.user_status in ("passed", "rejected") and f is not None:
         try:
             from app.agents.intel import apply_human_review_feedback
@@ -1831,7 +1832,24 @@ async def user_review(finding_id: str, req: UserReviewRequest,
             )
         except Exception:
             pass
+        if req.user_status == "passed":
+            eff_sev = (req.user_severity or r.user_severity or r.severity_final or f.severity_claimed or "").strip().lower()
+            if eff_sev in ("critical", "high", "严重", "高危"):
+                try:
+                    from app.agents.knowledge import distill_finding_to_kb
+
+                    await distill_finding_to_kb(session, f.id, commit=False)
+                    auto_distilled = True
+                except Exception:
+                    pass
     await session.commit()
+    if auto_distilled:
+        try:
+            from app.agents.knowledge import refresh_kb_cache
+
+            await refresh_kb_cache(session)
+        except Exception:
+            pass
     killsweep_triggered = False
     if trigger_killsweep:
         # 只有人工复审通过才启动通杀 Hunter；AI accepted 只是进入复审队列。

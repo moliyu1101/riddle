@@ -376,6 +376,7 @@ export const api = {
   knowledgeCreate: (body) => req("POST", "/api/intel/knowledge", body),
   knowledgeUpdate: (id, body) => req("PUT", `/api/intel/knowledge/${id}`, body),
   knowledgeSync: () => req("POST", "/api/intel/knowledge/sync"),
+  distillFindingToKb: (findingId) => req("POST", `/api/intel/knowledge/distill/${encodeURIComponent(findingId)}`),
   // 全局漏洞库
   vulnStats: () => req("GET", "/api/vulns/stats"),
   vulns: (submitted, severity, q, opts = {}) =>

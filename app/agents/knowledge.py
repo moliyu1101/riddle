@@ -23,13 +23,15 @@ import hashlib
 import os
 import re
 import time
-from typing import Any
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
+from urllib.parse import urlparse
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Intel
+from app.db.models import Finding, Intel, Review, to_cst_iso
 
 # ============ 路径 ============
 # 项目根（knowledge/ 与 app/ 同层）
@@ -373,9 +375,14 @@ async def lookup_kb(
             continue
         name = (it.match_key or "").lower()
         keyword = (pl.get("keyword") or "").lower()
+        kw_tokens = {tok for tok in re.split(r"[\s,|]+", keyword) if tok}
         score = 0
         if name in alias_names or keyword in alias_names:
             score += 100
+        elif kw_tokens & alias_names:
+            score += 80
+        elif any(t.lower() in keyword for t in terms if len(t.strip()) >= 2):
+            score += 60
         if needle:
             blob = f"{it.summary or ''} {keyword} {pl.get('content', '')}".lower()
             if needle in blob:
@@ -565,3 +572,271 @@ def _kw_parts(query: str) -> list[str]:
         parts = [query[i : i + 2] for i in range(len(query) - 1)]
         return parts or [query]
     return [query]
+
+
+# ============ 实战漏洞自动蒸馏为可复用知识库 ============
+
+_SENSITIVE_HEADER_RE = re.compile(
+    r"(?im)^((?:cookie|authorization|x-api-key|x-auth-token|token)\s*:\s*).+$"
+)
+_IP_MASK_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?\b")
+
+
+def _sanitize_play_text(text: str, *, netloc: str = "", host: str = "") -> str:
+    """将请求/PoC 中的目标域名、IP 与认证头脱敏，保留攻击路径、参数与判定逻辑。"""
+    s = (text or "").strip()
+    if not s:
+        return ""
+    if netloc:
+        s = re.sub(re.escape(netloc), "<TARGET_HOST>", s, flags=re.IGNORECASE)
+    if host and "." in host:
+        s = re.sub(re.escape(host), "<TARGET_HOST>", s, flags=re.IGNORECASE)
+    s = _IP_MASK_RE.sub("<TARGET_IP>", s)
+    s = _SENSITIVE_HEADER_RE.sub(r"\1<REDACTED>", s)
+    return s
+
+
+def synthesize_kb_from_finding(finding: Any, review: Any = None) -> dict:
+    """将已验证/过审的高价值 Finding（结合人工编辑与复审备注）脱敏蒸馏为结构化知识库篇目。"""
+    get_f = (lambda k, d="": finding.get(k, d)) if isinstance(finding, dict) else (lambda k, d="": getattr(finding, k, d))
+    edits: dict = {}
+    rev_notes = ""
+    user_notes = ""
+    user_sev = ""
+    rev_sev = ""
+    if review is not None:
+        raw_edits = review.get("user_edits") if isinstance(review, dict) else getattr(review, "user_edits", None)
+        if isinstance(raw_edits, dict):
+            edits = raw_edits
+        rev_notes = str((review.get("reviewer_notes") if isinstance(review, dict) else getattr(review, "reviewer_notes", "")) or "")
+        user_notes = str((review.get("user_notes") if isinstance(review, dict) else getattr(review, "user_notes", "")) or "")
+        user_sev = str((review.get("user_severity") if isinstance(review, dict) else getattr(review, "user_severity", "")) or "")
+        rev_sev = str((review.get("severity_final") if isinstance(review, dict) else getattr(review, "severity_final", "")) or "")
+
+    vuln_type = str(edits.get("vuln_type") or get_f("vuln_type", "") or "综合漏洞").strip()[:80]
+    raw_title = str(edits.get("title") or get_f("title", "") or vuln_type).strip()
+    target_url = str(get_f("target_url", "") or "").strip()
+    owner = str(get_f("owner", "") or "").strip()
+    severity = (user_sev or rev_sev or str(get_f("severity_claimed", "") or "high")).strip()
+    description = str(edits.get("description") or get_f("description", "") or "").strip()
+    poc = str(edits.get("poc") or get_f("poc", "") or get_f("poc_http", "") or get_f("raw_request", "") or "").strip()
+    raw_resp = str(edits.get("raw_response") or get_f("raw_response", "") or "").strip()
+
+    ev = get_f("evidence", None)
+    ev_dict = ev if isinstance(ev, dict) else {}
+    biz_id = str(ev_dict.get("biz_id") or "").strip()
+    kill_chain = get_f("kill_chain", None) or ev_dict.get("kill_chain") or []
+    steps = edits.get("steps") or get_f("steps", None) or ev_dict.get("steps") or []
+
+    parsed = urlparse(target_url if "://" in target_url else f"http://{target_url}") if target_url else None
+    netloc = (parsed.netloc if parsed else "").strip()
+    host = (parsed.hostname if parsed else "").strip()
+    url_path = (parsed.path if parsed else "") or "/"
+
+    from app.agents.intel import detect_fingerprints
+
+    fps = detect_fingerprints(target_url, raw_title, owner, description, poc, raw_resp)
+    anchor_tok = ""
+    if fps:
+        anchor_tok = fps[0].removeprefix("fp_")
+    elif biz_id:
+        anchor_tok = biz_id
+    else:
+        ascii_slug = re.sub(r"[^a-z0-9]+", "-", vuln_type.lower()).strip("-")
+        if ascii_slug:
+            anchor_tok = ascii_slug[:24]
+        else:
+            mapped = sorted(_match_terms(vuln_type))
+            anchor_tok = mapped[0] if mapped else "play"
+
+    clean_title = _sanitize_play_text(raw_title, netloc=netloc, host=host) or vuln_type
+    clean_desc = _sanitize_play_text(description, netloc=netloc, host=host)
+    clean_poc = _sanitize_play_text(poc, netloc=netloc, host=host)[:1200]
+    clean_resp = _sanitize_play_text(raw_resp, netloc=netloc, host=host)[:500]
+    clean_notes = _sanitize_play_text(
+        "；".join(p for p in [user_notes.strip(), rev_notes.strip()] if p),
+        netloc=netloc, host=host,
+    )
+
+    sig_seed = f"{vuln_type.lower()}|{url_path.lower()}|{clean_title.lower()}"
+    short_hash = hashlib.sha1(sig_seed.encode("utf-8", errors="ignore")).hexdigest()[:8]
+    safe_anchor = re.sub(r"[^a-z0-9_-]+", "-", anchor_tok.lower()).strip("-") or "play"
+    match_key = f"distilled-{safe_anchor[:24]}-{short_hash}"
+
+    play_name = f"[实战蒸馏] {vuln_type}：{clean_title[:56]}".strip("： ")
+    kw_parts: list[str] = [vuln_type, clean_title[:40], match_key]
+    for fp in fps:
+        kw_parts.append(fp)
+        kw_parts.append(fp.removeprefix("fp_"))
+    if biz_id:
+        kw_parts.append(biz_id)
+    if url_path and url_path != "/":
+        kw_parts.append(url_path)
+    kw_parts.extend(sorted(_match_terms(vuln_type)))
+    dedup_kw: list[str] = []
+    seen_kw: set[str] = set()
+    for p in kw_parts:
+        s = str(p or "").strip()
+        if s and s.lower() not in seen_kw:
+            seen_kw.add(s.lower())
+            dedup_kw.append(s)
+    keyword = " ".join(dedup_kw)[:240]
+
+    chain_lines: list[str] = []
+    if isinstance(kill_chain, list):
+        for idx, step in enumerate(kill_chain[:10], 1):
+            if isinstance(step, dict):
+                m = str(step.get("method") or step.get("step") or "").strip()
+                d = _sanitize_play_text(str(step.get("detail") or step.get("desc") or ""), netloc=netloc, host=host)
+                txt = f"{m}: {d}".strip(": ")
+            else:
+                txt = _sanitize_play_text(str(step), netloc=netloc, host=host)
+            if txt:
+                chain_lines.append(f"{idx}. {txt}")
+    if not chain_lines and isinstance(steps, list):
+        for idx, st in enumerate(steps[:10], 1):
+            txt = _sanitize_play_text(
+                st.get("detail") or st.get("action") or str(st) if isinstance(st, dict) else str(st),
+                netloc=netloc, host=host,
+            )
+            if txt:
+                chain_lines.append(f"{idx}. {txt}")
+    if not chain_lines and clean_desc:
+        chain_lines.append(f"1. {clean_desc[:400]}")
+
+    fp_desc = ", ".join(fps) if fps else "通用 Web / 业务逻辑面"
+    lines = [
+        f"# {play_name}",
+        "",
+        "## 适用场景与指纹特征",
+        f"- 漏洞类型：{vuln_type}",
+        f"- 典型等级：{severity}",
+        f"- 指纹特征：{fp_desc}",
+        f"- 目标路径模式：`{url_path}`",
+    ]
+    if biz_id:
+        lines.append(f"- 业务场景：`{biz_id}`")
+    if clean_desc:
+        lines.extend(["", f"> 概述：{clean_desc[:400]}"])
+
+    lines.extend(["", "## 攻击路径与关键步骤"])
+    lines.extend(chain_lines or ["1. 探测目标关键接口与参数，确认未授权/越权或注入点。"])
+
+    lines.extend(["", "## 验证载荷参考（已脱敏）"])
+    if clean_poc:
+        lines.extend(["```http", clean_poc, "```"])
+    else:
+        lines.append(f"- 请求路径：`{url_path}`（按同型接口参数构造安全只读验证探针）")
+
+    lines.extend(["", "## 复现判定与避坑要点"])
+    if clean_notes:
+        lines.append(f"- 复审核准要点：{clean_notes[:350]}")
+    if clean_resp:
+        lines.extend(["- 典型有效响应特征：", f"  `{clean_resp[:300]}`"])
+    elif not clean_notes:
+        lines.append("- 复现时需核实实际返回业务数据/权限越界证据，禁止仅凭 HTTP 状态码下结论。")
+
+    content = "\n".join(lines)
+    known = {e["name"] for e in scan_local_files()}
+    related = _parse_refs(content, known)
+    for m_name in sorted(_match_terms(vuln_type)):
+        if m_name in known and m_name not in related:
+            related.append(m_name)
+
+    return {
+        "name": play_name,
+        "keyword": keyword,
+        "match_key": match_key,
+        "category": "user",
+        "origin": "distilled",
+        "vuln_type": vuln_type,
+        "severity": severity,
+        "source_host": host or netloc,
+        "summary": f"{vuln_type}（{severity}）实战蒸馏：{clean_title[:80]}",
+        "content": content,
+        "related": related[:8],
+    }
+
+
+async def distill_finding_to_kb(
+    session: AsyncSession,
+    finding_id: str,
+    *,
+    commit: bool = True,
+) -> dict:
+    """将指定 Finding（及关联 Review）蒸馏并幂等写入知识库，返回前端可用字典。"""
+    finding = await session.get(Finding, finding_id)
+    if finding is None:
+        raise ValueError(f"finding_not_found:{finding_id}")
+
+    review = (await session.execute(
+        select(Review).where(Review.finding_id == finding_id)
+    )).scalar_one_or_none()
+
+    synth = synthesize_kb_from_finding(finding, review)
+    match_key = synth["match_key"]
+    dedup_hash = "kbd:" + hashlib.sha1(match_key.encode("utf-8", errors="ignore")).hexdigest()[:16]
+    payload = {
+        "category": "user",
+        "origin": "distilled",
+        "name": synth["name"],
+        "keyword": synth["keyword"],
+        "content": synth["content"],
+        "enabled": True,
+        "related": synth["related"],
+        "source_finding_id": finding.id,
+        "vuln_type": synth["vuln_type"],
+        "severity": synth["severity"],
+    }
+    now = datetime.now(timezone.utc)
+
+    existing = (await session.execute(
+        select(Intel).where(Intel.kind == "knowledge", Intel.match_key == match_key)
+    )).scalar_one_or_none()
+
+    if existing is not None:
+        existing.payload = payload
+        existing.summary = synth["summary"][:500]
+        existing.source_host = (synth["source_host"] or existing.source_host or "")[:255]
+        existing.source_task_id = (finding.task_id or existing.source_task_id or "")[:32]
+        existing.confidence = "verified"
+        existing.hit_count = (existing.hit_count or 1) + 1
+        existing.last_seen = now
+        it = existing
+    else:
+        it = Intel(
+            kind="knowledge",
+            match_key=match_key,
+            dedup_hash=dedup_hash,
+            payload=payload,
+            summary=synth["summary"][:500],
+            source_host=synth["source_host"][:255],
+            source_task_id=(finding.task_id or "")[:32],
+            confidence="verified",
+            hit_count=1,
+            first_seen=now,
+            last_seen=now,
+        )
+        session.add(it)
+
+    await session.flush()
+    if commit:
+        await session.commit()
+        await refresh_kb_cache(session)
+
+    pl = it.payload or {}
+    return {
+        "id": it.id,
+        "match_key": it.match_key or "",
+        "category": pl.get("category", "user"),
+        "origin": pl.get("origin", "distilled"),
+        "name": pl.get("name", ""),
+        "keyword": pl.get("keyword", ""),
+        "summary": it.summary or "",
+        "enabled": bool(pl.get("enabled", True)),
+        "hit_count": it.hit_count or 1,
+        "related": pl.get("related", []),
+        "content": pl.get("content", ""),
+        "created_at": to_cst_iso(it.first_seen),
+        "updated_at": to_cst_iso(it.last_seen),
+    }

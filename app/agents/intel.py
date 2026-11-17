@@ -182,7 +182,12 @@ async def record_intel(
             if confidence == "verified":
                 existing.confidence = "verified"
             if payload.get("human_verified"):
-                existing.payload = payload
+                old_pl = existing.payload if isinstance(existing.payload, dict) else {}
+                merged = dict(payload)
+                for stat_k in ("injected_count", "converted_count", "rejected_count"):
+                    if stat_k in old_pl and stat_k not in merged:
+                        merged[stat_k] = old_pl[stat_k]
+                existing.payload = merged
                 if summary:
                     existing.summary = _clip(summary, 500)
             return True
@@ -198,6 +203,47 @@ async def record_intel(
         return False
 
 
+def intel_utility_score(row: Any) -> float:
+    """计算情报效用分：综合验证状态、贝叶斯注入转化率、人工核准与误报驳回惩罚。"""
+    if isinstance(row, dict):
+        pl = row.get("payload") or {}
+        conf = str(row.get("confidence") or "likely")
+        hits = int(row.get("hit_count") or 1)
+    else:
+        pl = getattr(row, "payload", None) or {}
+        conf = str(getattr(row, "confidence", None) or "likely")
+        hits = int(getattr(row, "hit_count", None) or 1)
+    if not isinstance(pl, dict):
+        pl = {}
+    injected = max(0, int(pl.get("injected_count") or 0))
+    converted = max(0, int(pl.get("converted_count") or 0))
+    rejected = max(0, int(pl.get("rejected_count") or 0))
+    # 人工核准避坑警示保持高优先级地板，防止避坑提醒被低分沉底
+    if pl.get("lesson_type") == "pitfall" and pl.get("human_rejected"):
+        return round(4.5 + min(max(1, hits), 10) * 0.1, 4)
+    ctr_score = ((converted + 1.0) / (injected + 2.0)) * 3.0
+    score = ctr_score
+    if conf == "verified":
+        score += 1.5
+    if pl.get("human_verified"):
+        score += 1.5
+    score += min(float(max(1, hits)) * 0.2, 2.0)
+    score -= float(rejected) * 1.2
+    return round(score, 4)
+
+
+def _rank_intel_rows(rows: list[Intel], limit: int) -> list[Intel]:
+    """按效用分降序重排候选情报，同分时保持 SQL 原先按 confidence/hit_count/last_seen 的顺序。"""
+    if not rows:
+        return []
+    ranked = sorted(
+        rows,
+        key=lambda r: (intel_utility_score(r), int(getattr(r, "hit_count", 1) or 1)),
+        reverse=True,
+    )
+    return ranked[:limit]
+
+
 async def lookup_intel(
     session: AsyncSession,
     root: str,
@@ -207,8 +253,8 @@ async def lookup_intel(
 ) -> dict[str, list[Intel]]:
     """触发式检索：按 root域 + 系统指纹（及业务画像/漏洞类降级键）命中相关情报。
 
-    返回 {cred:[], fingerprint:[], endpoint:[], profile:[], lesson:[]}，每类按 verified优先+hit_count 排序、限量。
-    任何失败降级返回空 dict。
+    返回 {cred:[], fingerprint:[], endpoint:[], profile:[], lesson:[]}，按效用分与 hit_count 排序、限量，
+    并为实际注入给 Worker 的动作类情报累加 injected_count。任何失败降级返回空 dict。
     """
     out: dict[str, list[Intel]] = {"cred": [], "fingerprint": [], "endpoint": [], "profile": [], "lesson": []}
     try:
@@ -221,15 +267,17 @@ async def lookup_intel(
                 seen_fp.add(k)
                 fps.append(k)
 
+        candidate_limit = max(_MAX_PER_KIND * 4, _MAX_PER_KIND)
+
         # cred / profile 按 root 域命中
         if root:
             for kind in ("cred", "profile"):
                 rows = (await session.execute(
                     select(Intel).where(Intel.kind == kind, Intel.match_key == root)
                     .order_by(Intel.confidence.desc(), Intel.hit_count.desc(), Intel.last_seen.desc())
-                    .limit(_MAX_PER_KIND)
+                    .limit(candidate_limit)
                 )).scalars().all()
-                out[kind] = list(rows)
+                out[kind] = _rank_intel_rows(list(rows), _MAX_PER_KIND)
 
         # fingerprint / endpoint / lesson 按系统指纹及三级降级键命中
         if fps:
@@ -237,12 +285,74 @@ async def lookup_intel(
                 rows = (await session.execute(
                     select(Intel).where(Intel.kind == kind, Intel.match_key.in_(fps))
                     .order_by(Intel.confidence.desc(), Intel.hit_count.desc(), Intel.last_seen.desc())
-                    .limit(_MAX_PER_KIND)
+                    .limit(candidate_limit)
                 )).scalars().all()
-                out[kind] = list(rows)
+                out[kind] = _rank_intel_rows(list(rows), _MAX_PER_KIND)
+
+        # 记录动作类情报的实际注入次数（重新赋新 dict 以触发 SQLAlchemy JSON 脏追踪）
+        for kind in ("cred", "fingerprint", "endpoint", "lesson"):
+            for row in out[kind]:
+                pl = dict(row.payload or {})
+                pl["injected_count"] = int(pl.get("injected_count") or 0) + 1
+                row.payload = pl
         return out
     except Exception:
         return out
+
+
+async def record_intel_conversion(
+    session: AsyncSession,
+    root: str,
+    fingerprints: list[str] | None = None,
+    *,
+    fallback_keys: list[str] | None = None,
+) -> int:
+    """目标确认出洞后，为命中该目标且已注入过的活跃情报累加 converted_count。"""
+    updated = 0
+    try:
+        root_key = (root or "").strip().lower()
+        fps: list[str] = []
+        seen_fp: set[str] = set()
+        for raw_k in [*(fingerprints or []), *(fallback_keys or [])]:
+            k = str(raw_k or "").strip().lower()
+            if k and k not in seen_fp:
+                seen_fp.add(k)
+                fps.append(k)
+
+        candidates: list[Intel] = []
+        if root_key:
+            rows = (await session.execute(
+                select(Intel).where(Intel.kind == "cred", Intel.match_key == root_key)
+            )).scalars().all()
+            candidates.extend(rows)
+        if fps:
+            rows = (await session.execute(
+                select(Intel).where(
+                    Intel.kind.in_(("fingerprint", "endpoint", "lesson")),
+                    Intel.match_key.in_(fps),
+                )
+            )).scalars().all()
+            candidates.extend(rows)
+
+        seen_ids: set[str] = set()
+        for row in candidates:
+            rid = getattr(row, "id", "") or ""
+            if rid and rid in seen_ids:
+                continue
+            if rid:
+                seen_ids.add(rid)
+            pl = dict(row.payload or {})
+            inj = int(pl.get("injected_count") or 0)
+            if inj <= 0:
+                continue
+            conv = int(pl.get("converted_count") or 0)
+            if conv < inj:
+                pl["converted_count"] = conv + 1
+                row.payload = pl
+                updated += 1
+        return updated
+    except Exception:
+        return updated
 
 
 async def lookup_cve_hints(session: AsyncSession, technologies: list[str]) -> str:

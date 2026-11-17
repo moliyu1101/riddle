@@ -36,6 +36,7 @@ const raLog = ref(null);
 const retests = ref([]);
 const retestSummary = ref(null);
 const retestBusy = ref(false);
+const distilling = ref(false);
 const retestMode = ref("http_probe");
 const retestStatus = ref("reproduced");
 const retestMatch = ref("");
@@ -425,6 +426,19 @@ async function exportFusionDocx() {
     emit("toast", "已导出公文级 Word（融合版）");
   } catch (e) {
     emit("toast", String(e.message || e).replace(/^\d+\s*/, ""));
+  }
+}
+
+async function distillToKb() {
+  if (!f.value?.id || distilling.value || readonly.value) return;
+  distilling.value = true;
+  try {
+    const res = await api.distillFindingToKb(f.value.id);
+    emit("toast", `已蒸馏为可复用知识库：${res?.name || res?.item?.name || "完成"}`);
+  } catch (e) {
+    emit("toast", String(e.message || e).replace(/^\d+\s*/, ""));
+  } finally {
+    distilling.value = false;
   }
 }
 
@@ -1011,6 +1025,18 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
                   <button class="deep" @click="deepenOpen = !deepenOpen">+ 继续深挖</button>
                   <button class="ok" @click="restoreArchived">↩ 恢复到复审队列</button>
                 </div>
+              </div>
+
+              <div class="rc-ops-distill">
+                <button
+                  type="button"
+                  class="distill"
+                  :disabled="distilling"
+                  @click="distillToKb"
+                  title="将本漏洞的攻击路径与验证手法脱敏蒸馏为可复用知识库篇目"
+                >
+                  {{ distilling ? "蒸馏中…" : "⚡ 蒸馏为知识库" }}
+                </button>
               </div>
 
               <div v-if="deepenOpen" class="deepen-box">
