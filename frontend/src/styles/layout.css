@@ -25,8 +25,9 @@
   height: 100svh;
   display: flex;
   flex-direction: column;
-  background: var(--sidebar-bg);
-  border-right: 1px solid var(--sidebar-border);
+  background: var(--rail-bg);
+  color: var(--rail-ink);
+  border-right: 1px solid var(--rail-border);
   z-index: var(--z-sticky);
   overflow: hidden;
 }
@@ -36,16 +37,16 @@
   align-items: center;
   gap: 10px;
   padding: 14px 14px 12px;
-  border-bottom: 1px solid var(--border-soft);
-  min-height: 60px;
+  border-bottom: 1px solid var(--rail-border);
+  min-height: 58px;
 }
 .brand-logo {
   flex: none;
   width: 34px;
   height: 34px;
-  border-radius: 8px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--rail-surface);
+  border: 1px solid var(--rail-border);
   display: grid;
   place-items: center;
 }
@@ -64,31 +65,31 @@
 .brand-text b {
   font-size: 14px;
   font-weight: 700;
-  letter-spacing: .03em;
-  color: var(--ink);
+  letter-spacing: .04em;
+  color: var(--rail-ink);
   white-space: nowrap;
 }
 .brand-text small {
   font-family: "IBM Plex Mono", monospace;
   font-size: 9.5px;
-  color: var(--accent2-ink);
-  letter-spacing: .09em;
+  color: var(--accent);
+  letter-spacing: .10em;
 }
 .tac-collapse-btn {
   flex: none;
   width: 24px;
   height: 24px;
   padding: 0;
-  border-radius: 6px;
+  border-radius: 5px;
   font-size: 13px;
-  color: var(--muted);
+  color: var(--rail-muted);
   background: transparent;
   border: 1px solid transparent;
 }
 .tac-collapse-btn:hover {
-  background: var(--surface-2);
-  border-color: var(--border);
-  color: var(--ink);
+  background: var(--rail-surface);
+  border-color: var(--rail-border);
+  color: var(--rail-ink);
 }
 .tac-sidebar.collapsed .tac-brand {
   justify-content: center;
@@ -108,14 +109,14 @@
 .tac-nav-sec {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 .tac-nav-title {
   padding: 0 10px 4px;
-  font-size: 10.5px;
-  font-weight: 600;
-  color: var(--faint);
-  letter-spacing: .08em;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--rail-muted);
+  letter-spacing: .10em;
   text-transform: uppercase;
 }
 .tac-nav-item {
@@ -124,7 +125,7 @@
   gap: 10px;
   padding: 8px 10px;
   border-radius: var(--radius-sm);
-  color: var(--muted);
+  color: var(--rail-muted);
   font-size: 13px;
   font-weight: 500;
   text-decoration: none;
@@ -132,14 +133,14 @@
   transition: background-color .14s ease, color .14s ease, border-color .14s ease;
 }
 .tac-nav-item:hover {
-  background: var(--surface-2);
-  color: var(--ink);
+  background: var(--rail-surface);
+  color: var(--rail-ink);
   text-decoration: none;
 }
 .tac-nav-item.active {
-  background: var(--accent-bg);
-  color: var(--accent-ink);
-  border-color: color-mix(in oklch, var(--accent) 42%, transparent);
+  background: var(--accent);
+  color: #FFFFFF;
+  border-color: var(--accent);
   font-weight: 600;
 }
 .tac-sidebar.collapsed .tac-nav-item {
@@ -167,36 +168,40 @@
   font-size: 10.5px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  background: var(--surface-3);
-  color: var(--ink-2);
-  border: 1px solid var(--border);
+  background: var(--rail-surface);
+  color: var(--rail-ink);
+  border: 1px solid var(--rail-border);
 }
-.nav-badge.live { background: var(--ok-bg); color: var(--ok); border-color: color-mix(in oklch, var(--ok) 45%, transparent); }
-.nav-badge.accent { background: var(--accent-bg); color: var(--accent-ink); border-color: color-mix(in oklch, var(--accent) 45%, transparent); }
-.nav-badge.warn { background: var(--warn-bg); color: var(--warn); border-color: color-mix(in oklch, var(--warn) 45%, transparent); }
-.nav-badge.danger { background: var(--danger-bg); color: var(--danger); border-color: color-mix(in oklch, var(--danger) 45%, transparent); }
+.tac-nav-item.active .nav-badge {
+  background: rgba(255, 255, 255, 0.22);
+  color: #FFFFFF;
+  border-color: rgba(255, 255, 255, 0.35);
+}
+.nav-badge.live { background: rgba(13, 138, 114, 0.28); color: #5EEAD4; border-color: rgba(94, 234, 212, 0.35); }
+.nav-badge.accent { background: var(--accent-bg-2); color: #FFB39E; border-color: rgba(255, 179, 158, 0.35); }
+.nav-badge.warn { background: rgba(245, 166, 35, 0.22); color: #FCD34D; border-color: rgba(252, 211, 77, 0.35); }
+.nav-badge.danger { background: rgba(239, 91, 76, 0.25); color: #FCA5A5; border-color: rgba(252, 165, 165, 0.35); }
 
 .tac-create-btn {
-  margin-top: 4px;
+  margin-top: 6px;
   width: 100%;
   padding: 9px 12px;
   border-radius: var(--radius-sm);
   background: var(--accent);
   border-color: var(--accent);
-  color: var(--on-accent);
+  color: #FFFFFF;
   font-weight: 600;
   font-size: 13px;
-  box-shadow: var(--shadow-sm), var(--glow-accent);
 }
 .tac-create-btn:hover {
   background: var(--accent-ink);
   border-color: var(--accent-ink);
-  color: var(--on-accent);
+  color: #FFFFFF;
 }
 
 .tac-sidebar-foot {
   padding: 10px 10px 12px;
-  border-top: 1px solid var(--border-soft);
+  border-top: 1px solid var(--rail-border);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -204,8 +209,8 @@
 .tac-pulse-card {
   padding: 10px;
   border-radius: var(--radius);
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--rail-surface);
+  border: 1px solid var(--rail-border);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -215,34 +220,34 @@
   align-items: center;
   justify-content: space-between;
   font-size: 10.5px;
-  color: var(--muted);
+  color: var(--rail-muted);
 }
 .tpc-head i {
   font-style: normal;
   font-family: "IBM Plex Mono", monospace;
   font-size: 9.5px;
   padding: 1px 6px;
-  border-radius: 999px;
-  background: var(--ok-bg);
-  color: var(--ok);
+  border-radius: 4px;
+  background: rgba(13, 138, 114, 0.25);
+  color: #5EEAD4;
   font-weight: 700;
 }
 .tpc-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 6px;
+  gap: 5px;
 }
 .tpc-grid > div {
   padding: 5px 7px;
-  border-radius: 6px;
-  background: var(--bg);
-  border: 1px solid var(--border-soft);
+  border-radius: 5px;
+  background: var(--rail-bg);
+  border: 1px solid var(--rail-border);
   display: flex;
   align-items: baseline;
   justify-content: space-between;
 }
-.tpc-grid b { font-size: 13px; color: var(--ink); font-variant-numeric: tabular-nums; }
-.tpc-grid small { font-size: 10px; color: var(--faint); }
+.tpc-grid b { font-size: 13px; color: var(--rail-ink); font-variant-numeric: tabular-nums; }
+.tpc-grid small { font-size: 10px; color: var(--rail-muted); }
 
 .tac-role-row {
   display: flex;
@@ -250,18 +255,18 @@
   gap: 8px;
   padding: 6px 10px;
   border-radius: var(--radius-sm);
-  background: var(--surface);
-  border: 1px solid var(--border-soft);
+  background: var(--rail-surface);
+  border: 1px solid var(--rail-border);
   font-size: 11.5px;
-  color: var(--muted);
+  color: var(--rail-muted);
 }
 .tac-sidebar.collapsed .tac-role-row { justify-content: center; padding: 7px; }
-.role-text { font-weight: 500; color: var(--ink-2); }
-.status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; }
-.status-dot.full { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-bg); }
-.status-dot.readonly { background: var(--info); box-shadow: 0 0 0 3px var(--info-bg); }
-.status-dot.observer { background: var(--warn); box-shadow: 0 0 0 3px var(--warn-bg); }
-.status-dot.none { background: var(--danger); box-shadow: 0 0 0 3px var(--danger-bg); }
+.role-text { font-weight: 500; color: var(--rail-ink); }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--rail-muted); flex: none; }
+.status-dot.full { background: #10B981; }
+.status-dot.readonly { background: #60A5FA; }
+.status-dot.observer { background: #FBBF24; }
+.status-dot.none { background: #F87171; }
 
 /* 右侧工作区 + 顶部状态栏 */
 .tac-workspace {
@@ -309,31 +314,42 @@
   align-items: center;
   gap: 6px;
   padding: 4px 10px;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   border: 1px solid var(--border);
+  font-family: "IBM Plex Mono", monospace;
   overflow-x: auto;
   scrollbar-width: none;
 }
+.tel-sys {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--ok);
+  letter-spacing: .04em;
+  white-space: nowrap;
+}
+.tel-sys i { font-style: normal; font-size: 8px; }
 .tac-loop-rail::-webkit-scrollbar { display: none; }
 .loop-step {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 3px 8px;
-  border-radius: 999px;
-  font-size: 11.5px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 11px;
   color: var(--muted);
   text-decoration: none;
   white-space: nowrap;
 }
 .loop-step:hover { background: var(--surface-2); color: var(--ink); text-decoration: none; }
-.loop-step i { font-style: normal; opacity: .75; font-size: 10.5px; }
 .loop-step b { color: var(--ink); font-variant-numeric: tabular-nums; }
 .loop-step.warn b { color: var(--warn); }
 .loop-step.accent b { color: var(--accent-ink); }
 .loop-step.info b { color: var(--accent2-ink); }
-.loop-sep { color: var(--faint); font-size: 11px; }
+.loop-sep { color: var(--border-strong); font-size: 11px; }
 
 .tac-topbar-right { display: flex; align-items: center; gap: 8px; flex: none; }
 .cmd-icon-btn {

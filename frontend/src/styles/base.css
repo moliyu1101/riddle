@@ -1,92 +1,99 @@
 /* ============================================================
-   知蠹 Riddle — Prism Tactical Workbench（棱镜战术暗曜重构版）
-   模块：base.css — 全新碳岩灰+钴蓝+翠青设计令牌 / 精密控件 / 动效系统
+   知蠹 Riddle — Solaris & Obsidian Studio（极昼架构 / 暗曜双模工作台）
+   模块：base.css — 暖白石英纸 + 信号朱红/翡翠绿 + 曜石黑左轨设计令牌
    ============================================================ */
 
 @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap");
 
 :root,
-:root[data-theme="dark"] {
-  color-scheme: dark;
+:root[data-theme="light"] {
+  color-scheme: light;
 
-  /* 基底色相：碳黑岩灰（极低饱和度，拒绝浑浊紫黑） */
-  --bg-h: 222;
+  --bg-h: 45;
 
-  /* 5 级精密表面阶梯 */
-  --bg:           oklch(11.5% 0.010 var(--bg-h));
-  --nav:          oklch(13.2% 0.011 var(--bg-h));
-  --surface:      oklch(15.2% 0.012 var(--bg-h));
-  --surface-2:    oklch(18.5% 0.014 var(--bg-h));
-  --surface-3:    oklch(22.0% 0.016 var(--bg-h));
-  --surface-4:    oklch(26.0% 0.018 var(--bg-h));
+  /* 极昼石英纸画布 + 纯白建筑感面板 */
+  --bg:           #F3F2EE;
+  --nav:          #ECEAE3;
+  --surface:      #FFFFFF;
+  --surface-2:    #F8F7F4;
+  --bg-soft:      var(--surface-2);
+  --surface-3:    #ECEAE3;
+  --surface-4:    #E2DFD6;
 
-  /* 3 级精密工业描边 */
-  --border-soft:  oklch(21.5% 0.014 var(--bg-h));
-  --border:       oklch(27.0% 0.016 var(--bg-h));
-  --border-strong:oklch(35.0% 0.020 var(--bg-h));
+  --border-soft:  #E7E4DC;
+  --border:       #D8D4CA;
+  --border-strong:#BAB4A7;
 
-  /* 左侧战术导航轨 */
-  --sidebar-bg:     oklch(13.0% 0.011 var(--bg-h));
-  --sidebar-border: oklch(23.0% 0.014 var(--bg-h));
+  /* 左侧固定曜石黑导航轨 */
+  --rail-bg:      #121417;
+  --rail-surface: #1B1E24;
+  --rail-border:  #252932;
+  --rail-ink:     #F3F4F6;
+  --rail-muted:   #8E95A2;
+  --sidebar-bg:     var(--rail-bg);
+  --sidebar-border: var(--rail-border);
 
-  /* 冷白高对比文字阶 */
-  --ink:    oklch(96.0% 0.006 230);
-  --ink-2:  oklch(84.5% 0.010 230);
-  --muted:  oklch(68.0% 0.014 230);
-  --faint:  oklch(52.0% 0.014 230);
+  /* 高对比石墨文字阶 */
+  --ink:    #141518;
+  --ink-2:  #2C2F36;
+  --muted:  #5C606B;
+  --faint:  #828792;
 
-  /* 克制微光系数（默认 0.45） */
-  --glow: 0.45;
+  --glow: 0.25;
 
-  /* 主色：战术钴蓝 */
-  --accent-h: 212;
-  --accent:      oklch(65.0% 0.175 var(--accent-h));
-  --accent-ink:  oklch(74.0% 0.160 var(--accent-h));
-  --accent-bg:   oklch(65.0% 0.175 var(--accent-h) / 0.14);
-  --accent-bg-2: oklch(65.0% 0.175 var(--accent-h) / 0.24);
-  --on-accent:   oklch(13.0% 0.012 var(--bg-h));
+  /* 主色：国际信号朱红（随设置 --accent-h 动态驱动） */
+  --accent-h: 26;
+  --accent:      oklch(58.0% 0.195 var(--accent-h));
+  --accent-ink:  oklch(50.0% 0.205 var(--accent-h));
+  --accent-bg:   oklch(58.0% 0.195 var(--accent-h) / 0.11);
+  --accent-bg-2: oklch(58.0% 0.195 var(--accent-h) / 0.19);
+  --on-accent:   #FFFFFF;
 
-  /* 副色：信号翠青 */
+  /* 副色：深青翡翠 */
   --accent2-h: 168;
-  --accent2:     oklch(72.0% 0.145 var(--accent2-h));
-  --accent2-ink: oklch(79.0% 0.130 var(--accent2-h));
-  --accent2-bg:  oklch(72.0% 0.145 var(--accent2-h) / 0.12);
-  --accent2-bg-2:oklch(72.0% 0.145 var(--accent2-h) / 0.22);
-  --on-accent2:  oklch(13.0% 0.012 var(--bg-h));
+  --accent2:     oklch(54.0% 0.135 var(--accent2-h));
+  --accent2-ink: oklch(44.0% 0.145 var(--accent2-h));
+  --accent2-bg:  oklch(54.0% 0.135 var(--accent2-h) / 0.11);
+  --accent2-bg-2:oklch(54.0% 0.135 var(--accent2-h) / 0.19);
+  --on-accent2:  #FFFFFF;
 
-  /* 语义色（工业清晰度） */
-  --ok:     oklch(74.0% 0.155 156);
-  --warn:   oklch(80.0% 0.150 78);
-  --danger: oklch(68.0% 0.195 22);
-  --info:   oklch(72.0% 0.140 var(--accent-h));
+  /* 语义色（印刷级别清晰度） */
+  --ok:     #0D8A72;
+  --warn:   #C87A0A;
+  --danger: #D13426;
+  --info:   #2463EB;
 
-  --ok-bg:     oklch(74.0% 0.155 156 / 0.13);
-  --warn-bg:   oklch(80.0% 0.150 78 / 0.13);
-  --danger-bg: oklch(68.0% 0.195 22 / 0.14);
-  --info-bg:   oklch(72.0% 0.140 var(--accent-h) / 0.13);
+  --ok-bg:     oklch(56% 0.13 168 / 0.11);
+  --warn-bg:   oklch(68% 0.15 78 / 0.13);
+  --danger-bg: oklch(56% 0.19 25 / 0.11);
+  --info-bg:   oklch(54% 0.17 258 / 0.11);
 
-  /* 克制发光与层级投影 */
-  --glow-accent:  0 0 calc(10px * var(--glow)) var(--accent-bg-2);
-  --glow-accent2: 0 0 calc(10px * var(--glow)) var(--accent2-bg-2);
-  --glow-ok:      0 0 calc(8px * var(--glow)) var(--ok-bg);
-  --glow-danger:  0 0 calc(8px * var(--glow)) var(--danger-bg);
+  --glow-accent:  0 1px 2px rgba(20, 21, 24, 0.08);
+  --glow-accent2: 0 1px 2px rgba(20, 21, 24, 0.08);
+  --glow-ok:      none;
+  --glow-danger:  none;
 
-  --shadow-sm: 0 1px 2px oklch(0% 0 0 / 0.45);
-  --shadow:    0 4px 16px oklch(0% 0 0 / 0.36);
-  --shadow-lg: 0 16px 48px oklch(0% 0 0 / 0.55);
+  --shadow-sm: 0 1px 2px rgba(18, 20, 23, 0.05);
+  --shadow:    0 2px 8px rgba(18, 20, 23, 0.06), 0 1px 2px rgba(18, 20, 23, 0.04);
+  --shadow-lg: 0 12px 32px rgba(18, 20, 23, 0.12);
 
-  /* 工业级紧凑圆角 */
-  --radius-sm: 6px;
-  --radius:    9px;
-  --radius-lg: 13px;
+  /* 锐利建筑折角 */
+  --radius-sm: 4px;
+  --radius:    6px;
+  --radius-lg: 10px;
 
-  --focus-ring:   0 0 0 3px var(--accent-bg);
-  --focus-border: color-mix(in oklch, var(--accent) 65%, var(--border));
+  --font-sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  --grid-line: oklch(72.0% 0.04 var(--accent-h) / 0.045);
+  --focus-ring:    0 0 0 2px var(--accent-bg-2);
+  --focus-border:  var(--accent);
+  --select-border: color-mix(in srgb, var(--accent) 45%, var(--border));
+  --select-ring:   0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent);
+
+  --grid-line: rgba(20, 21, 24, 0.045);
 
   /* 壁纸 */
-  --wallpaper-dim: 0.28;
+  --wallpaper-dim: 0.22;
   --wallpaper-fit: cover;
 
   /* z-index */
@@ -97,14 +104,12 @@
   --z-toast: 60;
   --z-modal: 70;
 
-  /* 侧栏宽度 */
-  --sidebar-width: 232px;
-  --sidebar-width-collapsed: 64px;
+  --sidebar-width: 236px;
+  --sidebar-width-collapsed: 68px;
 
-  /* ===== 动效令牌 ===== */
-  --dur-fast: 120ms;
-  --dur: 180ms;
-  --dur-slow: 320ms;
+  --dur-fast: 110ms;
+  --dur: 160ms;
+  --dur-slow: 280ms;
   --ease: cubic-bezier(.25, .1, .25, 1);
   --ease-out: cubic-bezier(.16, 1, .3, 1);
   --ease-spring: cubic-bezier(.34, 1.56, .64, 1);
@@ -112,67 +117,73 @@
   --motion: 1;
 }
 
-:root[data-theme="light"] {
-  color-scheme: light;
+:root[data-theme="dark"] {
+  color-scheme: dark;
 
-  /* 亮色：蓝白 — 纯白底 + 淡蓝灰中性层（固定色相，不随 --bg-h 变化） */
-  --bg:          oklch(99.5% 0.004 230);
-  --surface:     oklch(100% 0 0);
-  --surface-2:   oklch(97.5% 0.006 230);
-  --surface-3:   oklch(95.5% 0.008 230);
-  --surface-4:   oklch(93% 0.01 230);
+  --bg-h: 220;
 
-  --border-soft:  oklch(95.5% 0.007 230);
-  --border:       oklch(90% 0.011 230);
-  --border-strong:oklch(82% 0.018 230);
+  /* 暗曜碳岩模式（纯净零紫黑） */
+  --bg:           #0E1014;
+  --nav:          #12151B;
+  --surface:      #15181E;
+  --surface-2:    #1B1F27;
+  --bg-soft:      var(--surface-2);
+  --surface-3:    #222732;
+  --surface-4:    #2A303D;
 
-  --sidebar-bg:     oklch(98.5% 0.005 230);
-  --sidebar-border: oklch(93.5% 0.009 230);
+  --border-soft:  #20252E;
+  --border:       #2B313D;
+  --border-strong:#3B4354;
 
-  --ink:    oklch(25% 0.028 245);
-  --ink-2:  oklch(37% 0.028 245);
-  --muted:  oklch(50% 0.028 245);
-  --faint:  oklch(62% 0.028 245);
+  --rail-bg:      #0B0D10;
+  --rail-surface: #14171D;
+  --rail-border:  #222630;
+  --rail-ink:     #F3F4F6;
+  --rail-muted:   #868D9C;
+  --sidebar-bg:     var(--rail-bg);
+  --sidebar-border: var(--rail-border);
 
-  --glow: 1;
+  --ink:    #F2F3F5;
+  --ink-2:  #D0D4DC;
+  --muted:  #8F96A3;
+  --faint:  #5F6673;
 
-  /* 主色（蓝白配蓝，默认回退；实际色相由设置里的主霓虹色决定） */
-  --accent-h: 228;
-  --accent:     oklch(55% 0.19 var(--accent-h));
-  --accent-ink: oklch(48% 0.21 var(--accent-h));
-  --accent-bg:  oklch(55% 0.19 var(--accent-h) / 0.12);
-  --accent-bg-2:oklch(55% 0.19 var(--accent-h) / 0.20);
-  --on-accent:  oklch(99% 0 0);
+  --glow: 0.25;
 
-  --accent2-h: 195;
-  --accent2:     oklch(52% 0.14 var(--accent2-h));
-  --accent2-ink: oklch(46% 0.15 var(--accent2-h));
-  --accent2-bg:  oklch(52% 0.14 var(--accent2-h) / 0.12);
-  --accent2-bg-2:oklch(52% 0.14 var(--accent2-h) / 0.20);
-  --on-accent2:  oklch(99% 0 0);
+  --accent-h: 26;
+  --accent:      oklch(65.0% 0.185 var(--accent-h));
+  --accent-ink:  oklch(73.0% 0.165 var(--accent-h));
+  --accent-bg:   oklch(65.0% 0.185 var(--accent-h) / 0.15);
+  --accent-bg-2: oklch(65.0% 0.185 var(--accent-h) / 0.25);
+  --on-accent:   #101216;
 
-  --ok:     oklch(48% 0.14 155);
-  --warn:   oklch(55% 0.14 75);
-  --danger: oklch(52% 0.20 15);
-  --info:   oklch(48% 0.15 var(--accent2-h));
+  --accent2-h: 168;
+  --accent2:     oklch(68.0% 0.135 var(--accent2-h));
+  --accent2-ink: oklch(76.0% 0.120 var(--accent2-h));
+  --accent2-bg:  oklch(68.0% 0.135 var(--accent2-h) / 0.14);
+  --accent2-bg-2:oklch(68.0% 0.135 var(--accent2-h) / 0.22);
+  --on-accent2:  #101216;
 
-  --ok-bg:     oklch(48% 0.14 155 / 0.10);
-  --warn-bg:   oklch(55% 0.14 75 / 0.10);
-  --danger-bg: oklch(52% 0.20 15 / 0.10);
-  --info-bg:   oklch(48% 0.15 var(--accent2-h) / 0.10);
+  --ok:     #22C59B;
+  --warn:   #F5A623;
+  --danger: #EF5B4C;
+  --info:   #5B9BFF;
 
-  --glow-accent: 0 0 calc(6px * var(--glow)) var(--accent-bg-2),
-                 0 0 calc(16px * var(--glow)) var(--accent-bg);
-  --glow-accent2: 0 0 calc(6px * var(--glow)) var(--accent2-bg-2),
-                  0 0 calc(16px * var(--glow)) var(--accent2-bg);
-  --glow-ok: 0 0 calc(6px * var(--glow)) var(--ok-bg);
-  --glow-danger: 0 0 calc(6px * var(--glow)) var(--danger-bg);
+  --ok-bg:     rgba(34, 197, 155, 0.13);
+  --warn-bg:   rgba(245, 166, 35, 0.14);
+  --danger-bg: rgba(239, 91, 76, 0.14);
+  --info-bg:   rgba(91, 155, 255, 0.14);
 
-  --shadow-sm: 0 1px 2px oklch(0% 0 0 / 0.05), 0 0 calc(6px * var(--glow)) var(--accent-bg);
-  --shadow:    0 2px 8px oklch(0% 0 0 / 0.07), 0 8px 24px oklch(0% 0 0 / 0.06), 0 0 calc(12px * var(--glow)) var(--accent-bg);
-  --shadow-lg: 0 12px 48px oklch(0% 0 0 / 0.14), 0 0 calc(18px * var(--glow)) var(--accent-bg);
+  --glow-accent:  0 0 calc(8px * var(--glow)) var(--accent-bg-2);
+  --glow-accent2: 0 0 calc(8px * var(--glow)) var(--accent2-bg-2);
+  --glow-ok:      none;
+  --glow-danger:  none;
 
-  --grid-line: oklch(48% 0.15 var(--accent2-h) / 0.07);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --shadow:    0 4px 14px rgba(0, 0, 0, 0.36);
+  --shadow-lg: 0 14px 38px rgba(0, 0, 0, 0.52);
+
+  --grid-line: rgba(255, 255, 255, 0.035);
 }
 
 * { box-sizing: border-box; }
@@ -205,16 +216,15 @@ body {
   transition: background-color .2s ease, color .2s ease;
 }
 
-/* 背景装饰：极简冷灰点阵 + 顶部微光晕 */
+/* 背景装饰：干净建筑工程网格底纹 */
 body::before {
   content: "";
   position: fixed; inset: 0;
   pointer-events: none; z-index: 0;
   background-image:
-    radial-gradient(ellipse 65% 36% at 22% -8%, var(--accent-bg), transparent 64%),
-    radial-gradient(ellipse 40% 30% at 88% 95%, var(--accent2-bg), transparent 62%),
-    radial-gradient(var(--grid-line) 1px, transparent 1px);
-  background-size: 100% 100%, 100% 100%, 24px 24px;
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 32px 32px;
 }
 
 .ah-wallpaper {

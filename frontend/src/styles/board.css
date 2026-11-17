@@ -19,7 +19,42 @@
   min-width: 0;
 }
 
-/* 顶级横向标签：实时看板 / 处置中 / 已处置（左侧导航横向化） */
+/* 扁平单层 6 页签工作台导航 */
+.mission-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 5px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+.mission-tabs button {
+  flex: 1 1 auto;
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  padding: 8px 12px; border-radius: var(--radius-sm);
+  border: 1px solid transparent; background: transparent;
+  color: var(--muted); font-size: 13px; font-weight: 500; white-space: nowrap;
+}
+.mission-tabs button:hover { background: var(--surface-2); color: var(--ink); }
+.mission-tabs button.active {
+  background: var(--ink);
+  color: var(--bg);
+  font-weight: 600;
+}
+.mission-tabs button .nav-cnt {
+  font-style: normal; font-size: 11px; font-weight: 700; padding: 0 6px;
+  border-radius: 999px; background: var(--surface-3); color: var(--ink-2);
+}
+.mission-tabs button .nav-cnt.warn { background: var(--warn-bg); color: var(--warn); }
+.mission-tabs button .nav-cnt.ok { background: var(--ok-bg); color: var(--ok); }
+.mission-tabs button.active .nav-cnt {
+  background: color-mix(in srgb, var(--bg) 20%, transparent);
+  color: var(--bg);
+}
+
+/* 顶级横向标签：实时看板 / 处置中 / 已处置（兼容旧选择器） */
 .v-topnav {
   display: flex;
   gap: 8px;

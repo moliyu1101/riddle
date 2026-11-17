@@ -1,42 +1,42 @@
 /** 外观偏好：服务端持久化，localStorage 只做启动缓存。 */
 
-export const UI_STORAGE_KEY = "riddle-ui-v2";
+export const UI_STORAGE_KEY = "riddle-ui-v3";
 export const THEME_STORAGE_KEY = "riddle-theme";
-const MIGRATED_KEY = "riddle-ui-v2-migrated";
+const MIGRATED_KEY = "riddle-ui-v3-migrated";
 
 export const ACCENT_PRESETS = [
-  { h: 212, name: "战术钴蓝" },
-  { h: 168, name: "信号翠青" },
-  { h: 155, name: "战地翡翠" },
-  { h: 42, name: "钨金琥珀" },
-  { h: 12, name: "赤红警戒" },
-  { h: 265, name: "量子紫晶" },
+  { h: 26, name: "信号朱红" },
+  { h: 215, name: "钴蓝工控" },
+  { h: 168, name: "深青翡翠" },
+  { h: 38, name: "工业琥珀" },
+  { h: 350, name: "赤红警戒" },
+  { h: 258, name: "靛蓝" },
 ];
 
 export const ACCENT2_PRESETS = [
-  { h: 168, name: "信号翠青" },
-  { h: 212, name: "战术钴蓝" },
-  { h: 42, name: "钨金琥珀" },
-  { h: 195, name: "冰川天青" },
+  { h: 168, name: "深青翡翠" },
+  { h: 215, name: "钴蓝" },
+  { h: 38, name: "工业琥珀" },
+  { h: 192, name: "天青" },
   { h: 145, name: "矩阵绿" },
-  { h: 25, name: "铜橘" },
+  { h: 26, name: "信号朱红" },
 ];
 
 export const BG_PRESETS = [
-  { h: 222, name: "碳灰岩" },
-  { h: 210, name: "深海石墨" },
-  { h: 240, name: "曜石蓝黑" },
-  { h: 195, name: "极夜深青" },
+  { h: 220, name: "极昼石英" },
+  { h: 210, name: "冷灰石墨" },
+  { h: 235, name: "碳岩蓝黑" },
+  { h: 195, name: "深海矿石" },
 ];
 
-/** 整套主题预设：棱镜战术工作台六套工业风配色 */
+/** 整套主题预设：Solaris & Obsidian Studio 六套架构风配色 */
 export const THEME_PRESETS = [
-  { id: "prism",   name: "棱镜战术蓝", accentHue: 212, accent2Hue: 168, bgHue: 222, glow: 0.45, desc: "碳黑岩灰 × 钴蓝翠青（重构默认）" },
-  { id: "emerald", name: "深林猎手",   accentHue: 158, accent2Hue: 195, bgHue: 210, glow: 0.55, desc: "翡翠绿 × 天青，高频侦察视野" },
-  { id: "amber",   name: "钨金指挥",   accentHue: 42,  accent2Hue: 205, bgHue: 230, glow: 0.5,  desc: "暖金琥珀 × 钢蓝，长时审阅护眼" },
-  { id: "crimson", name: "红队攻坚",   accentHue: 12,  accent2Hue: 38,  bgHue: 235, glow: 0.6,  desc: "战术赤红 × 琥珀，高压攻防态" },
-  { id: "arctic",  name: "极昼冰岩",   accentHue: 205, accent2Hue: 172, bgHue: 220, glow: 0.35, desc: "极低微光，干净精密仪表风" },
-  { id: "violet",  name: "量子紫外",   accentHue: 265, accent2Hue: 185, bgHue: 245, glow: 0.65, desc: "冷紫 × 青光，高对比科技感" },
+  { id: "solaris",  name: "信号朱红（默认）", accentHue: 26,  accent2Hue: 168, bgHue: 220, glow: 0.25, desc: "信号朱红 × 深青翡翠，锐利工业工程对比" },
+  { id: "studio",   name: "精工钴蓝",       accentHue: 215, accent2Hue: 168, bgHue: 218, glow: 0.25, desc: "钴蓝 × 翡翠绿，冷静数据分析视角" },
+  { id: "emerald",  name: "翡翠猎手",       accentHue: 162, accent2Hue: 26,  bgHue: 205, glow: 0.30, desc: "翡翠绿 × 信号橙，渗透工程终端感" },
+  { id: "amber",    name: "钨金指挥",       accentHue: 38,  accent2Hue: 210, bgHue: 225, glow: 0.30, desc: "琥珀金 × 钢蓝，长时间高密度审阅" },
+  { id: "crimson",  name: "赤红战备",       accentHue: 355, accent2Hue: 168, bgHue: 230, glow: 0.35, desc: "赤红 × 翠青，高危攻坚响应态" },
+  { id: "indigo",   name: "靛蓝实验室",     accentHue: 252, accent2Hue: 172, bgHue: 228, glow: 0.30, desc: "靛紫蓝 × 信号青，精密实验室质感" },
 ];
 
 /** 界面缩放档位 */
@@ -49,16 +49,16 @@ export const UI_SCALE_STEPS = [
 ];
 
 export const DEFAULTS = {
-  v: 2,
-  theme: "dark",
-  accentHue: 212,
+  v: 3,
+  theme: "light",
+  accentHue: 26,
   accent2Hue: 168,
-  glow: 0.45,
-  bgHue: 222,
+  glow: 0.25,
+  bgHue: 220,
   wallpaperKind: "none",
   wallpaperUrl: "",
   wallpaperFit: "cover",
-  wallpaperDim: 0.28,
+  wallpaperDim: 0.22,
   uiScale: 1,
   motion: "on",
 };
@@ -92,15 +92,15 @@ function clampScale(s) {
 }
 
 export function prefsFromApi(ui = {}) {
-  // 从旧版赛博品红紫无感迁移至 v2 棱镜战术蓝默认值（保留壁纸与明暗选择）
-  const isLegacyDefault = Number(ui.v || 1) < 2;
+  // 无感迁移至 v3 Solaris & Obsidian Studio 默认体系
+  const isLegacy = Number(ui.v || 1) < 3;
   return {
-    v: 2,
-    theme: ui.theme === "light" ? "light" : "dark",
-    accentHue: isLegacyDefault ? DEFAULTS.accentHue : clampHue(ui.accentHue),
-    accent2Hue: isLegacyDefault ? DEFAULTS.accent2Hue : clampHue(ui.accent2Hue, DEFAULTS.accent2Hue),
-    glow: isLegacyDefault ? DEFAULTS.glow : clampGlow(ui.glow),
-    bgHue: isLegacyDefault ? DEFAULTS.bgHue : clampHue(ui.bgHue, DEFAULTS.bgHue),
+    v: 3,
+    theme: isLegacy ? DEFAULTS.theme : (ui.theme === "dark" ? "dark" : "light"),
+    accentHue: isLegacy ? DEFAULTS.accentHue : clampHue(ui.accentHue),
+    accent2Hue: isLegacy ? DEFAULTS.accent2Hue : clampHue(ui.accent2Hue, DEFAULTS.accent2Hue),
+    glow: isLegacy ? DEFAULTS.glow : clampGlow(ui.glow),
+    bgHue: isLegacy ? DEFAULTS.bgHue : clampHue(ui.bgHue, DEFAULTS.bgHue),
     wallpaperKind: ["none", "url", "file"].includes(ui.wallpaperKind) ? ui.wallpaperKind : "none",
     wallpaperUrl: typeof ui.wallpaperUrl === "string" ? ui.wallpaperUrl.trim() : "",
     wallpaperFit: ui.wallpaperFit === "contain" ? "contain" : "cover",
@@ -113,7 +113,7 @@ export function prefsFromApi(ui = {}) {
 
 export function prefsToApi(prefs) {
   return {
-    v: 2,
+    v: 3,
     theme: prefs.theme,
     accentHue: clampHue(prefs.accentHue),
     accent2Hue: clampHue(prefs.accent2Hue),
@@ -150,19 +150,14 @@ export function saveUiPrefs(prefs) {
   return next;
 }
 
-// 亮色主题固定蓝白配色：主/次强调色与背景统一蓝系，霓虹偏好只作用于暗色主题
-const LIGHT_ACCENT_H = 228;
-const LIGHT_ACCENT2_H = 195;
-const LIGHT_BG_H = 230;
-
 export function applyChrome(prefs) {
   const root = document.documentElement;
   root.setAttribute("data-theme", prefs.theme);
   const isLight = prefs.theme === "light";
-  root.style.setProperty("--accent-h", String(isLight ? LIGHT_ACCENT_H : prefs.accentHue));
-  root.style.setProperty("--accent2-h", String(isLight ? LIGHT_ACCENT2_H : prefs.accent2Hue));
+  root.style.setProperty("--accent-h", String(clampHue(prefs.accentHue)));
+  root.style.setProperty("--accent2-h", String(clampHue(prefs.accent2Hue, DEFAULTS.accent2Hue)));
   root.style.setProperty("--glow", String(prefs.glow));
-  root.style.setProperty("--bg-h", String(isLight ? LIGHT_BG_H : prefs.bgHue));
+  root.style.setProperty("--bg-h", String(isLight ? DEFAULTS.bgHue : clampHue(prefs.bgHue, DEFAULTS.bgHue)));
   root.style.setProperty("--wallpaper-dim", String(prefs.wallpaperDim));
   root.style.setProperty("--wallpaper-fit", prefs.wallpaperFit);
   root.style.setProperty("--ui-scale", String(clampScale(prefs.uiScale)));

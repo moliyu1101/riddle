@@ -1095,8 +1095,8 @@ const liveTargetIds = computed(() => new Set(liveWorkers.value.map((w) => w.targ
           <!-- 单站协作态势：三阶段流水线（侦察→主题深挖→定向追打），体现同站多路线协同 -->
           <CollabPanel v-if="siteCollab" :site-collab="siteCollab" />
 
-          <!-- 顶级横向标签：实时看板 / 处置中 / 已处置（左侧导航横向化） -->
-          <div class="v-topnav" role="tablist" aria-label="视图切换">
+          <!-- 扁平单层 6 页签直达工作台 -->
+          <div class="mission-tabs" role="tablist" aria-label="作战台视图切换">
             <button
               type="button"
               role="tab"
@@ -1104,39 +1104,58 @@ const liveTargetIds = computed(() => new Set(liveWorkers.value.map((w) => w.targ
               :class="{ active: tab === 'board' }"
               @click="tab = 'board'"
             >
-              <svg class="nav-ico" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" v-html="SUB_ICONS.grid"></svg>
-              <span>实时看板</span>
+              <span>⚡ 实时作战台</span>
               <i v-if="task.status === 'running'" class="live-dot" title="任务运行中"></i>
             </button>
             <button
-              v-for="g in SUB_GROUPS"
-              :key="g.key"
               type="button"
               role="tab"
-              :aria-selected="currentGroup?.key === g.key"
-              :class="{ active: currentGroup?.key === g.key }"
-              @click="selectTopGroup(g)"
+              :aria-selected="tab === 'review'"
+              :class="{ active: tab === 'review' }"
+              @click="tab = 'review'"
             >
-              <svg class="nav-ico" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" v-html="SUB_ICONS[g.items[0].icon]"></svg>
-              <span>{{ g.label }}</span>
-              <i v-if="groupTotal(g)" class="nav-cnt">{{ groupTotal(g) }}</i>
+              <span>🔍 复审队列</span>
+              <i v-if="subCount('review')" class="nav-cnt warn">{{ subCount("review") }}</i>
             </button>
-          </div>
-
-          <!-- 处置阶段子分类：横向标签，切换当前组下的子列表（位于搜索框上方） -->
-          <div v-if="searchEnabled && subTabs.length" class="v-subtabs" role="tablist" aria-label="处置阶段子分类">
             <button
-              v-for="st in subTabs"
-              :key="st.key"
               type="button"
               role="tab"
-              :aria-selected="tab === st.key"
-              :class="{ active: tab === st.key }"
-              @click="tab = st.key"
+              :aria-selected="tab === 'submit'"
+              :class="{ active: tab === 'submit' }"
+              @click="tab = 'submit'"
             >
-              <svg class="nav-ico" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" v-html="SUB_ICONS[st.icon]"></svg>
-              <span>{{ st.label }}</span>
-              <i v-if="subCount(st.key)" class="nav-cnt">{{ subCount(st.key) }}</i>
+              <span>📤 待交 SRC</span>
+              <i v-if="subCount('submit')" class="nav-cnt ok">{{ subCount("submit") }}</i>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              :aria-selected="tab === 'killsweep'"
+              :class="{ active: tab === 'killsweep' }"
+              @click="tab = 'killsweep'"
+            >
+              <span>🎯 通杀列</span>
+              <i v-if="subCount('killsweep')" class="nav-cnt">{{ subCount("killsweep") }}</i>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              :aria-selected="tab === 'archived'"
+              :class="{ active: tab === 'archived' }"
+              @click="tab = 'archived'"
+            >
+              <span>📦 AI 归档救回</span>
+              <i v-if="subCount('archived')" class="nav-cnt">{{ subCount("archived") }}</i>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              :aria-selected="tab === 'rejected'"
+              :class="{ active: tab === 'rejected' }"
+              @click="tab = 'rejected'"
+            >
+              <span>✕ 已驳回</span>
+              <i v-if="subCount('rejected')" class="nav-cnt">{{ subCount("rejected") }}</i>
             </button>
           </div>
 

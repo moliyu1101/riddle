@@ -75,7 +75,7 @@ function enterDirectly() {
           </div>
           <div>
             <b>知蠹 RIDDLE</b>
-            <small>PRISM TACTICAL WORKBENCH · 24×7</small>
+            <small>SOLARIS STUDIO · AUTONOMOUS OPS</small>
           </div>
         </div>
         <h1 class="brief-title">自主挖掘 · 知识自进化<br />全闭环安全作战工作台</h1>

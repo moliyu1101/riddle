@@ -235,7 +235,7 @@ onUnmounted(() => {
           </div>
           <div v-show="!sidebarCollapsed" class="brand-text">
             <b>知蠹 RIDDLE</b>
-            <small>PRISM WORKBENCH</small>
+            <small>SOLARIS STUDIO</small>
           </div>
           <button
             type="button"
@@ -312,22 +312,24 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <!-- 四阶闭环快捷跳板 -->
-          <nav v-if="authRoleRef !== 'observer'" class="tac-loop-rail" aria-label="自主进化闭环快捷跳转">
+          <!-- 顶部等宽遥测脉冲带 -->
+          <nav v-if="authRoleRef !== 'observer'" class="tac-loop-rail" aria-label="系统遥测与闭环直达">
+            <span class="tel-sys"><i>●</i>SYS:ONLINE</span>
+            <span class="loop-sep">|</span>
             <router-link to="/" class="loop-step">
-              <i>①</i><span>在侦 <b>{{ pulse.runningTasks }}</b></span>
+              <span>RUN</span><b>{{ pulse.runningTasks }}</b>
             </router-link>
-            <span class="loop-sep">→</span>
             <router-link to="/" class="loop-step warn">
-              <i>②</i><span>待审 <b>{{ pulse.pendingReview }}</b></span>
+              <span>REV</span><b>{{ pulse.pendingReview }}</b>
             </router-link>
-            <span class="loop-sep">→</span>
             <router-link :to="{ path: '/intel', query: { tab: 'kb', origin: 'distilled' } }" class="loop-step accent">
-              <i>③</i><span>蒸馏KB <b>{{ pulse.distilledKb }}</b></span>
+              <span>KB_DISTILL</span><b>{{ pulse.distilledKb }}</b>
             </router-link>
-            <span class="loop-sep">→</span>
             <router-link :to="{ path: '/intel', query: { tab: 'hard' } }" class="loop-step info">
-              <i>④</i><span>唤醒池 <b>{{ pulse.hardTotal }}</b></span>
+              <span>HARD_POOL</span><b>{{ pulse.hardTotal }}</b>
+            </router-link>
+            <router-link v-if="pulse.pendingIntercepts > 0" :to="{ path: '/fusion', query: { tab: 'gates' } }" class="loop-step warn">
+              <span>INTERCEPT</span><b>{{ pulse.pendingIntercepts }}</b>
             </router-link>
           </nav>
 
@@ -369,7 +371,7 @@ onUnmounted(() => {
           <span class="dot">·</span>
           <span>CC BY-NC 4.0</span>
           <span class="dot">·</span>
-          <span>Prism Tactical Workbench</span>
+          <span>Solaris &amp; Obsidian Studio</span>
         </footer>
       </div>
     </template>

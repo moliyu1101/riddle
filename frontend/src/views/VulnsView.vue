@@ -181,183 +181,629 @@ onActivated(() => {
 </script>
 
 <template>
-  <section class="view intel-view" :class="{ 'is-refreshing': refreshing }">
+  <section class="view vuln-studio" :class="{ 'is-refreshing': refreshing }">
     <div v-if="refreshing && !initialLoading" class="view-progress" aria-hidden="true"><i></i></div>
 
-    <nav class="crumb" aria-label="面包屑">
-      <span>指挥中心</span>
-      <span class="crumb-sep">/</span>
-      <b>漏洞档案库</b>
-    </nav>
-
-    <header class="page-head split">
+    <header class="vuln-head">
       <div>
-        <h2>漏洞档案库 <span class="intel-chip">VULN</span></h2>
-        <p class="page-sub">跨任务汇总人工审核通过的漏洞——含已提交 SRC 与待提交两类，统一归档、分级与复盘。</p>
+        <div class="vh-crumb">
+          <span>COMMAND CENTER</span>
+          <span>/</span>
+          <b>VULNERABILITY ARCHIVE</b>
+        </div>
+        <div class="vh-title-row">
+          <h2>漏洞档案库</h2>
+          <span class="vh-chip">VERIFIED LEDGER</span>
+        </div>
+        <p class="vh-sub">跨任务汇总人工审核通过的高危/疑似成果 · 统一分级评分 · 一键脱敏蒸馏入库与公文报告导出。</p>
       </div>
-      <router-link class="head-action" to="/">返回任务</router-link>
+      <router-link class="btn-vuln-ghost" to="/">← 返回作战台</router-link>
     </header>
 
-    <!-- 总览区 -->
-    <div class="vuln-dash">
-      <div class="vd-hero">
-        <div class="vd-hero-top">
-          <span class="vd-label">过审漏洞</span>
-          <span class="vd-chip">ARCHIVE</span>
-        </div>
-        <b class="vd-total">{{ statTotal }}</b>
-        <div class="vd-hero-sub">
-          <span class="vd-pill ok">✓ 已提交 {{ statSubmitted }}</span>
-          <span class="vd-pill warn">◷ 待提交 {{ statReady }}</span>
+    <!-- Spectral Summary Band -->
+    <div class="vuln-spectrum-band">
+      <div class="vsb-total">
+        <span class="vsb-k">过审漏洞归档 / ARCHIVED</span>
+        <div class="vsb-v-row">
+          <b>{{ statTotal }}</b>
+          <span class="vsb-sub-tag">已过审成果</span>
         </div>
       </div>
 
-      <div class="vd-sev">
-        <div class="vd-sev-head">
-          <span class="vd-label">等级分布</span>
-          <span class="vd-sev-count">{{ sevOrder.length }} 级</span>
+      <button type="button" class="vsb-stat clickable" :class="{ on: submitted === 'yes' }" @click="submitted = submitted === 'yes' ? 'all' : 'yes'">
+        <span class="vsb-k">✓ 已提交 SRC</span>
+        <b>{{ statSubmitted }}</b>
+      </button>
+
+      <button type="button" class="vsb-stat clickable" :class="{ on: submitted === 'no' }" @click="submitted = submitted === 'no' ? 'all' : 'no'">
+        <span class="vsb-k">◷ 待提交队列</span>
+        <b class="warn-txt">{{ statReady }}</b>
+      </button>
+
+      <div class="vsb-spectrum">
+        <div class="vsb-spec-head">
+          <span class="vsb-k">五级危害光谱 / SEVERITY DISTRIBUTION</span>
+          <span class="vsb-spec-hint">点击等级图例快速筛选</span>
         </div>
-        <div class="vd-bar" role="img" aria-label="漏洞等级分布">
+        <div class="vsb-bar" role="img" aria-label="漏洞等级分布">
           <i v-for="s in sevOrder" :key="s" :class="sevMeta(s).hue"
              :style="{ width: sevPct(s) + '%' }"
              :title="sevMeta(s).label + '：' + (stats.by_severity[s] || 0)"></i>
         </div>
-        <div class="vd-sev-legend">
-          <span v-for="s in sevOrder" :key="s" class="vd-sev-item" :class="sevMeta(s).hue">
-            <i></i>{{ sevMeta(s).label }} {{ stats.by_severity[s] || 0 }}
-          </span>
+        <div class="vsb-legend">
+          <button v-for="s in sevOrder" :key="s" type="button" class="vsb-leg-btn"
+                  :class="[sevMeta(s).hue, { on: severity === s }]"
+                  @click="severity = severity === s ? '' : s">
+            <i></i>{{ sevMeta(s).label }} <b>{{ stats.by_severity[s] || 0 }}</b>
+          </button>
         </div>
       </div>
-
-      <div class="vd-card" :class="{ on: submitted === 'yes' }" @click="submitted = 'yes'">
-        <span class="vd-card-icon ok">✓</span>
-        <b class="vd-card-v">{{ statSubmitted }}</b>
-        <span class="vd-card-label">已提交 SRC</span>
-      </div>
-      <div class="vd-card pending" :class="{ on: submitted === 'no' }" @click="submitted = 'no'">
-        <span class="vd-card-icon warn">◷</span>
-        <b class="vd-card-v">{{ statReady }}</b>
-        <span class="vd-card-label">待提交</span>
-      </div>
     </div>
 
-    <!-- 工具栏 -->
-    <div class="intel-toolbar">
-      <div class="kind-tabs">
-        <button v-for="t in SUBMIT_TABS" :key="t.id" type="button"
-                class="kind-tab" :class="{ on: submitted === t.id }" @click="submitted = t.id">
-          {{ t.label }}
-        </button>
-      </div>
-      <div class="search-box">
-        <span>⌕</span>
-        <input v-model="searchDraft" placeholder="搜索 标题 / 类型 / URL / 归属 / 任务" />
-      </div>
-      <select v-model="severity">
-        <option value="">全部等级</option>
-        <option v-for="s in severityOptions" :key="s" :value="s">{{ sevMeta(s).label }}</option>
-      </select>
-      <select v-model="sort" class="sort-select" aria-label="排序方式">
-        <option v-for="o in SORT_OPTIONS" :key="o.id" :value="o.id">按{{ o.label }}</option>
-      </select>
-      <button class="btn-ghost" @click="reload" :disabled="refreshing">{{ refreshing ? "刷新中…" : "刷新" }}</button>
-    </div>
-
-    <!-- 列表 -->
-    <div v-if="initialLoading" class="vuln-list">
-      <div v-for="n in 5" :key="n" class="vuln-card skeleton-hard"></div>
-    </div>
-    <div v-else-if="!rows.length" class="empty">
-      漏洞档案库暂无记录
-      <span class="hint">人工审核通过的漏洞会自动归档到这里</span>
-    </div>
-    <div v-else class="vuln-list">
-      <article v-for="(row, i) in rows" :key="row.id" class="vuln-card anim-fade-up" :class="sevMeta(row.effective_severity).hue"
-               :style="{ '--i': i }" role="button" tabindex="0" @click="openVuln(row)" @keyup.enter="openVuln(row)">
-        <div class="vc-left">
-          <span class="vc-sev" :class="sevMeta(row.effective_severity).hue">
-            {{ sevMeta(row.effective_severity).label }}
-          </span>
-          <span class="vc-id">#{{ shortId(row.id) }}</span>
-        </div>
-
-        <div class="vc-main">
-          <div class="vc-title-row">
-            <b class="vc-title">{{ row.title }}</b>
-            <span v-if="row.confidence" class="vc-conf" :class="confMeta(row.confidence).hue">
-              {{ confMeta(row.confidence).label }}
-            </span>
-          </div>
-          <div class="vc-meta">
-            <span class="vc-tag">{{ row.vuln_type }}</span>
-            <a class="vc-url" :href="row.target_url" target="_blank" rel="noopener noreferrer" @click.stop>
-              <span class="vc-url-text">{{ row.target_url }}</span>
-              <svg class="vc-url-ico" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-                <polyline points="15 3 21 3 21 9"/>
-                <line x1="10" y1="14" x2="21" y2="3"/>
-              </svg>
-            </a>
-          </div>
-          <div class="vc-owner">
-            <span>归属 {{ row.owner || "待确认" }}</span>
-            <span class="vc-dot">·</span>
-            <span>任务 {{ row.task_name || (row.task_id ? row.task_id : "已删除") }}</span>
-            <template v-if="row.llm_model">
-              <span class="vc-dot">·</span>
-              <span class="vc-model">{{ row.llm_model }}</span>
-            </template>
-          </div>
-          <div v-if="(row.kill_chain || []).length" class="vuln-chain" @click.stop>
-            <div class="vc-flow">
-              <span class="vc-label">攻击链路</span>
-              <template v-for="(s, i) in row.kill_chain" :key="i">
-                <span class="vc-node">{{ s.method }}</span>
-                <span v-if="i < row.kill_chain.length - 1" class="vc-arrow">→</span>
-              </template>
-            </div>
+    <!-- 2-Column Archive Workspace -->
+    <div class="vuln-studio-grid">
+      <aside class="vuln-rail" aria-label="漏洞筛选控制台">
+        <div class="vr-block">
+          <div class="vr-label">关键词检索</div>
+          <div class="vr-search">
+            <span>⌕</span>
+            <input v-model="searchDraft" placeholder="标题 / 类型 / URL / 归属 / 任务..." />
           </div>
         </div>
 
-        <div class="vc-side">
-          <span class="vc-status" :class="row.submitted ? 'verified' : 'likely'">
-            {{ row.submitted ? "✓ 已提交" : "◷ 待提交" }}
-          </span>
-          <span v-if="row.score" class="vc-score">{{ row.score }} 分</span>
-          <time>{{ fmtLocalTime(row.user_reviewed_at || row.created_at) }}</time>
-          <div class="vc-quick-acts" @click.stop>
-            <button
-              v-if="writable"
-              type="button"
-              class="vc-qbtn"
-              :class="{ done: distilledIds.has(row.id) }"
-              :disabled="distillingId === row.id"
-              title="脱敏蒸馏该漏洞攻击路径与载荷至知识库"
-              @click="distillRow(row)"
-            >
-              {{ distillingId === row.id ? "蒸馏中…" : distilledIds.has(row.id) ? "✓ 已蒸馏" : "⚡ 蒸馏入库" }}
-            </button>
-            <button
-              type="button"
-              class="vc-qbtn"
-              :disabled="exportingId === row.id"
-              title="直接生成并下载公文级 Word 报告"
-              @click="exportDocxRow(row)"
-            >
-              {{ exportingId === row.id ? "导出中…" : "📄 公文 Word" }}
+        <div class="vr-block">
+          <div class="vr-label">SRC 提交状态</div>
+          <div class="vr-facets">
+            <button v-for="t in SUBMIT_TABS" :key="t.id" type="button"
+                    class="vr-facet" :class="{ on: submitted === t.id }" @click="submitted = t.id">
+              <span>{{ t.label }}</span>
+              <em v-if="t.id === 'all'">{{ statTotal }}</em>
+              <em v-else-if="t.id === 'yes'">{{ statSubmitted }}</em>
+              <em v-else-if="t.id === 'no'">{{ statReady }}</em>
             </button>
           </div>
         </div>
-      </article>
-    </div>
 
-    <div v-if="!initialLoading && total > pageSize" class="hard-pager">
-      <button type="button" @click="prevPage" :disabled="page <= 0 || refreshing">上一页</button>
-      <span>第 {{ page + 1 }} 页 · {{ page * pageSize + 1 }}-{{ page * pageSize + rows.length }} / {{ total }}</span>
-      <button type="button" @click="nextPage" :disabled="!hasMore || refreshing">下一页</button>
+        <div class="vr-block">
+          <div class="vr-label">危害等级与排序</div>
+          <div class="vr-selects">
+            <select v-model="severity" aria-label="等级筛选">
+              <option value="">全部危害等级</option>
+              <option v-for="s in severityOptions" :key="s" :value="s">{{ sevMeta(s).label }}</option>
+            </select>
+            <select v-model="sort" aria-label="排序方式">
+              <option v-for="o in SORT_OPTIONS" :key="o.id" :value="o.id">按{{ o.label }}</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="vr-block">
+          <button type="button" class="btn-vuln-ghost full" @click="reload" :disabled="refreshing">
+            {{ refreshing ? "刷新同步中…" : "↻ 刷新归档列表" }}
+          </button>
+        </div>
+      </aside>
+
+      <!-- Structured Ledger Table -->
+      <div class="vuln-main">
+        <div v-if="initialLoading" class="vr-skeletons">
+          <div v-for="n in 6" :key="n" class="vr-skel-row"></div>
+        </div>
+        <div v-else-if="!rows.length" class="vr-empty">
+          <b>漏洞档案库暂无匹配记录</b>
+          <span>人工复审确认通过的漏洞会自动进入此归档账本。</span>
+        </div>
+        <div v-else class="vuln-table-wrap">
+          <table class="vuln-table">
+            <thead>
+              <tr>
+                <th style="width: 94px;">等级 / ID</th>
+                <th>漏洞详情、载荷URL与攻击链路</th>
+                <th style="width: 185px;">归属 / 任务 / 模型</th>
+                <th style="width: 126px;">提交态 / 评分</th>
+                <th style="width: 190px; text-align: right;">进化蒸馏与导出</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in rows" :key="row.id" class="vl-row" :class="sevMeta(row.effective_severity).hue"
+                  role="button" tabindex="0" @click="openVuln(row)" @keyup.enter="openVuln(row)">
+                <td>
+                  <div class="vl-sev-col">
+                    <span class="sev-badge" :class="sevMeta(row.effective_severity).hue">
+                      {{ sevMeta(row.effective_severity).label }}
+                    </span>
+                    <code class="vl-id">#{{ shortId(row.id) }}</code>
+                  </div>
+                </td>
+                <td>
+                  <div class="vl-title-col">
+                    <div class="vl-title-line">
+                      <b class="vl-title">{{ row.title }}</b>
+                      <span v-if="row.confidence" class="conf-pill" :class="confMeta(row.confidence).hue">
+                        {{ confMeta(row.confidence).label }}
+                      </span>
+                      <span class="type-pill">{{ row.vuln_type }}</span>
+                    </div>
+                    <a class="vl-url" :href="row.target_url" target="_blank" rel="noopener noreferrer" @click.stop>
+                      <span>{{ row.target_url }}</span>
+                      <span aria-hidden="true">↗</span>
+                    </a>
+                    <div v-if="(row.kill_chain || []).length" class="vl-chain" @click.stop>
+                      <span class="chain-lbl">LINK</span>
+                      <template v-for="(s, idx) in row.kill_chain" :key="idx">
+                        <span class="chain-node">{{ s.method }}</span>
+                        <span v-if="idx < row.kill_chain.length - 1" class="chain-sep">→</span>
+                      </template>
+                    </div>
+                  </div>
+                </td>
+                <td>
+                  <div class="vl-owner-col">
+                    <b>{{ row.owner || "归属待确认" }}</b>
+                    <small>{{ row.task_name || (row.task_id ? row.task_id : "关联任务已清理") }}</small>
+                    <span v-if="row.llm_model" class="vl-model">{{ row.llm_model }}</span>
+                  </div>
+                </td>
+                <td>
+                  <div class="vl-status-col">
+                    <span class="sub-tag" :class="row.submitted ? 'ok' : 'pending'">
+                      {{ row.submitted ? "✓ 已提交 SRC" : "◷ 待提交" }}
+                    </span>
+                    <div class="vl-score-line">
+                      <span v-if="row.score" class="score-num">{{ row.score }} 分</span>
+                      <time>{{ fmtLocalTime(row.user_reviewed_at || row.created_at) }}</time>
+                    </div>
+                  </div>
+                </td>
+                <td style="text-align: right;" @click.stop>
+                  <div class="vl-actions">
+                    <button
+                      v-if="writable"
+                      type="button"
+                      class="vl-btn"
+                      :class="{ done: distilledIds.has(row.id) }"
+                      :disabled="distillingId === row.id"
+                      title="脱敏蒸馏该漏洞攻击路径与载荷至知识库"
+                      @click="distillRow(row)"
+                    >
+                      {{ distillingId === row.id ? "蒸馏中…" : distilledIds.has(row.id) ? "✓ 已蒸馏" : "⚡ 蒸馏入库" }}
+                    </button>
+                    <button
+                      type="button"
+                      class="vl-btn"
+                      :disabled="exportingId === row.id"
+                      title="直接生成并下载公文级 Word 报告"
+                      @click="exportDocxRow(row)"
+                    >
+                      {{ exportingId === row.id ? "导出中…" : "📄 Word" }}
+                    </button>
+                    <button type="button" class="vl-btn detail" @click="openVuln(row)">审阅</button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div v-if="!initialLoading && total > pageSize" class="vl-pager">
+          <button type="button" class="btn-vuln-ghost" @click="prevPage" :disabled="page <= 0 || refreshing">上一页</button>
+          <span>第 {{ page + 1 }} 页 · {{ page * pageSize + 1 }}-{{ page * pageSize + rows.length }} / {{ total }}</span>
+          <button type="button" class="btn-vuln-ghost" @click="nextPage" :disabled="!hasMore || refreshing">下一页</button>
+        </div>
+      </div>
     </div>
 
     <ReportDrawer :finding-id="drawerId" mode="view" @close="drawerId = null"
       @updated="onDrawerUpdated" @toast="toast" />
   </section>
 </template>
+
+<style scoped>
+.vuln-studio {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.vuln-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.vh-crumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.vh-crumb b { color: var(--ink); }
+.vh-title-row { display: flex; align-items: center; gap: 10px; }
+.vh-title-row h2 { margin: 0; font-size: 20px; font-weight: 700; color: var(--ink); }
+.vh-chip {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent2) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent2) 32%, var(--border));
+  color: var(--accent2);
+}
+.vh-sub { margin: 4px 0 0; font-size: 12.5px; color: var(--muted); }
+
+/* Top Spectral Summary Band */
+.vuln-spectrum-band {
+  display: grid;
+  grid-template-columns: 190px 145px 145px minmax(0, 1fr);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+.vsb-total,
+.vsb-stat,
+.vsb-spectrum {
+  padding: 12px 16px;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+}
+.vsb-spectrum { border-right: none; }
+.vsb-stat {
+  appearance: none;
+  background: transparent;
+  border-top: none;
+  border-bottom: none;
+  border-left: none;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.vsb-stat:hover { background: var(--bg-soft); }
+.vsb-stat.on {
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+  box-shadow: inset 0 -2.5px 0 var(--accent);
+}
+.vsb-k {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.vsb-v-row { display: flex; align-items: baseline; gap: 8px; }
+.vsb-total b,
+.vsb-stat b {
+  font-family: var(--font-mono);
+  font-size: 24px;
+  line-height: 1.05;
+  color: var(--ink);
+}
+.vsb-stat b.warn-txt { color: var(--warn); }
+.vsb-sub-tag { font-size: 11px; color: var(--ok); font-weight: 600; }
+
+.vsb-spec-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.vsb-spec-hint { font-size: 11px; color: var(--muted); }
+.vsb-bar {
+  display: flex;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--bg-soft);
+}
+.vsb-bar i.danger, .vsb-bar i.critical { background: #dc2626; }
+.vsb-bar i.high { background: #ea580c; }
+.vsb-bar i.warn, .vsb-bar i.medium { background: #d97706; }
+.vsb-bar i.info, .vsb-bar i.low { background: #0284c7; }
+.vsb-bar i.muted { background: #6b7280; }
+
+.vsb-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.vsb-leg-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+  font-size: 11px;
+  color: var(--ink);
+  cursor: pointer;
+}
+.vsb-leg-btn.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.vsb-leg-btn i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); display: inline-block; }
+.vsb-leg-btn.danger i, .vsb-leg-btn.critical i { background: #dc2626; }
+.vsb-leg-btn.high i { background: #ea580c; }
+.vsb-leg-btn.warn i, .vsb-leg-btn.medium i { background: #d97706; }
+.vsb-leg-btn.info i, .vsb-leg-btn.low i { background: #0284c7; }
+.vsb-leg-btn b { font-family: var(--font-mono); }
+
+/* Asymmetric 2-Column Layout */
+.vuln-studio-grid {
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.vuln-rail {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  position: sticky;
+  top: 64px;
+}
+.vr-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.vr-block:last-child { padding-bottom: 0; border-bottom: none; }
+.vr-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.vr-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+}
+.vr-search span { color: var(--muted); }
+.vr-search input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  outline: none;
+  color: var(--ink);
+  font-size: 12.5px;
+}
+.vr-facets { display: flex; flex-direction: column; gap: 4px; }
+.vr-facet {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 9px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink);
+  font-size: 12px;
+  cursor: pointer;
+}
+.vr-facet:hover { background: var(--bg-soft); }
+.vr-facet.on {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 28%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+}
+.vr-facet em { font-style: normal; font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+
+.vr-selects { display: flex; flex-direction: column; gap: 7px; }
+.vr-selects select {
+  width: 100%;
+  padding: 7px 9px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.btn-vuln-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 12px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+}
+.btn-vuln-ghost:hover:not(:disabled) { background: var(--bg-soft); }
+.btn-vuln-ghost.full { width: 100%; }
+
+/* Vulnerability Ledger Table */
+.vuln-main { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.vuln-table-wrap {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow-x: auto;
+}
+.vuln-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.vuln-table thead th {
+  text-align: left;
+  padding: 9px 12px;
+  background: var(--bg-soft);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.vuln-table tbody td {
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.vuln-table tbody tr:last-child td { border-bottom: none; }
+.vl-row { cursor: pointer; transition: background 0.12s ease; }
+.vl-row:hover { background: color-mix(in srgb, var(--bg-soft) 75%, transparent); }
+
+.vl-sev-col { display: flex; flex-direction: column; gap: 5px; }
+.sev-badge {
+  display: inline-block;
+  width: fit-content;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.sev-badge.danger, .sev-badge.critical { background: rgba(220, 38, 38, 0.12); color: #dc2626; }
+.sev-badge.high { background: rgba(234, 88, 12, 0.12); color: #ea580c; }
+.sev-badge.warn, .sev-badge.medium { background: rgba(217, 119, 6, 0.12); color: #d97706; }
+.sev-badge.info, .sev-badge.low { background: rgba(2, 132, 199, 0.12); color: #0284c7; }
+.sev-badge.muted { background: var(--bg-soft); color: var(--muted); }
+.vl-id { font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+
+.vl-title-col { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.vl-title-line { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.vl-title { font-size: 13.5px; color: var(--ink); word-break: break-word; }
+.conf-pill,
+.type-pill {
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+  color: var(--muted);
+}
+.conf-pill.ok, .conf-pill.verified { background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok); border-color: transparent; font-weight: 600; }
+.vl-url {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--accent);
+  text-decoration: none;
+  word-break: break-all;
+}
+.vl-url:hover { text-decoration: underline; }
+.vl-chain {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+}
+.chain-lbl {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--muted);
+  margin-right: 2px;
+}
+.chain-node {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  color: var(--ink);
+}
+.chain-sep { color: var(--muted); font-size: 10.5px; }
+
+.vl-owner-col { display: flex; flex-direction: column; gap: 3px; }
+.vl-owner-col b { font-size: 12.5px; color: var(--ink); }
+.vl-owner-col small { font-size: 11px; color: var(--muted); }
+.vl-model {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--accent2);
+  width: fit-content;
+}
+
+.vl-status-col { display: flex; flex-direction: column; gap: 5px; }
+.sub-tag {
+  display: inline-block;
+  width: fit-content;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.sub-tag.ok { background: color-mix(in srgb, var(--ok) 13%, transparent); color: var(--ok); }
+.sub-tag.pending { background: color-mix(in srgb, var(--warn) 13%, transparent); color: var(--warn); }
+.vl-score-line { display: flex; flex-direction: column; gap: 2px; }
+.score-num { font-family: var(--font-mono); font-size: 11.5px; font-weight: 700; color: var(--ink); }
+.vl-score-line time { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
+
+.vl-actions { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; }
+.vl-btn {
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.vl-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.vl-btn.done { background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok); border-color: color-mix(in srgb, var(--ok) 30%, var(--border)); }
+.vl-btn.detail { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+
+.vl-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.vr-empty {
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 44px 24px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.vr-empty b { color: var(--ink); }
+.vr-empty span { font-size: 12.5px; color: var(--muted); }
+
+.vr-skeletons { display: flex; flex-direction: column; gap: 8px; }
+.vr-skel-row { height: 64px; border-radius: 6px; background: var(--surface); border: 1px solid var(--border); opacity: 0.6; }
+
+@media (max-width: 1024px) {
+  .vuln-spectrum-band { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .vsb-spectrum { grid-column: 1 / -1; border-top: 1px solid var(--border); }
+  .vuln-studio-grid { grid-template-columns: 1fr; }
+  .vuln-rail { position: static; }
+}
+</style>

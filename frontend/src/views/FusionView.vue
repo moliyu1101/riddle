@@ -627,50 +627,69 @@ onMounted(async () => {
 </script>
 
 <template>
-  <section class="fusion-page">
-    <header class="fusion-head">
+  <section class="fusion-studio">
+    <header class="fs-head">
       <div>
-        <h2>融合层</h2>
-        <p class="fusion-sub">目标闸门 · 证据闸门 · 范围守卫 · 情报时间流 · 双图 · 流量留痕 · 公文报告 · 角色路由</p>
+        <div class="fs-crumb">
+          <span>COMMAND CENTER</span>
+          <span>/</span>
+          <b>FUSION GOVERNANCE</b>
+        </div>
+        <div class="fs-title-row">
+          <h2>融合层治理工作台</h2>
+          <span class="fs-chip">4 PILLARS · 8 MODULES</span>
+        </div>
+        <p class="fs-sub">目标闸门 · 证据闸门 · 范围守卫 · 情报时间流 · 资产双图 · 流量留痕 · 公文报告 · 角色路由</p>
       </div>
-      <div class="fusion-head-tools">
-        <label class="fusion-task-picker">
-          <span>当前操作任务</span>
-          <select :value="selectedTaskId" @change="onSelectTask($event.target.value)">
+      <div class="fs-head-actions">
+        <button class="fs-btn ghost" :disabled="busy === 'reload'" @click="load">
+          {{ busy === "reload" ? "刷新中…" : "↻ 刷新全部状态" }}
+        </button>
+        <router-link class="fs-btn ghost" to="/">← 返回作战台</router-link>
+      </div>
+    </header>
+
+    <div class="fs-layout">
+      <!-- Left Vertical Governance Rail -->
+      <aside class="fs-rail" aria-label="融合模块导航与任务选择">
+        <div class="fs-rail-block">
+          <label class="fs-rail-label" for="fusion-task-select">当前操作任务 / CONTEXT</label>
+          <select id="fusion-task-select" class="fs-select" :value="selectedTaskId" @change="onSelectTask($event.target.value)">
             <option value="">（手动输入任务 ID）</option>
             <option v-for="t in tasks" :key="t.id" :value="t.id">
               {{ t.name }} ({{ t.id.slice(0, 8) }}){{ t.goal_summary?.configured ? ` · ${t.goal_summary.summary}` : "" }}
             </option>
           </select>
-        </label>
-        <button class="btn ghost" :disabled="busy === 'reload'" @click="load">刷新</button>
-      </div>
-    </header>
-
-    <div v-if="notice" class="fusion-alert ok">{{ notice }}</div>
-    <div v-if="error" class="fusion-alert bad">{{ error }}</div>
-
-    <nav class="fusion-pillars" role="tablist" aria-label="融合治理四大支柱">
-      <div v-for="grp in TAB_GROUPS" :key="grp.key" class="fusion-pillar-grp">
-        <span class="fusion-pillar-lbl">{{ grp.label }}</span>
-        <div class="fusion-pillar-tabs">
-          <button
-            v-for="t in TABS.filter((x) => grp.tabs.includes(x.id))"
-            :key="t.id"
-            class="fusion-tab"
-            :class="{ active: activeTab === t.id }"
-            role="tab"
-            :aria-selected="activeTab === t.id"
-            @click="activeTab = t.id"
-          >
-            {{ t.label }}
-            <span v-if="t.id === 'gates' && pendingInterceptCount > 0" class="ftab-badge">{{ pendingInterceptCount }}</span>
-          </button>
         </div>
-      </div>
-    </nav>
 
-    <div v-if="loading" class="fusion-card">正在读取融合层状态…</div>
+        <nav class="fs-nav" role="tablist" aria-label="融合治理四大支柱">
+          <div v-for="grp in TAB_GROUPS" :key="grp.key" class="fs-pillar-grp">
+            <span class="fs-pillar-lbl">{{ grp.label }}</span>
+            <div class="fs-pillar-tabs">
+              <button
+                v-for="t in TABS.filter((x) => grp.tabs.includes(x.id))"
+                :key="t.id"
+                type="button"
+                class="fs-tab"
+                :class="{ active: activeTab === t.id }"
+                role="tab"
+                :aria-selected="activeTab === t.id"
+                @click="activeTab = t.id"
+              >
+                <span>{{ t.label }}</span>
+                <span v-if="t.id === 'gates' && pendingInterceptCount > 0" class="fs-badge">{{ pendingInterceptCount }}</span>
+              </button>
+            </div>
+          </div>
+        </nav>
+      </aside>
+
+      <!-- Right Active Module Canvas -->
+      <div class="fs-main">
+        <div v-if="notice" class="fusion-alert ok">{{ notice }}</div>
+        <div v-if="error" class="fusion-alert bad">{{ error }}</div>
+
+        <div v-if="loading" class="fusion-card">正在读取融合层状态…</div>
 
     <!-- 总览与配置 -->
     <div v-else-if="activeTab === 'overview'" class="fusion-grid">
@@ -1248,127 +1267,373 @@ onMounted(async () => {
         <pre class="fusion-pre">{{ skillIndex?.block || "（本地方法论目录为空）" }}</pre>
       </article>
     </div>
+      </div>
+    </div>
   </section>
 </template>
 
 <style scoped>
-.fusion-page { display: flex; flex-direction: column; gap: 14px; padding: 4px 2px 24px; }
-.fusion-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-.fusion-head h2 { margin: 0; font-size: 20px; color: var(--ink); }
-.fusion-sub { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
-.fusion-head-tools { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
-.fusion-task-picker { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--muted); min-width: 240px; }
-.fusion-task-picker select {
-  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
-  color: var(--ink); padding: 7px 10px; font-size: 12px;
+.fusion-studio {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-bottom: 24px;
 }
-.fusion-pillars {
+
+.fs-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.fs-crumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.fs-crumb b { color: var(--ink); }
+.fs-title-row { display: flex; align-items: center; gap: 10px; }
+.fs-title-row h2 { margin: 0; font-size: 20px; font-weight: 700; color: var(--ink); }
+.fs-chip {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent2) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent2) 32%, var(--border));
+  color: var(--accent2);
+}
+.fs-sub { margin: 4px 0 0; color: var(--muted); font-size: 12.5px; }
+.fs-head-actions { display: flex; align-items: center; gap: 8px; }
+.fs-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 12px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+}
+.fs-btn:hover:not(:disabled) { background: var(--bg-soft); }
+
+/* Asymmetric 2-Column Studio Body */
+.fs-layout {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-  padding: 8px;
+  grid-template-columns: 256px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.fs-rail {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  position: sticky;
+  top: 64px;
 }
-.fusion-pillar-grp {
-  display: flex; flex-direction: column; gap: 6px; padding: 6px 8px;
-  border-radius: var(--radius-sm); background: var(--bg); border: 1px solid var(--border-soft);
+
+.fs-rail-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
 }
-.fusion-pillar-lbl { font-size: 10.5px; font-weight: 700; color: var(--accent2-ink); letter-spacing: .04em; }
-.fusion-pillar-tabs { display: flex; flex-wrap: wrap; gap: 4px; }
-.fusion-tab {
-  display: inline-flex; align-items: center; gap: 5px;
-  background: transparent; border: 1px solid transparent; border-radius: 6px;
-  color: var(--muted); padding: 5px 9px; font-size: 12px; cursor: pointer;
+.fs-rail-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--muted);
 }
-.fusion-tab:hover { color: var(--ink); border-color: var(--border); background: var(--surface-2); }
-.fusion-tab.active { color: var(--accent-ink); background: var(--accent-bg); border-color: var(--accent); font-weight: 600; }
-.ftab-badge {
-  font-size: 10px; font-weight: 700; padding: 0 5px; border-radius: 999px;
-  background: var(--warn-bg); color: var(--warn); border: 1px solid color-mix(in oklch, var(--warn) 45%, transparent);
+.fs-select {
+  width: 100%;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--ink);
+  padding: 7px 9px;
+  font-size: 12px;
 }
-@media (max-width: 1120px) { .fusion-pillars { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 640px) { .fusion-pillars { grid-template-columns: 1fr; } }
+
+.fs-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.fs-pillar-grp {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.fs-pillar-lbl {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  padding-left: 4px;
+}
+.fs-pillar-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.fs-tab {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+.fs-tab:hover { background: var(--bg-soft); }
+.fs-tab.active {
+  background: var(--rail-bg);
+  color: var(--rail-ink);
+  border-color: var(--rail-bg);
+  font-weight: 600;
+}
+.fs-badge {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 99px;
+  background: var(--warn);
+  color: #fff;
+}
+
+.fs-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Studio Card & Control Styles for 8 Submodules */
 .fusion-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
-.fusion-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.fusion-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
 .fusion-card.wide { grid-column: 1 / -1; }
-.fusion-card h3 { margin: 0; font-size: 14px; color: var(--ink); }
+.fusion-card h3 { margin: 0; font-size: 14px; font-weight: 700; color: var(--ink); }
 .fusion-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .fusion-hint { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
 .fusion-label { color: var(--muted); font-size: 12px; display: flex; flex-direction: column; gap: 4px; }
-.fusion-input, .fusion-area { width: 100%; box-sizing: border-box; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--ink); padding: 8px 10px; font-size: 12px; font-family: var(--font-mono, monospace); }
-.fusion-input:focus, .fusion-area:focus { outline: none; border-color: var(--focus-border); }
+.fusion-input, .fusion-area {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--ink);
+  padding: 8px 10px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+}
+.fusion-input:focus, .fusion-area:focus { outline: none; border-color: var(--accent); }
 .fusion-area { resize: vertical; line-height: 1.5; }
 .fusion-actions, .fusion-inline { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .fusion-inline .fusion-input { width: 220px; }
 .fusion-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
 .fusion-quick-gates { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .fusion-gate-btn {
-  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
-  padding: 10px 14px; border-radius: var(--radius-sm); cursor: pointer;
-  border: 1px solid var(--border); background: var(--bg); color: var(--muted); min-width: 170px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 14px;
+  border-radius: 5px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+  color: var(--muted);
+  min-width: 170px;
 }
 .fusion-gate-btn strong { font-size: 13px; color: var(--ink); }
 .fusion-gate-btn span { font-size: 11px; }
-.fusion-gate-btn.on { border-color: var(--ok); background: var(--ok-bg); color: var(--ok); }
+.fusion-gate-btn.on {
+  border-color: color-mix(in srgb, var(--ok) 45%, var(--border));
+  background: color-mix(in srgb, var(--ok) 10%, var(--surface));
+  color: var(--ok);
+}
 .fusion-interval-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-left: auto; }
 .fusion-chip-btn {
-  padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border);
-  background: var(--bg); color: var(--muted); font-size: 11.5px; cursor: pointer;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+  color: var(--muted);
+  font-size: 11.5px;
+  cursor: pointer;
 }
-.fusion-chip-btn.active { border-color: var(--accent); background: var(--accent-bg); color: var(--accent-ink); font-weight: 600; }
+.fusion-chip-btn.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+}
 .fusion-switches { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 8px; }
-.fusion-switch { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; border: 1px solid var(--border-soft); border-radius: var(--radius-sm); font-size: 12px; }
+.fusion-switch {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg-soft);
+  font-size: 12px;
+}
 .fusion-switch input { margin-top: 2px; accent-color: var(--accent); width: auto; }
 .fusion-switch span { display: flex; flex-direction: column; gap: 2px; color: var(--muted); }
 .fusion-switch strong { color: var(--ink); font-size: 12px; }
 .fusion-switch em { font-style: normal; font-size: 11px; }
 .fusion-pills { display: flex; gap: 8px; flex-wrap: wrap; }
-.fusion-pill { border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; font-size: 12px; color: var(--muted); }
-.fusion-pill.on { color: var(--ok); border-color: var(--ok); }
+.fusion-pill {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--bg-soft);
+}
+.fusion-pill.on { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, var(--border)); background: color-mix(in srgb, var(--ok) 10%, transparent); }
 .fusion-modules { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; }
-.fusion-module { display: flex; flex-direction: column; gap: 3px; padding: 8px 10px; border: 1px solid var(--border-soft); border-radius: var(--radius-sm); font-size: 12px; color: var(--muted); }
+.fusion-module {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg-soft);
+  font-size: 12px;
+  color: var(--muted);
+}
 .fusion-module strong { color: var(--ink); font-size: 13px; }
-.fusion-result { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: var(--radius-sm); font-size: 12px; line-height: 1.5; background: var(--info-bg); color: var(--ink); }
-.fusion-result.good { background: var(--ok-bg); }
-.fusion-result.warn { background: var(--warn-bg); }
-.fusion-result.bad { background: var(--danger-bg); }
-.fusion-alert { padding: 8px 12px; border-radius: var(--radius-sm); font-size: 12px; }
-.fusion-alert.ok { background: var(--ok-bg); color: var(--ok); }
-.fusion-alert.bad { background: var(--danger-bg); color: var(--danger); }
+.fusion-result {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 5px;
+  font-size: 12px;
+  line-height: 1.5;
+  background: color-mix(in srgb, var(--accent2) 9%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent2) 25%, var(--border));
+  color: var(--ink);
+}
+.fusion-result.good {
+  background: color-mix(in srgb, var(--ok) 10%, var(--surface));
+  border-color: color-mix(in srgb, var(--ok) 30%, var(--border));
+}
+.fusion-result.warn {
+  background: color-mix(in srgb, var(--warn) 10%, var(--surface));
+  border-color: color-mix(in srgb, var(--warn) 30%, var(--border));
+}
+.fusion-result.bad {
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+  border-color: color-mix(in srgb, var(--danger) 30%, var(--border));
+}
+.fusion-alert { padding: 9px 12px; border-radius: 5px; font-size: 12px; font-weight: 500; border: 1px solid var(--border); }
+.fusion-alert.ok { background: color-mix(in srgb, var(--ok) 12%, var(--surface)); color: var(--ok); border-color: color-mix(in srgb, var(--ok) 35%, var(--border)); }
+.fusion-alert.bad { background: color-mix(in srgb, var(--danger) 12%, var(--surface)); color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, var(--border)); }
 .fusion-list { display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow: auto; }
 .fusion-row { display: flex; gap: 10px; align-items: center; font-size: 12px; color: var(--muted); }
-.fusion-check-row { cursor: pointer; padding: 4px 6px; border-radius: 6px; }
-.fusion-check-row:hover { background: var(--bg); }
+.fusion-check-row { cursor: pointer; padding: 4px 6px; border-radius: 5px; }
+.fusion-check-row:hover { background: var(--bg-soft); }
 .fusion-check-row input { width: auto; accent-color: var(--accent); }
 .fusion-muted-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
-.fusion-tag { color: var(--accent-ink); font-family: "IBM Plex Mono", monospace; flex: none; }
+.fusion-tag { color: var(--accent); font-family: var(--font-mono); flex: none; }
 .fusion-tag.bad { color: var(--danger); }
 .fusion-badge { padding: 2px 8px; border-radius: 999px; font-size: 11px; flex: none; border: 1px solid var(--border); }
-.fusion-badge.ok { background: var(--ok-bg); color: var(--ok); border-color: var(--ok); }
-.fusion-badge.warn { background: var(--warn-bg); color: var(--warn); border-color: var(--warn); }
-.fusion-badge.bad { background: var(--danger-bg); color: var(--danger); border-color: var(--danger); }
-.fusion-subcard { padding: 12px; border: 1px dashed var(--border); border-radius: var(--radius-sm); background: var(--bg); display: flex; flex-direction: column; gap: 10px; }
-.fusion-pre { margin: 0; padding: 10px; max-height: 320px; overflow: auto; background: var(--bg); border: 1px solid var(--border-soft); border-radius: var(--radius-sm); color: var(--muted); font-size: 11px; line-height: 1.5; white-space: pre-wrap; }
-.fusion-svg { width: 100%; height: 260px; background: var(--bg); border: 1px solid var(--border-soft); border-radius: var(--radius-sm); }
+.fusion-badge.ok { background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, var(--border)); }
+.fusion-badge.warn { background: color-mix(in srgb, var(--warn) 12%, transparent); color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, var(--border)); }
+.fusion-badge.bad { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); }
+.fusion-subcard { padding: 12px; border: 1px dashed var(--border); border-radius: 5px; background: var(--bg-soft); display: flex; flex-direction: column; gap: 10px; }
+.fusion-pre {
+  margin: 0;
+  padding: 10px;
+  max-height: 320px;
+  overflow: auto;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.fusion-svg { width: 100%; height: 260px; background: var(--bg-soft); border: 1px solid var(--border); border-radius: 5px; }
 .fusion-svg-node { cursor: pointer; }
 .fusion-node-groups { display: grid; gap: 10px; }
 .fusion-group-title { display: block; font-size: 11.5px; color: var(--muted); margin-bottom: 6px; }
 .fusion-node-pills { display: flex; flex-wrap: wrap; gap: 6px; }
 .fusion-node-btn {
-  padding: 4px 10px; border-radius: 999px; font-size: 11.5px; cursor: pointer;
-  border: 1px solid var(--border); background: var(--bg); color: var(--ink-2);
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+  color: var(--ink);
 }
-.fusion-node-btn.active { border-color: var(--accent); background: var(--accent-bg); color: var(--accent-ink); font-weight: 600; }
+.fusion-node-btn.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); font-weight: 600; }
 .fusion-report-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .fusion-report-card {
-  padding: 10px 12px; border: 1px solid var(--border-soft); border-radius: var(--radius-sm);
-  background: var(--bg); display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted);
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
 }
 .fusion-report-card.wide { grid-column: 1 / -1; }
 .fusion-report-card strong { color: var(--ink); font-size: 12.5px; margin-bottom: 2px; }
-code { font-family: "IBM Plex Mono", monospace; color: var(--accent-ink); }
+code { font-family: var(--font-mono); color: var(--accent); }
+
+@media (max-width: 1024px) {
+  .fs-layout { grid-template-columns: 1fr; }
+  .fs-rail { position: static; }
+}
 @media (max-width: 900px) {
   .fusion-grid, .fusion-report-grid { grid-template-columns: 1fr; }
   .fusion-inline .fusion-input { width: 100%; }
