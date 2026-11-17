@@ -8,6 +8,7 @@ import SettingsView from "./views/SettingsView.vue";
 import IntelView from "./views/IntelView.vue";
 import VulnsView from "./views/VulnsView.vue";
 import RuntimeLogsView from "./views/RuntimeLogsView.vue";
+import FusionView from "./views/FusionView.vue";
 import { authReadyRef, authRoleRef, loadAuthRole } from "./api.js";
 import "./styles/base.css";
 import "./styles/layout.css";
@@ -28,6 +29,7 @@ const router = createRouter({
     { path: "/intel", component: IntelView },
     { path: "/vulns", component: VulnsView },
     { path: "/runtime-logs", component: RuntimeLogsView },
+    { path: "/fusion", component: FusionView },
     { path: "/settings", component: SettingsView },
     { path: "/task/:id", component: BoardView, props: true },
   ],
@@ -42,7 +44,7 @@ router.beforeEach(async (to) => {
   if (!authed) {
     return { path: "/login", query: { redirect: to.fullPath } };
   }
-  if (authRoleRef.value === "observer" && ["/settings", "/intel", "/vulns", "/runtime-logs"].includes(to.path)) {
+  if (authRoleRef.value === "observer" && ["/settings", "/intel", "/vulns", "/runtime-logs", "/fusion"].includes(to.path)) {
     return "/";
   }
   return true;

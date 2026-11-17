@@ -330,3 +330,75 @@ class ReportVersion(Base):
     source: Mapped[str] = mapped_column(String(20), default="user_edit")  # user_edit/assistant/review/system
     note: Mapped[str] = mapped_column(String(500), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now, index=True)
+
+
+class FusionGoal(Base):
+    """融合层目标闸门：任务级「目标 + 可核验验收标准」持久化。
+
+    任务收官不再由模型自评决定，而是逐条核对本表目标是否 met；只要还有
+    unmet 目标，终态一律记 incomplete（诚实终态）。新表由 init_db 的
+    create_all 自动建立，Alembic 0002 做了幂等兜底，老库升级零数据风险。
+    """
+    __tablename__ = "fusion_goals"
+    __table_args__ = (
+        Index("ux_fusion_goals_task_key", "task_id", "goal_key", unique=True),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    task_id: Mapped[str] = mapped_column(String(32), index=True)
+    goal_key: Mapped[str] = mapped_column(String(64), default="")
+    title: Mapped[str] = mapped_column(String(500))
+    criteria: Mapped[str] = mapped_column(Text, default="")
+    kind: Mapped[str] = mapped_column(String(20), default="existence")  # existence / capability
+    match_terms: Mapped[list] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(20), default="open", index=True)  # open / met
+    evidence_ref: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
+
+
+class FusionGraphNode(Base):
+    """融合层双图架构：资产图 / 探索图节点（旁路镜像，不改主数据模型）。"""
+    __tablename__ = "fusion_graph_nodes"
+    __table_args__ = (Index("ix_fgraph_nodes_task", "task_id", "graph"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    task_id: Mapped[str] = mapped_column(String(32), index=True)
+    graph: Mapped[str] = mapped_column(String(20), default="asset")  # asset / exploration
+    kind: Mapped[str] = mapped_column(String(30), default="")
+    label: Mapped[str] = mapped_column(String(500), default="")
+    ref_id: Mapped[str] = mapped_column(String(64), default="")  # 对应主表记录 id
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class FusionGraphEdge(Base):
+    """双图边：spawns / derived_from / yields / proves / covers / anchors。"""
+    __tablename__ = "fusion_graph_edges"
+    __table_args__ = (Index("ix_fgraph_edges_task", "task_id"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    task_id: Mapped[str] = mapped_column(String(32), index=True)
+    kind: Mapped[str] = mapped_column(String(30), default="")
+    src: Mapped[str] = mapped_column(String(32), default="", index=True)
+    dst: Mapped[str] = mapped_column(String(32), default="", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class FusionTraffic(Base):
+    """融合层流量留痕：逐请求记录 + finding 四类证据绑定 + sha256 版本化。"""
+    __tablename__ = "fusion_traffic"
+    __table_args__ = (Index("ix_fusion_traffic_task", "task_id", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    task_id: Mapped[str] = mapped_column(String(32), index=True)
+    finding_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    role: Mapped[str] = mapped_column(String(20), default="supporting")  # baseline/proof/verification/supporting
+    method: Mapped[str] = mapped_column(String(10), default="GET")
+    url: Mapped[str] = mapped_column(String(1000), default="")
+    status_code: Mapped[int] = mapped_column(Integer, default=0)
+    request_head: Mapped[str] = mapped_column(Text, default="")
+    response_head: Mapped[str] = mapped_column(Text, default="")
+    body_sha256: Mapped[str] = mapped_column(String(64), default="", index=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now, index=True)

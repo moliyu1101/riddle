@@ -650,6 +650,15 @@ class ToolExecutor:
             response_headers=result.get("response_headers") or {},
             notes=result.get("error") if not result.get("ok") else "",
         )
+        # 融合层流量留痕：与上面同一钩子再写一份结构化 JSONL（默认关闭）。
+        # 局部 import + 全量吞异常：即使融合层未就绪也绝不影响主请求链路。
+        try:
+            from app.fusion.config import load_config as _fusion_cfg
+            if _fusion_cfg().traffic_enabled:
+                from app.fusion import traffic_ledger
+                traffic_ledger.capture_sync(self.work_dir, result, url, method, self.target)
+        except Exception:
+            pass
         return result
 
     def _http_request_once(

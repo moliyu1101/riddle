@@ -382,6 +382,31 @@ export const api = {
   runtimeLogStats: () => req("GET", "/api/runtime-logs/stats"),
   runtimeLogs: (level, agent, q, opts = {}) =>
     req("GET", `/api/runtime-logs${qs({ level, agent, q, ...opts })}`),
+  // 融合层：目标闸门 / 证据闸门 / 范围守卫 / 情报时间流 / 角色路由
+  fusionStatus: () => req("GET", "/api/fusion/status"),
+  fusionSkillIndex: () => req("GET", "/api/fusion/skill-index"),
+  fusionEvidenceCheck: (finding) => req("POST", "/api/fusion/evidence/check", { finding }),
+  fusionScopeCheck: (target, scope) => req("POST", "/api/fusion/scope/check", { target, scope }),
+  fusionGoals: (taskId) => req("GET", `/api/fusion/goals/${taskId}`),
+  fusionSaveGoals: (taskId, goals) => req("PUT", `/api/fusion/goals/${taskId}`, { goals }),
+  fusionEvaluateGoals: (taskId) => req("POST", `/api/fusion/goals/${taskId}/evaluate`),
+  fusionIntelRecent: (limit) => req("GET", `/api/fusion/intel/recent${qs({ limit })}`),
+  fusionIntelSync: () => req("POST", "/api/fusion/intel/sync"),
+  fusionIntelMatch: (technologies) => req("POST", "/api/fusion/intel/match", { technologies }),
+  // 配置 / 双图 / 流量 / 公文报告
+  fusionConfig: () => req("GET", "/api/fusion/config"),
+  fusionSaveConfig: (config) => req("PUT", "/api/fusion/config", { config }),
+  fusionGraphRebuild: (taskId) => req("POST", `/api/fusion/graphs/${taskId}/rebuild`),
+  fusionGraph: (taskId) => req("GET", `/api/fusion/graphs/${taskId}`),
+  fusionGraphLineage: (taskId, nodeId, direction = "both") =>
+    req("GET", `/api/fusion/graphs/${taskId}/lineage${qs({ node_id: nodeId, direction })}`),
+  fusionTrafficDiscover: () => req("GET", "/api/fusion/traffic/discover"),
+  fusionTrafficImport: (taskId, workDir) => req("POST", "/api/fusion/traffic/import", { task_id: taskId, work_dir: workDir }),
+  fusionTrafficList: (taskId) => req("GET", `/api/fusion/traffic/${taskId}`),
+  fusionTrafficBind: (findingId, trafficIds, role) => req("POST", "/api/fusion/traffic/bind", { finding_id: findingId, traffic_ids: trafficIds, role }),
+  fusionReportModel: (findingId) => req("GET", `/api/fusion/report/model/${findingId}`),
+  fusionReportDocx: (findingId) =>
+    downloadFile("GET", `/api/fusion/report/docx/${encodeURIComponent(findingId)}`),
   // 一键更新
   checkUpdate: () => req("GET", "/api/update/check"),
   runUpdate: () => req("POST", "/api/update/run"),

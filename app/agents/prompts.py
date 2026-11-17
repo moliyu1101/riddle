@@ -678,6 +678,7 @@ def worker_system_prompt(
     src_type: str | bool | None,
     version: str | None = None,
     src_rules: str | None = None,
+    fusion_block: str = "",
 ) -> str:
     if is_enterprise_src(src_type):
         base = ENTERPRISE_WORKER_SYSTEM_PROMPT_COMPACT
@@ -685,7 +686,11 @@ def worker_system_prompt(
         # edu worker 已统一收敛为 legacy(2026-06-25，经实战验证最佳)，为唯一正式版；
         # version/历史别名一律 → legacy(见 _PROMPT_VERSION_ALIASES)，COMPACT/modern 仅归档保留。
         base = WORKER_SYSTEM_PROMPT_LEGACY
-    return append_task_src_rules(base, src_rules)
+    out = append_task_src_rules(base, src_rules)
+    # 融合层纪律（技能速查 + 证据/影响纪律）常驻注入；默认空串时行为与旧版完全一致。
+    if fusion_block and fusion_block.strip():
+        out = f"{out.rstrip()}\n\n{fusion_block.strip()}\n"
+    return out
 
 
 def reviewer_system_prompt(

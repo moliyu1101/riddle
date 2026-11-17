@@ -27,6 +27,9 @@ from app.agents import auth_bootstrap
 from app.agents.lessons import render_lessons_block
 from app.config import worker_config
 from app import dedup
+from app.fusion import evidence_gate, scope_guard
+from app.fusion.config import load_config as load_fusion_config
+from app.fusion.role_router import fusion_worker_block
 from app.tools.evidence_capture import capture_snapshot, load_snapshot, save_snapshot
 from app.llm.client import LLMClient, LLMError, llm_error_event_fields
 from app.schemas import Finding, Verdict, WorkerResult
@@ -486,7 +489,7 @@ class Worker:
             )
             self._emit("worker_start", target=self.target, prompt_version=self.prompt_version)
         messages: list[dict[str, Any]] = [
-            {"role": "system", "content": worker_system_prompt(self.src_type, self.prompt_version, src_rules=self.src_rules) + _shell_env_hint()},
+            {"role": "system", "content": worker_system_prompt(self.src_type, self.prompt_version, src_rules=self.src_rules, fusion_block=fusion_worker_block()) + _shell_env_hint()},
             {"role": "user", "content": _WORKER_STATIC_PREFIX},
             {"role": "user", "content": user_content},
         ]
@@ -2295,6 +2298,39 @@ class Worker:
                 "duplicate": True,
                 "matches": matches,
                 "error": "该漏洞命中统一查重库（历史提交/已驳回/通杀明细），已拦截。不要再次提交同一漏洞，继续挖其它点或 finish。",
+            }
+
+        # ===== 融合层：机械凭据门禁 + 写回范围守卫 =====
+        # 纯函数判定始终执行；默认只做提示词纪律，不新增事件、不拦截。
+        # FUSION_EVIDENCE_GATE_HARD / FUSION_SCOPE_GUARD_HARD 置 1 才启用硬闸门与审计留痕。
+        _fcfg = load_fusion_config()
+        _gate = evidence_gate.check_finding(finding)
+        _scope = scope_guard.normalize_scope({"roots": [self.target]})
+        _writeback = scope_guard.check_writeback(
+            getattr(finding, "target_url", "") or self.target, _scope
+        )
+        if _fcfg.evidence_gate_hard or _fcfg.scope_guard_hard:
+            self._emit(
+                "finding_fusion_gate",
+                severity=_gate["severity"],
+                impact_level=_gate["impact_level"],
+                evidence_ok=_gate["allowed"],
+                classification=_writeback["classification"],
+            )
+        if _fcfg.evidence_gate_hard and not _gate["allowed"]:
+            return {
+                "ok": False,
+                "kind": "needs_more_evidence",
+                "submitted": False,
+                "error": "证据闸门拦截：" + "；".join(_gate["reasons"]),
+                "guidance": "补齐 curl / 原始请求响应包 / 真实状态码等机械凭据，或把影响层级打实后再提交。",
+            }
+        if _fcfg.scope_guard_hard and not _writeback["allowed"]:
+            return {
+                "ok": False,
+                "kind": "out_of_scope",
+                "submitted": False,
+                "error": f"范围守卫拦截：{_writeback['reason']}",
             }
 
         self._backfill_finding_fields(finding)
