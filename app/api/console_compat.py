@@ -1,6 +1,6 @@
-"""Pojun 前端适配兼容层（/api/pojun/*）。
+"""Riddle 前端适配兼容层（/api/console/*）。
 
-将迁入 frontend/ 的 Pojun（Next.js + React + Shadcn）前端所需 API
+将迁入 frontend/ 的 Next.js + React + Shadcn前端所需 API
 无缝桥接到 Riddle 真实的 SQLAlchemy 数据表、Orchestrator 与 Fusion 融合层。
 保持与 Riddle 原有 /api/* 路由（/api/tasks、/api/findings、/api/settings、/api/fusion 等）
 完全隔离，确保后端原有接口与自动化测试零破坏。
@@ -79,7 +79,7 @@ from app.settings_service import (
     update_settings,
 )
 
-router = APIRouter(prefix="/api/pojun", tags=["pojun-compat"])
+router = APIRouter(prefix="/api/console", tags=["riddle-compat"])
 
 _ROOT_DIR = Path(__file__).resolve().parents[2]
 _LOCAL_JWT_FALLBACK = "eyJhbGciOiJub25lIn0.eyJzdWIiOiJSaWRkbGUifQ.local"
@@ -155,7 +155,7 @@ def _map_finding_status(f: Finding, r: Review | None) -> str:
     return "pending"
 
 
-def _pojun_task_dict(
+def _console_task_dict(
     t: Task,
     finding_counts: dict[str, int] | None = None,
     goal_pair: tuple[int, int] = (0, 0),
@@ -205,7 +205,7 @@ def _pojun_task_dict(
     }
 
 
-def _pojun_finding_dict(
+def _console_finding_dict(
     f: Finding,
     r: Review | None = None,
     task: Task | None = None,
@@ -277,17 +277,17 @@ async def _task_goal_counts(session: AsyncSession) -> tuple[dict[str, tuple[int,
 # ---------------------------------------------------------------------------
 
 @router.get("/health")
-async def poj_health():
+async def console_health():
     return {"ok": True, "status": "ok"}
 
 
 @router.get("/version")
-async def poj_version():
+async def console_version():
     return {"service": "riddle", "version": _read_version()}
 
 
 @router.get("/auth/status")
-async def poj_auth_status():
+async def console_auth_status():
     return {"initialized": True}
 
 
@@ -297,7 +297,7 @@ class LoginReq(BaseModel):
 
 
 @router.post("/auth/login")
-async def poj_login(body: LoginReq):
+async def console_login(body: LoginReq):
     if not auth_enabled():
         return {"token": _LOCAL_JWT_FALLBACK}
     pw = str(body.password or "").strip()
@@ -310,7 +310,7 @@ async def poj_login(body: LoginReq):
 
 
 @router.post("/auth/init")
-async def poj_auth_init(body: dict[str, Any]):
+async def console_auth_init(body: dict[str, Any]):
     if auth_enabled():
         return {"token": configured_full_token() or _LOCAL_JWT_FALLBACK}
     pw = str((body or {}).get("password") or "").strip()
@@ -323,7 +323,7 @@ class ChangePwReq(BaseModel):
 
 
 @router.post("/auth/change-password")
-async def poj_change_pw(body: ChangePwReq, session: AsyncSession = Depends(get_session)):
+async def console_change_pw(body: ChangePwReq, session: AsyncSession = Depends(get_session)):
     full = configured_full_token()
     if full and str(body.old_password or "").strip() != full:
         raise HTTPException(status_code=401, detail="原访问令牌不匹配")
@@ -333,7 +333,7 @@ async def poj_change_pw(body: ChangePwReq, session: AsyncSession = Depends(get_s
 
 
 @router.get("/update/check")
-async def poj_update_check(force: bool = False):
+async def console_update_check(force: bool = False):
     cur = _read_version()
     return {
         "current": cur,
@@ -353,7 +353,7 @@ async def poj_update_check(force: bool = False):
 # ---------------------------------------------------------------------------
 
 @router.get("/stats")
-async def poj_stats(task: str = "", session: AsyncSession = Depends(get_session)):
+async def console_stats(task: str = "", session: AsyncSession = Depends(get_session)):
     await refresh_cache(session)
     assets_cnt = (await session.execute(select(func.count()).select_from(Target))).scalar() or 0
     confirmed_cnt = (
@@ -378,7 +378,7 @@ async def poj_stats(task: str = "", session: AsyncSession = Depends(get_session)
     if selected:
         fcounts = await _task_finding_counts(session)
         gcounts, gtitles = await _task_goal_counts(session)
-        active_dict = _pojun_task_dict(
+        active_dict = _console_task_dict(
             selected,
             finding_counts=fcounts.get(selected.id),
             goal_pair=gcounts.get(selected.id, (0, 0)),
@@ -396,7 +396,7 @@ async def poj_stats(task: str = "", session: AsyncSession = Depends(get_session)
 
 
 @router.get("/tokens/usage")
-async def poj_token_usage(days: int = 365, session: AsyncSession = Depends(get_session)):
+async def console_token_usage(days: int = 365, session: AsyncSession = Depends(get_session)):
     tasks = (await session.execute(select(Task))).scalars().all()
     eff_model = effective_settings()["llm"].get("model") or llm_config.model or "default"
     by_profile: list[dict[str, Any]] = []
@@ -429,17 +429,17 @@ async def poj_token_usage(days: int = 365, session: AsyncSession = Depends(get_s
 
 
 @router.get("/tokens/daily")
-async def poj_token_daily(days: int = 30):
+async def console_token_daily(days: int = 30):
     return []
 
 
 @router.get("/tokens/conversations")
-async def poj_token_conversations():
+async def console_token_conversations():
     return []
 
 
 @router.get("/tokens/cost")
-async def poj_token_cost(task: str = ""):
+async def console_token_cost(task: str = ""):
     snap = llm_usage.usage_snapshot(task, "") if task else {}
     return {
         "task": {
@@ -455,7 +455,7 @@ async def poj_token_cost(task: str = ""):
 
 
 @router.get("/audit")
-async def poj_audit(task: str = "", session: AsyncSession = Depends(get_session)):
+async def console_audit(task: str = "", session: AsyncSession = Depends(get_session)):
     items = intercept.list_intercepts(task_id=task)
     entries = [
         {
@@ -475,14 +475,14 @@ async def poj_audit(task: str = "", session: AsyncSession = Depends(get_session)
 # ---------------------------------------------------------------------------
 
 @router.get("/tasks")
-async def poj_list_tasks(session: AsyncSession = Depends(get_session)):
+async def console_list_tasks(session: AsyncSession = Depends(get_session)):
     rows = (await session.execute(select(Task).order_by(Task.created_at.desc()))).scalars().all()
     fcounts = await _task_finding_counts(session)
     gcounts, gtitles = await _task_goal_counts(session)
     active = next((t.id for t in rows if t.status == "running"), rows[0].id if rows else "")
     return {
         "tasks": [
-            _pojun_task_dict(
+            _console_task_dict(
                 t,
                 finding_counts=fcounts.get(t.id),
                 goal_pair=gcounts.get(t.id, (0, 0)),
@@ -496,13 +496,13 @@ async def poj_list_tasks(session: AsyncSession = Depends(get_session)):
 
 
 @router.get("/tasks/{task_id}")
-async def poj_get_task(task_id: str, session: AsyncSession = Depends(get_session)):
+async def console_get_task(task_id: str, session: AsyncSession = Depends(get_session)):
     t = await session.get(Task, task_id)
     if not t:
         raise HTTPException(404, "任务不存在")
     fcounts = await _task_finding_counts(session)
     gcounts, gtitles = await _task_goal_counts(session)
-    return _pojun_task_dict(
+    return _console_task_dict(
         t,
         finding_counts=fcounts.get(t.id),
         goal_pair=gcounts.get(t.id, (0, 0)),
@@ -528,7 +528,7 @@ class PojTaskCreateReq(BaseModel):
 
 
 @router.post("/tasks")
-async def poj_create_task(req: PojTaskCreateReq, session: AsyncSession = Depends(get_session)):
+async def console_create_task(req: PojTaskCreateReq, session: AsyncSession = Depends(get_session)):
     raw_desc = (req.description or "").strip()
     extracted = [m.group(0).strip() for m in _HOST_EXTRACT_RE.finditer(raw_desc)]
     manual_targets = list(dict.fromkeys(extracted or ([raw_desc] if raw_desc else [])))
@@ -577,11 +577,11 @@ async def poj_create_task(req: PojTaskCreateReq, session: AsyncSession = Depends
         task.status = "running"
         await session.commit()
         await manager.ensure_running(task.id)
-    return _pojun_task_dict(task, goal_pair=(1 if (req.goal or "").strip() else 0, 0), goal_text=req.goal.strip())
+    return _console_task_dict(task, goal_pair=(1 if (req.goal or "").strip() else 0, 0), goal_text=req.goal.strip())
 
 
 @router.patch("/tasks/{task_id}")
-async def poj_patch_task(task_id: str, body: dict[str, Any], session: AsyncSession = Depends(get_session)):
+async def console_patch_task(task_id: str, body: dict[str, Any], session: AsyncSession = Depends(get_session)):
     t = await session.get(Task, task_id)
     if not t:
         raise HTTPException(404, "任务不存在")
@@ -589,11 +589,11 @@ async def poj_patch_task(task_id: str, body: dict[str, Any], session: AsyncSessi
         t.name = str(body["name"]).strip()[:200] or t.name
     await session.commit()
     await session.refresh(t)
-    return _pojun_task_dict(t)
+    return _console_task_dict(t)
 
 
 @router.delete("/tasks/{task_id}")
-async def poj_delete_task(task_id: str, session: AsyncSession = Depends(get_session)):
+async def console_delete_task(task_id: str, session: AsyncSession = Depends(get_session)):
     t = await session.get(Task, task_id)
     if not t:
         raise HTTPException(404, "任务不存在")
@@ -637,7 +637,7 @@ async def poj_delete_task(task_id: str, session: AsyncSession = Depends(get_sess
 
 
 @router.post("/tasks/{task_id}/control")
-async def poj_control_task(task_id: str, body: dict[str, Any], session: AsyncSession = Depends(get_session)):
+async def console_control_task(task_id: str, body: dict[str, Any], session: AsyncSession = Depends(get_session)):
     t = await session.get(Task, task_id)
     if not t:
         raise HTTPException(404, "任务不存在")
@@ -657,7 +657,7 @@ async def poj_control_task(task_id: str, body: dict[str, Any], session: AsyncSes
 
 
 @router.post("/tasks/{task_id}/autopilot")
-async def poj_task_autopilot(task_id: str, body: dict[str, Any], session: AsyncSession = Depends(get_session)):
+async def console_task_autopilot(task_id: str, body: dict[str, Any], session: AsyncSession = Depends(get_session)):
     t = await session.get(Task, task_id)
     if not t:
         raise HTTPException(404, "任务不存在")
@@ -675,7 +675,7 @@ async def poj_task_autopilot(task_id: str, body: dict[str, Any], session: AsyncS
 
 
 @router.post("/tasks/control/batch")
-async def poj_control_batch(body: dict[str, Any], session: AsyncSession = Depends(get_session)):
+async def console_control_batch(body: dict[str, Any], session: AsyncSession = Depends(get_session)):
     ids = [str(x) for x in (body or {}).get("task_ids") or []]
     action = str((body or {}).get("action") or "pause").lower()
     out = []
@@ -696,22 +696,22 @@ async def poj_control_batch(body: dict[str, Any], session: AsyncSession = Depend
 
 
 @router.get("/task-categories")
-async def poj_task_categories():
+async def console_task_categories():
     return {"categories": []}
 
 
 @router.get("/task-templates")
-async def poj_task_templates():
+async def console_task_templates():
     return {"templates": []}
 
 
 @router.get("/task-archives")
-async def poj_task_archives(page: int = 1, size: int = 20):
+async def console_task_archives(page: int = 1, size: int = 20):
     return {"items": [], "total": 0, "page": page, "size": size}
 
 
 @router.get("/tasks/{task_id}/llm/resolution")
-async def poj_task_llm_resolution(task_id: str, session: AsyncSession = Depends(get_session)):
+async def console_task_llm_resolution(task_id: str, session: AsyncSession = Depends(get_session)):
     t = await session.get(Task, task_id)
     cfg = resolve_llm_config(t)
     avail = bool(cfg.api_key)
@@ -734,7 +734,7 @@ async def poj_task_llm_resolution(task_id: str, session: AsyncSession = Depends(
 # ---- Goals / Constraints / Scope / Coverage ----
 
 @router.get("/tasks/{task_id}/goals")
-async def poj_get_goals(task_id: str, session: AsyncSession = Depends(get_session)):
+async def console_get_goals(task_id: str, session: AsyncSession = Depends(get_session)):
     rows = (
         await session.execute(select(FusionGoal).where(FusionGoal.task_id == task_id).order_by(FusionGoal.created_at))
     ).scalars().all()
@@ -754,7 +754,7 @@ async def poj_get_goals(task_id: str, session: AsyncSession = Depends(get_sessio
 
 
 @router.post("/tasks/{task_id}/goals")
-async def poj_add_goal(task_id: str, body: dict[str, Any], session: AsyncSession = Depends(get_session)):
+async def console_add_goal(task_id: str, body: dict[str, Any], session: AsyncSession = Depends(get_session)):
     text = str((body or {}).get("text") or "").strip()
     vulnclass = str((body or {}).get("vulnclass") or "").strip()
     cnt = (await session.execute(select(func.count()).select_from(FusionGoal).where(FusionGoal.task_id == task_id))).scalar() or 0
@@ -774,7 +774,7 @@ async def poj_add_goal(task_id: str, body: dict[str, Any], session: AsyncSession
 
 
 @router.patch("/tasks/{task_id}/goals/{goal_id}")
-async def poj_patch_goal(task_id: str, goal_id: str, body: dict[str, Any], session: AsyncSession = Depends(get_session)):
+async def console_patch_goal(task_id: str, goal_id: str, body: dict[str, Any], session: AsyncSession = Depends(get_session)):
     g = await session.get(FusionGoal, goal_id)
     if not g or g.task_id != task_id:
         raise HTTPException(404, "目标不存在")
@@ -789,14 +789,14 @@ async def poj_patch_goal(task_id: str, goal_id: str, body: dict[str, Any], sessi
 
 
 @router.delete("/tasks/{task_id}/goals/{goal_id}")
-async def poj_del_goal(task_id: str, goal_id: str, session: AsyncSession = Depends(get_session)):
+async def console_del_goal(task_id: str, goal_id: str, session: AsyncSession = Depends(get_session)):
     await session.execute(delete(FusionGoal).where(FusionGoal.id == goal_id, FusionGoal.task_id == task_id))
     await session.commit()
     return {"ok": True}
 
 
 @router.get("/tasks/{task_id}/constraints")
-async def poj_get_constraints(task_id: str, session: AsyncSession = Depends(get_session)):
+async def console_get_constraints(task_id: str, session: AsyncSession = Depends(get_session)):
     t = await session.get(Task, task_id)
     if not t:
         return {"constraints": []}
@@ -810,7 +810,7 @@ async def poj_get_constraints(task_id: str, session: AsyncSession = Depends(get_
 
 
 @router.post("/tasks/{task_id}/constraints")
-async def poj_add_constraint(task_id: str, body: dict[str, Any], session: AsyncSession = Depends(get_session)):
+async def console_add_constraint(task_id: str, body: dict[str, Any], session: AsyncSession = Depends(get_session)):
     t = await session.get(Task, task_id)
     if not t:
         raise HTTPException(404, "任务不存在")
@@ -825,7 +825,7 @@ async def poj_add_constraint(task_id: str, body: dict[str, Any], session: AsyncS
 
 
 @router.patch("/tasks/{task_id}/constraints/{cid}")
-async def poj_patch_constraint(task_id: str, cid: str, body: dict[str, Any], session: AsyncSession = Depends(get_session)):
+async def console_patch_constraint(task_id: str, cid: str, body: dict[str, Any], session: AsyncSession = Depends(get_session)):
     t = await session.get(Task, task_id)
     if not t:
         raise HTTPException(404, "任务不存在")
@@ -839,7 +839,7 @@ async def poj_patch_constraint(task_id: str, cid: str, body: dict[str, Any], ses
 
 
 @router.delete("/tasks/{task_id}/constraints/{cid}")
-async def poj_del_constraint(task_id: str, cid: str, session: AsyncSession = Depends(get_session)):
+async def console_del_constraint(task_id: str, cid: str, session: AsyncSession = Depends(get_session)):
     t = await session.get(Task, task_id)
     if t:
         lines = [x for x in (t.src_rules or "").splitlines() if x.strip()]
@@ -852,7 +852,7 @@ async def poj_del_constraint(task_id: str, cid: str, session: AsyncSession = Dep
 
 
 @router.get("/tasks/{task_id}/scope")
-async def poj_task_scope(task_id: str, session: AsyncSession = Depends(get_session)):
+async def console_task_scope(task_id: str, session: AsyncSession = Depends(get_session)):
     t = await session.get(Task, task_id)
     if not t:
         return {"scope": []}
@@ -873,7 +873,7 @@ async def poj_task_scope(task_id: str, session: AsyncSession = Depends(get_sessi
 
 
 @router.post("/tasks/{task_id}/scope")
-async def poj_add_scope(task_id: str, body: dict[str, Any], session: AsyncSession = Depends(get_session)):
+async def console_add_scope(task_id: str, body: dict[str, Any], session: AsyncSession = Depends(get_session)):
     t = await session.get(Task, task_id)
     if not t:
         raise HTTPException(404, "任务不存在")
@@ -895,7 +895,7 @@ async def poj_add_scope(task_id: str, body: dict[str, Any], session: AsyncSessio
 
 
 @router.delete("/tasks/{task_id}/scope/{scope_id}")
-async def poj_del_scope(task_id: str, scope_id: int, session: AsyncSession = Depends(get_session)):
+async def console_del_scope(task_id: str, scope_id: int, session: AsyncSession = Depends(get_session)):
     t = await session.get(Task, task_id)
     if t and 1 <= scope_id <= len(t.manual_targets or []):
         lst = list(t.manual_targets or [])
@@ -906,7 +906,7 @@ async def poj_del_scope(task_id: str, scope_id: int, session: AsyncSession = Dep
 
 
 @router.get("/tasks/{task_id}/coverage")
-async def poj_task_coverage(task_id: str, session: AsyncSession = Depends(get_session)):
+async def console_task_coverage(task_id: str, session: AsyncSession = Depends(get_session)):
     targets = (await session.execute(select(Target).where(Target.task_id == task_id))).scalars().all()
     total = len(targets)
     tested = sum(1 for x in targets if x.status in {"done", "skipped", "dead"})
@@ -922,7 +922,7 @@ async def poj_task_coverage(task_id: str, session: AsyncSession = Depends(get_se
 
 
 @router.get("/tasks/{task_id}/coverage-graph")
-async def poj_task_coverage_graph(task_id: str, session: AsyncSession = Depends(get_session)):
+async def console_task_coverage_graph(task_id: str, session: AsyncSession = Depends(get_session)):
     targets = (await session.execute(select(Target).where(Target.task_id == task_id))).scalars().all()
     nodes = []
     edges = []
@@ -953,7 +953,7 @@ async def poj_task_coverage_graph(task_id: str, session: AsyncSession = Depends(
 
 
 @router.get("/tasks/{task_id}/intercept-rules")
-async def poj_task_intercept_rules(task_id: str, session: AsyncSession = Depends(get_session)):
+async def console_task_intercept_rules(task_id: str, session: AsyncSession = Depends(get_session)):
     t = await session.get(Task, task_id)
     if not t:
         return {"rules": []}
@@ -976,7 +976,7 @@ async def poj_task_intercept_rules(task_id: str, session: AsyncSession = Depends
 
 
 @router.post("/tasks/{task_id}/intercept-rules")
-async def poj_create_task_intercept_rule(task_id: str, body: dict[str, Any], session: AsyncSession = Depends(get_session)):
+async def console_create_task_intercept_rule(task_id: str, body: dict[str, Any], session: AsyncSession = Depends(get_session)):
     t = await session.get(Task, task_id)
     if not t:
         raise HTTPException(404, "任务不存在")
@@ -1000,7 +1000,7 @@ async def poj_create_task_intercept_rule(task_id: str, body: dict[str, Any], ses
 
 
 @router.delete("/tasks/{task_id}/intercept-rules/{rule_id}")
-async def poj_delete_task_intercept_rule(task_id: str, rule_id: int, session: AsyncSession = Depends(get_session)):
+async def console_delete_task_intercept_rule(task_id: str, rule_id: int, session: AsyncSession = Depends(get_session)):
     t = await session.get(Task, task_id)
     if t and 1 <= rule_id <= len(t.guard_ops or []):
         ops = list(t.guard_ops or [])
@@ -1011,22 +1011,22 @@ async def poj_delete_task_intercept_rule(task_id: str, rule_id: int, session: As
 
 
 @router.get("/tasks/{task_id}/artifacts")
-async def poj_task_artifacts(task_id: str):
+async def console_task_artifacts(task_id: str):
     return {"artifacts": []}
 
 
 @router.post("/tasks/{task_id}/artifacts/scan")
-async def poj_scan_artifacts(task_id: str):
+async def console_scan_artifacts(task_id: str):
     return {"added": 0, "skipped": 0, "truncated": 0}
 
 
 @router.post("/tasks/{task_id}/auth-check")
-async def poj_task_auth_check(task_id: str):
+async def console_task_auth_check(task_id: str):
     return {"ok": True, "matched": True, "detail": "任务凭据绑定已就绪", "elapsed_ms": 1, "checked_at": datetime.now(timezone.utc).isoformat()}
 
 
 @router.get("/tasks/{task_id}/retest-candidates")
-async def poj_retest_candidates(task_id: str, session: AsyncSession = Depends(get_session)):
+async def console_retest_candidates(task_id: str, session: AsyncSession = Depends(get_session)):
     rows = (
         await session.execute(
             select(Finding, Review)
@@ -1067,7 +1067,7 @@ def _target_to_intent_node(tgt: Target) -> dict[str, Any]:
 
 
 @router.get("/exploration/frontier")
-async def poj_frontier(task: str = "", session: AsyncSession = Depends(get_session)):
+async def console_frontier(task: str = "", session: AsyncSession = Depends(get_session)):
     q = select(Target).where(Target.status.in_(["queued", "assigned", "scanning"]))
     if task:
         q = q.where(Target.task_id == task)
@@ -1076,7 +1076,7 @@ async def poj_frontier(task: str = "", session: AsyncSession = Depends(get_sessi
 
 
 @router.get("/exploration/intents")
-async def poj_intents(task: str = "", page: int = 0, limit: int = 200, session: AsyncSession = Depends(get_session)):
+async def console_intents(task: str = "", page: int = 0, limit: int = 200, session: AsyncSession = Depends(get_session)):
     q = select(Target)
     if task:
         q = q.where(Target.task_id == task)
@@ -1088,7 +1088,7 @@ async def poj_intents(task: str = "", page: int = 0, limit: int = 200, session: 
 
 
 @router.get("/exploration/graph")
-async def poj_exploration_graph(task: str = "", session: AsyncSession = Depends(get_session)):
+async def console_exploration_graph(task: str = "", session: AsyncSession = Depends(get_session)):
     nodes: list[dict[str, Any]] = []
     edges: list[dict[str, str]] = []
     if task:
@@ -1124,7 +1124,7 @@ async def poj_exploration_graph(task: str = "", session: AsyncSession = Depends(
 
 
 @router.get("/exploration/nodes")
-async def poj_exploration_nodes(
+async def console_exploration_nodes(
     task: str = "",
     page: int = 1,
     size: int = 20,
@@ -1166,7 +1166,7 @@ def _event_to_activity(ev: TaskEvent) -> dict[str, Any]:
 
 
 @router.get("/exploration/activity")
-async def poj_activity(task: str = "", since: int = 0, limit: int = 30, session: AsyncSession = Depends(get_session)):
+async def console_activity(task: str = "", since: int = 0, limit: int = 30, session: AsyncSession = Depends(get_session)):
     q = select(TaskEvent)
     if task:
         q = q.where(TaskEvent.task_id == task)
@@ -1179,7 +1179,7 @@ async def poj_activity(task: str = "", since: int = 0, limit: int = 30, session:
 
 
 @router.get("/exploration/activity/history")
-async def poj_activity_history(task: str = "", before: int = 0, limit: int = 200, session: AsyncSession = Depends(get_session)):
+async def console_activity_history(task: str = "", before: int = 0, limit: int = 200, session: AsyncSession = Depends(get_session)):
     q = select(TaskEvent)
     if task:
         q = q.where(TaskEvent.task_id == task)
@@ -1195,7 +1195,7 @@ async def poj_activity_history(task: str = "", before: int = 0, limit: int = 200
 
 
 @router.get("/exploration/activity/stream")
-async def poj_activity_stream(task: str = "", since: int = 0):
+async def console_activity_stream(task: str = "", since: int = 0):
     async def _gen():
         cursor = since
         for _ in range(30):
@@ -1213,12 +1213,12 @@ async def poj_activity_stream(task: str = "", since: int = 0):
 
 
 @router.get("/exploration/main-sessions")
-async def poj_main_sessions():
+async def console_main_sessions():
     return {"sessions": [{"seq": 0, "created_at": datetime.now(timezone.utc).isoformat()}], "current": 0}
 
 
 @router.get("/exploration/tokens")
-async def poj_exploration_tokens(task: str = ""):
+async def console_exploration_tokens(task: str = ""):
     snap = llm_usage.usage_snapshot(task, "") if task else {}
     inp = int(snap.get("prompt_tokens") or 0)
     out = int(snap.get("completion_tokens") or 0)
@@ -1245,7 +1245,7 @@ async def _finding_traffic_counts(session: AsyncSession) -> dict[str, int]:
 
 
 @router.get("/exploration/findings/stats")
-async def poj_finding_stats(session: AsyncSession = Depends(get_session)):
+async def console_finding_stats(session: AsyncSession = Depends(get_session)):
     rows = (
         await session.execute(
             select(Finding, Review, Task)
@@ -1278,7 +1278,7 @@ async def poj_finding_stats(session: AsyncSession = Depends(get_session)):
 
 
 @router.get("/exploration/findings/groups")
-async def poj_finding_groups(page: int = 1, limit: int = 20, session: AsyncSession = Depends(get_session)):
+async def console_finding_groups(page: int = 1, limit: int = 20, session: AsyncSession = Depends(get_session)):
     rows = (
         await session.execute(
             select(Finding, Review, Task)
@@ -1314,7 +1314,7 @@ async def poj_finding_groups(page: int = 1, limit: int = 20, session: AsyncSessi
 
 
 @router.get("/exploration/findings/asset-tree")
-async def poj_finding_asset_tree(session: AsyncSession = Depends(get_session)):
+async def console_finding_asset_tree(session: AsyncSession = Depends(get_session)):
     rows = (
         await session.execute(
             select(Finding, Review).outerjoin(Review, Review.finding_id == Finding.id).where(Finding.status != "superseded")
@@ -1345,12 +1345,12 @@ async def poj_finding_asset_tree(session: AsyncSession = Depends(get_session)):
 
 
 @router.get("/exploration/findings/retests/active")
-async def poj_active_retests():
+async def console_active_retests():
     return {"retests": []}
 
 
 @router.get("/exploration/findings/export")
-async def poj_export_findings(
+async def console_export_findings(
     format: str = "md-single",
     scope: str = "all",
     task_id: str = "",
@@ -1370,7 +1370,7 @@ async def poj_export_findings(
         q = q.where(Finding.task_id == task_id)
     rows = (await session.execute(q.order_by(Finding.created_at.desc()))).all()
     if format == "json":
-        payload = [_pojun_finding_dict(f, r, t, include_report=True) for f, r, t in rows]
+        payload = [_console_finding_dict(f, r, t, include_report=True) for f, r, t in rows]
         return Response(
             json.dumps(payload, ensure_ascii=False, indent=2),
             media_type="application/json; charset=utf-8",
@@ -1401,7 +1401,7 @@ async def poj_export_findings(
 
 
 @router.get("/exploration/findings")
-async def poj_list_findings(
+async def console_list_findings(
     task: str = "",
     task_id: str = "",
     severity: str = "",
@@ -1428,7 +1428,7 @@ async def poj_list_findings(
     for f, r, t in rows:
         if tid and tid != "all" and f.task_id != tid:
             continue
-        item = _pojun_finding_dict(f, r, t, traffic_count=tf_counts.get(f.id, 0))
+        item = _console_finding_dict(f, r, t, traffic_count=tf_counts.get(f.id, 0))
         if severity and severity != "all" and item["severity"] != severity:
             continue
         if status and status != "all" and item["status"] != status:
@@ -1452,7 +1452,7 @@ async def poj_list_findings(
 
 
 @router.get("/exploration/findings/{finding_id}")
-async def poj_get_finding(finding_id: str, session: AsyncSession = Depends(get_session)):
+async def console_get_finding(finding_id: str, session: AsyncSession = Depends(get_session)):
     f = await session.get(Finding, finding_id)
     if not f:
         raise HTTPException(404, "漏洞不存在")
@@ -1461,11 +1461,11 @@ async def poj_get_finding(finding_id: str, session: AsyncSession = Depends(get_s
     tf_cnt = (
         await session.execute(select(func.count()).select_from(FusionTraffic).where(FusionTraffic.finding_id == finding_id))
     ).scalar() or 0
-    return _pojun_finding_dict(f, r, t, traffic_count=tf_cnt, include_report=True)
+    return _console_finding_dict(f, r, t, traffic_count=tf_cnt, include_report=True)
 
 
 @router.patch("/exploration/findings/{finding_id}")
-async def poj_patch_finding(finding_id: str, body: dict[str, Any], session: AsyncSession = Depends(get_session)):
+async def console_patch_finding(finding_id: str, body: dict[str, Any], session: AsyncSession = Depends(get_session)):
     from app.api.findings import UserReviewRequest, user_review
 
     f = await session.get(Finding, finding_id)
@@ -1516,11 +1516,11 @@ async def poj_patch_finding(finding_id: str, body: dict[str, Any], session: Asyn
 
     await session.refresh(f)
     r = (await session.execute(select(Review).where(Review.finding_id == finding_id))).scalar_one_or_none()
-    return _pojun_finding_dict(f, r)
+    return _console_finding_dict(f, r)
 
 
 @router.delete("/exploration/findings/{finding_id}")
-async def poj_delete_finding(finding_id: str, session: AsyncSession = Depends(get_session)):
+async def console_delete_finding(finding_id: str, session: AsyncSession = Depends(get_session)):
     f = await session.get(Finding, finding_id)
     if not f:
         raise HTTPException(404, "漏洞不存在")
@@ -1532,7 +1532,7 @@ async def poj_delete_finding(finding_id: str, session: AsyncSession = Depends(ge
 
 
 @router.get("/exploration/findings/{finding_id}/lineage")
-async def poj_finding_lineage(finding_id: str, session: AsyncSession = Depends(get_session)):
+async def console_finding_lineage(finding_id: str, session: AsyncSession = Depends(get_session)):
     f = await session.get(Finding, finding_id)
     if not f:
         return {"nodes": [], "edges": []}
@@ -1580,7 +1580,7 @@ def _to_traffic_binding(row: FusionTraffic, idx: int) -> dict[str, Any]:
 
 
 @router.get("/exploration/findings/{finding_id}/traffic")
-async def poj_finding_traffic(finding_id: str, session: AsyncSession = Depends(get_session)):
+async def console_finding_traffic(finding_id: str, session: AsyncSession = Depends(get_session)):
     rows = (
         await session.execute(
             select(FusionTraffic).where(FusionTraffic.finding_id == finding_id).order_by(FusionTraffic.created_at.asc())
@@ -1590,7 +1590,7 @@ async def poj_finding_traffic(finding_id: str, session: AsyncSession = Depends(g
 
 
 @router.post("/exploration/findings/{finding_id}/traffic")
-async def poj_bind_finding_traffic(finding_id: str, body: dict[str, Any], session: AsyncSession = Depends(get_session)):
+async def console_bind_finding_traffic(finding_id: str, body: dict[str, Any], session: AsyncSession = Depends(get_session)):
     refs = (body or {}).get("traffic_refs") or []
     for ref in refs:
         tid = str((ref or {}).get("traffic_id") or "").strip()
@@ -1603,11 +1603,11 @@ async def poj_bind_finding_traffic(finding_id: str, body: dict[str, Any], sessio
             if note:
                 row.notes = note
     await session.commit()
-    return await poj_finding_traffic(finding_id, session)
+    return await console_finding_traffic(finding_id, session)
 
 
 @router.patch("/exploration/findings/{finding_id}/traffic/{binding_id}")
-async def poj_edit_finding_traffic(finding_id: str, binding_id: str, body: dict[str, Any], session: AsyncSession = Depends(get_session)):
+async def console_edit_finding_traffic(finding_id: str, binding_id: str, body: dict[str, Any], session: AsyncSession = Depends(get_session)):
     row = await session.get(FusionTraffic, binding_id)
     if row and row.finding_id == finding_id:
         if "role" in body and body["role"] in traffic_ledger.ROLES:
@@ -1615,25 +1615,25 @@ async def poj_edit_finding_traffic(finding_id: str, binding_id: str, body: dict[
         if "note" in body:
             row.notes = str(body["note"] or "")
         await session.commit()
-    return await poj_finding_traffic(finding_id, session)
+    return await console_finding_traffic(finding_id, session)
 
 
 @router.delete("/exploration/findings/{finding_id}/traffic/{binding_id}")
-async def poj_del_finding_traffic(finding_id: str, binding_id: str, session: AsyncSession = Depends(get_session)):
+async def console_del_finding_traffic(finding_id: str, binding_id: str, session: AsyncSession = Depends(get_session)):
     row = await session.get(FusionTraffic, binding_id)
     if row and row.finding_id == finding_id:
         row.finding_id = ""
         await session.commit()
-    return await poj_finding_traffic(finding_id, session)
+    return await console_finding_traffic(finding_id, session)
 
 
 @router.put("/exploration/findings/{finding_id}/traffic/order")
-async def poj_order_finding_traffic(finding_id: str, session: AsyncSession = Depends(get_session)):
-    return await poj_finding_traffic(finding_id, session)
+async def console_order_finding_traffic(finding_id: str, session: AsyncSession = Depends(get_session)):
+    return await console_finding_traffic(finding_id, session)
 
 
 @router.get("/exploration/findings/{finding_id}/traffic/{binding_id}")
-async def poj_finding_traffic_detail(finding_id: str, binding_id: str, session: AsyncSession = Depends(get_session)):
+async def console_finding_traffic_detail(finding_id: str, binding_id: str, session: AsyncSession = Depends(get_session)):
     row = await session.get(FusionTraffic, binding_id)
     if not row:
         raise HTTPException(404, "流量记录不存在")
@@ -1648,7 +1648,7 @@ async def poj_finding_traffic_detail(finding_id: str, binding_id: str, session: 
 
 
 @router.get("/exploration/findings/{finding_id}/retests")
-async def poj_finding_retests(finding_id: str, session: AsyncSession = Depends(get_session)):
+async def console_finding_retests(finding_id: str, session: AsyncSession = Depends(get_session)):
     f = await session.get(Finding, finding_id)
     if not f:
         return {"retests": []}
@@ -1674,7 +1674,7 @@ async def poj_finding_retests(finding_id: str, session: AsyncSession = Depends(g
 
 
 @router.post("/exploration/findings/{finding_id}/retests")
-async def poj_start_finding_retest(finding_id: str, body: dict[str, Any], session: AsyncSession = Depends(get_session)):
+async def console_start_finding_retest(finding_id: str, body: dict[str, Any], session: AsyncSession = Depends(get_session)):
     f = await session.get(Finding, finding_id)
     if not f:
         raise HTTPException(404, "漏洞不存在")
@@ -1713,7 +1713,7 @@ async def poj_start_finding_retest(finding_id: str, body: dict[str, Any], sessio
 
 
 @router.get("/findings/{finding_id}/export")
-async def poj_export_finding_docx(finding_id: str, session: AsyncSession = Depends(get_session)):
+async def console_export_finding_docx(finding_id: str, session: AsyncSession = Depends(get_session)):
     f = await session.get(Finding, finding_id)
     if not f:
         raise HTTPException(404, "漏洞不存在")
@@ -1739,7 +1739,7 @@ async def poj_export_finding_docx(finding_id: str, session: AsyncSession = Depen
 
 
 @router.get("/report")
-async def poj_markdown_report(task: str = "", session: AsyncSession = Depends(get_session)):
+async def console_markdown_report(task: str = "", session: AsyncSession = Depends(get_session)):
     q = (
         select(Finding, Review, Task)
         .outerjoin(Review, Review.finding_id == Finding.id)
@@ -1756,7 +1756,7 @@ async def poj_markdown_report(task: str = "", session: AsyncSession = Depends(ge
 
 
 @router.get("/report/export")
-async def poj_task_docx_report(task: str = "", session: AsyncSession = Depends(get_session)):
+async def console_task_docx_report(task: str = "", session: AsyncSession = Depends(get_session)):
     q = select(Finding).where(Finding.status != "superseded")
     if task:
         q = q.where(Finding.task_id == task)
@@ -1765,7 +1765,7 @@ async def poj_task_docx_report(task: str = "", session: AsyncSession = Depends(g
         model = docx_report.build_report_model({"title": "渗透测试汇总报告", "vuln_type": "summary", "severity_claimed": "info", "target_url": "-", "owner": "Riddle", "description": "当前任务暂无漏洞发现"}, None, {}, [], {"org": "Riddle"})
         data = docx_report.build_public_docx_bytes(model)
         return Response(data, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document", headers={"Content-Disposition": 'attachment; filename="riddle-report.docx"'})
-    return await poj_export_finding_docx(f.id, session)
+    return await console_export_finding_docx(f.id, session)
 
 
 # ---------------------------------------------------------------------------
@@ -1790,7 +1790,7 @@ def _target_to_asset(tg: Target) -> dict[str, Any]:
 
 
 @router.get("/assets/counts")
-async def poj_asset_counts(task_id: str = "", session: AsyncSession = Depends(get_session)):
+async def console_asset_counts(task_id: str = "", session: AsyncSession = Depends(get_session)):
     q = select(Target)
     if task_id:
         q = q.where(Target.task_id == task_id)
@@ -1801,7 +1801,7 @@ async def poj_asset_counts(task_id: str = "", session: AsyncSession = Depends(ge
 
 
 @router.get("/assets")
-async def poj_assets(task_id: str = "", type: str = "", dsl: str = "", limit: int = 50, offset: int = 0, session: AsyncSession = Depends(get_session)):
+async def console_assets(task_id: str = "", type: str = "", dsl: str = "", limit: int = 50, offset: int = 0, session: AsyncSession = Depends(get_session)):
     q = select(Target)
     if task_id:
         q = q.where(Target.task_id == task_id)
@@ -1815,7 +1815,7 @@ async def poj_assets(task_id: str = "", type: str = "", dsl: str = "", limit: in
 
 
 @router.delete("/assets")
-async def poj_delete_assets(body: dict[str, Any], session: AsyncSession = Depends(get_session)):
+async def console_delete_assets(body: dict[str, Any], session: AsyncSession = Depends(get_session)):
     ids = {int(x) for x in (body or {}).get("ids") or [] if str(x).isdigit()}
     all_targets = (await session.execute(select(Target))).scalars().all()
     del_ids = [t.id for t in all_targets if _int_id(t.id) in ids]
@@ -1826,7 +1826,7 @@ async def poj_delete_assets(body: dict[str, Any], session: AsyncSession = Depend
 
 
 @router.get("/companies")
-async def poj_companies(session: AsyncSession = Depends(get_session)):
+async def console_companies(session: AsyncSession = Depends(get_session)):
     tasks = (await session.execute(select(Task))).scalars().all()
     out = []
     for i, t in enumerate(tasks, start=1):
@@ -1836,7 +1836,7 @@ async def poj_companies(session: AsyncSession = Depends(get_session)):
 
 
 @router.get("/traffic")
-async def poj_traffic(
+async def console_traffic(
     page: int = 0,
     size: int = 100,
     host: str = "",
@@ -1875,7 +1875,7 @@ async def poj_traffic(
 
 
 @router.get("/traffic/exchange")
-async def poj_traffic_exchange(id: str = "", session: AsyncSession = Depends(get_session)):
+async def console_traffic_exchange(id: str = "", session: AsyncSession = Depends(get_session)):
     row = await session.get(FusionTraffic, id)
     if not row:
         raise HTTPException(404, "流量记录不存在")
@@ -1883,7 +1883,7 @@ async def poj_traffic_exchange(id: str = "", session: AsyncSession = Depends(get
 
 
 @router.get("/traffic/hosts")
-async def poj_traffic_hosts(session: AsyncSession = Depends(get_session)):
+async def console_traffic_hosts(session: AsyncSession = Depends(get_session)):
     rows = (await session.execute(select(FusionTraffic.url))).scalars().all()
     counts: dict[str, int] = {}
     for url in rows:
@@ -1893,14 +1893,14 @@ async def poj_traffic_hosts(session: AsyncSession = Depends(get_session)):
 
 
 @router.delete("/traffic/all")
-async def poj_traffic_delete_all(session: AsyncSession = Depends(get_session)):
+async def console_traffic_delete_all(session: AsyncSession = Depends(get_session)):
     res = await session.execute(delete(FusionTraffic))
     await session.commit()
     return {"deleted": int(res.rowcount or 0), "reclaimed": 0}
 
 
 @router.get("/commands/stats")
-async def poj_command_stats(task: str = "", session: AsyncSession = Depends(get_session)):
+async def console_command_stats(task: str = "", session: AsyncSession = Depends(get_session)):
     q = select(TaskEvent)
     if task:
         q = q.where(TaskEvent.task_id == task)
@@ -1918,7 +1918,7 @@ async def poj_command_stats(task: str = "", session: AsyncSession = Depends(get_
 
 
 @router.get("/commands")
-async def poj_commands(task: str = "", q: str = "", page: int = 0, size: int = 50, session: AsyncSession = Depends(get_session)):
+async def console_commands(task: str = "", q: str = "", page: int = 0, size: int = 50, session: AsyncSession = Depends(get_session)):
     stmt = select(TaskEvent)
     if task:
         stmt = stmt.where(TaskEvent.task_id == task)
@@ -1990,7 +1990,7 @@ def _llm_profile_list() -> list[dict[str, Any]]:
 
 
 @router.get("/llm")
-async def poj_get_llm(session: AsyncSession = Depends(get_session)):
+async def console_get_llm(session: AsyncSession = Depends(get_session)):
     await refresh_cache(session)
     eff = effective_settings()["llm"]
     return {
@@ -2003,13 +2003,13 @@ async def poj_get_llm(session: AsyncSession = Depends(get_session)):
 
 
 @router.get("/llm/profiles")
-async def poj_llm_profiles(session: AsyncSession = Depends(get_session)):
+async def console_llm_profiles(session: AsyncSession = Depends(get_session)):
     await refresh_cache(session)
     return {"profiles": _llm_profile_list()}
 
 
 @router.post("/llm/profiles")
-async def poj_save_llm_profile(body: dict[str, Any], session: AsyncSession = Depends(get_session)):
+async def console_save_llm_profile(body: dict[str, Any], session: AsyncSession = Depends(get_session)):
     await refresh_cache(session)
     eff = effective_settings()["llm"]
     fmt = str((body or {}).get("format") or "openai")
@@ -2049,7 +2049,7 @@ async def poj_save_llm_profile(body: dict[str, Any], session: AsyncSession = Dep
 
 
 @router.delete("/llm/profiles/{pid}")
-async def poj_del_llm_profile(pid: int, session: AsyncSession = Depends(get_session)):
+async def console_del_llm_profile(pid: int, session: AsyncSession = Depends(get_session)):
     if pid <= 1:
         raise HTTPException(400, "主通道不可直接删除")
     eff = effective_settings()["llm"]
@@ -2062,12 +2062,12 @@ async def poj_del_llm_profile(pid: int, session: AsyncSession = Depends(get_sess
 
 
 @router.post("/llm/profiles/active")
-async def poj_activate_llm_profile():
+async def console_activate_llm_profile():
     return {"ok": True}
 
 
 @router.get("/llm/pool")
-async def poj_llm_pool():
+async def console_llm_pool():
     eff = effective_settings()["llm"]
     snap_by_ref = llm_health.snapshot()
     profiles = _llm_profile_list()
@@ -2094,25 +2094,25 @@ async def poj_llm_pool():
 
 
 @router.post("/llm/pool/reset")
-async def poj_reset_llm_pool():
+async def console_reset_llm_pool():
     with llm_health._LOCK:
         llm_health._HEALTH.clear()
-    return await poj_llm_pool()
+    return await console_llm_pool()
 
 
 @router.get("/llm/retry-policy")
-async def poj_get_retry_policy():
+async def console_get_retry_policy():
     zero = {"attempts": 0, "interval_ms": 0}
     return {"connect": zero, "empty": zero, "stream": zero, "breaker": zero, "intent": zero}
 
 
 @router.post("/llm/retry-policy")
-async def poj_save_retry_policy(body: dict[str, Any]):
+async def console_save_retry_policy(body: dict[str, Any]):
     return body
 
 
 @router.post("/llm/models")
-async def poj_fetch_models(body: dict[str, Any], session: AsyncSession = Depends(get_session)):
+async def console_fetch_models(body: dict[str, Any], session: AsyncSession = Depends(get_session)):
     await refresh_cache(session)
     proto = "anthropic_messages" if (body or {}).get("provider") == "anthropic" else "openai_chat"
     return await list_available_models(
@@ -2123,7 +2123,7 @@ async def poj_fetch_models(body: dict[str, Any], session: AsyncSession = Depends
 
 
 @router.post("/llm/test")
-async def poj_test_llm(body: dict[str, Any], session: AsyncSession = Depends(get_session)):
+async def console_test_llm(body: dict[str, Any], session: AsyncSession = Depends(get_session)):
     from app.api.settings import LLMTestRequest, test_llm
 
     proto = "anthropic_messages" if (body or {}).get("provider") == "anthropic" else "openai_chat"
@@ -2141,24 +2141,24 @@ async def poj_test_llm(body: dict[str, Any], session: AsyncSession = Depends(get
 
 
 @router.get("/llm/records/tasks")
-async def poj_llm_record_tasks():
+async def console_llm_record_tasks():
     return {"tasks": []}
 
 
 @router.get("/llm/records")
-async def poj_llm_records():
+async def console_llm_records():
     return {"records": [], "total": 0}
 
 
 @router.get("/llm/records/by-model")
-async def poj_llm_records_by_model(task: str = ""):
+async def console_llm_records_by_model(task: str = ""):
     return {"models": []}
 
 
 # ---- Agents & Skills ----
 
 @router.get("/agents")
-async def poj_agents():
+async def console_agents():
     routing = role_router.role_routing_table(effective_settings()["llm"].get("model") or "")
     entries = role_router._merged_skill_entries()
     return {
@@ -2181,8 +2181,8 @@ async def poj_agents():
 
 
 @router.get("/agents/{key}")
-async def poj_agent_detail(key: str):
-    agents = (await poj_agents())["agents"]
+async def console_agent_detail(key: str):
+    agents = (await console_agents())["agents"]
     agent = next((a for a in agents if a["key"] == key), agents[0])
     return {
         "agent": agent,
@@ -2195,7 +2195,7 @@ async def poj_agent_detail(key: str):
 
 
 @router.get("/skills")
-async def poj_skills():
+async def console_skills():
     entries = role_router._merged_skill_entries()
     return {
         "skills": [
@@ -2224,18 +2224,18 @@ def _find_skill_path(name: str) -> Path | None:
 
 
 @router.get("/skills/missing")
-async def poj_skills_missing():
+async def console_skills_missing():
     return {"missing": []}
 
 
 @router.get("/skills/{name}/files")
-async def poj_skill_files(name: str):
+async def console_skill_files(name: str):
     p = _find_skill_path(name)
     return {"files": [p.name] if p else []}
 
 
 @router.get("/skills/{name}/files/{file:path}")
-async def poj_read_skill_file(name: str, file: str):
+async def console_read_skill_file(name: str, file: str):
     p = _find_skill_path(name)
     if not p:
         raise HTTPException(404, "技能文件不存在")
@@ -2243,7 +2243,7 @@ async def poj_read_skill_file(name: str, file: str):
 
 
 @router.put("/skills/{name}/files/{file:path}")
-async def poj_write_skill_file(name: str, file: str, body: dict[str, Any]):
+async def console_write_skill_file(name: str, file: str, body: dict[str, Any]):
     p = _find_skill_path(name)
     if not p:
         raise HTTPException(404, "技能文件不存在")
@@ -2253,14 +2253,14 @@ async def poj_write_skill_file(name: str, file: str, body: dict[str, Any]):
 
 
 @router.get("/skills/{name}/usage")
-async def poj_skill_usage(name: str):
+async def console_skill_usage(name: str):
     return {"calls": []}
 
 
 # ---- VulnIntel ----
 
 @router.get("/vulnintel/status")
-async def poj_vulnintel_status(session: AsyncSession = Depends(get_session)):
+async def console_vulnintel_status(session: AsyncSession = Depends(get_session)):
     fcfg = fusion_config.load_config()
     rows = (await session.execute(select(Intel).where(Intel.kind == vulnintel.INTEL_KIND))).scalars().all()
     kev_cnt = sum(1 for r in rows if (r.payload or {}).get("kev"))
@@ -2291,7 +2291,7 @@ async def poj_vulnintel_status(session: AsyncSession = Depends(get_session)):
 
 
 @router.put("/vulnintel/config")
-async def poj_vulnintel_save_config(body: dict[str, Any], session: AsyncSession = Depends(get_session)):
+async def console_vulnintel_save_config(body: dict[str, Any], session: AsyncSession = Depends(get_session)):
     patch = {}
     if "enabled" in body:
         patch["intel_sync_enabled"] = bool(body["enabled"])
@@ -2304,19 +2304,19 @@ async def poj_vulnintel_save_config(body: dict[str, Any], session: AsyncSession 
 
 
 @router.post("/vulnintel/sync")
-async def poj_vulnintel_sync(session: AsyncSession = Depends(get_session)):
+async def console_vulnintel_sync(session: AsyncSession = Depends(get_session)):
     res = await vulnintel.sync_and_store(session)
     return {"accepted": True, **(res if isinstance(res, dict) else {})}
 
 
 @router.post("/vulnintel/probe")
-async def poj_vulnintel_probe():
+async def console_vulnintel_probe():
     return {"proxy": "", "effective": True, "results": [{"source": "NVD 2.0", "target": vulnintel.NVD_URL, "ok": True, "status": 200, "latency_ms": 120}]}
 
 
 # ---- Intercept Rules & Approvals ----
 
-def _pojun_intercept_row(item: dict[str, Any]) -> dict[str, Any]:
+def _console_intercept_row(item: dict[str, Any]) -> dict[str, Any]:
     st = str(item.get("status") or "pending")
     return {
         "id": _int_id(item.get("id")),
@@ -2337,7 +2337,7 @@ def _pojun_intercept_row(item: dict[str, Any]) -> dict[str, Any]:
 
 
 @router.get("/intercept/rules")
-async def poj_intercept_rules():
+async def console_intercept_rules():
     now_iso = datetime.now(timezone.utc).isoformat()
     rules = []
     for idx, (name, pat, msg) in enumerate(intercept._JUDGE_RULES, start=1):
@@ -2380,53 +2380,53 @@ async def poj_intercept_rules():
 
 
 @router.get("/asset-intercept/rules")
-async def poj_asset_intercept_rules():
+async def console_asset_intercept_rules():
     return {"rules": []}
 
 
 @router.get("/intercept/pending")
-async def poj_intercept_pending():
-    items = [_pojun_intercept_row(x) for x in intercept.list_intercepts(status="pending")]
+async def console_intercept_pending():
+    items = [_console_intercept_row(x) for x in intercept.list_intercepts(status="pending")]
     return {"pending": items}
 
 
 @router.post("/intercept/pending/{item_id}/decide")
-async def poj_intercept_decide(item_id: int, body: dict[str, Any]):
+async def console_intercept_decide(item_id: int, body: dict[str, Any]):
     dec = "approve" if str((body or {}).get("decision") or "") in {"allowed", "approve"} else "deny"
     all_items = intercept.list_intercepts()
     match = next((x for x in all_items if _int_id(x.get("id")) == item_id), None)
     if not match:
         raise HTTPException(404, "审批条目不存在")
-    intercept.decide_intercept(match["id"], dec, "Pojun 前端核准")
+    intercept.decide_intercept(match["id"], dec, "Riddle 前端核准")
     return {"ok": True}
 
 
 @router.get("/intercept/history")
-async def poj_intercept_history(page: int = 1, size: int = 20, status: str = ""):
+async def console_intercept_history(page: int = 1, size: int = 20, status: str = ""):
     st = "approved" if status == "allowed" else status
-    items = [_pojun_intercept_row(x) for x in intercept.list_intercepts(status=st)]
+    items = [_console_intercept_row(x) for x in intercept.list_intercepts(status=st)]
     start = max(0, (page - 1) * size)
     return {"items": items[start:start + size], "total": len(items)}
 
 
 @router.get("/intercept/history/{item_id}")
-async def poj_intercept_detail(item_id: int):
+async def console_intercept_detail(item_id: int):
     match = next((x for x in intercept.list_intercepts() if _int_id(x.get("id")) == item_id), None)
     if not match:
         raise HTTPException(404, "审批条目不存在")
-    return {**_pojun_intercept_row(match), "audit": None}
+    return {**_console_intercept_row(match), "audit": None}
 
 
 @router.get("/intercept/task/{task_id}")
-async def poj_intercept_task(task_id: str, page: int = 1, size: int = 20, status: str = ""):
+async def console_intercept_task(task_id: str, page: int = 1, size: int = 20, status: str = ""):
     st = "approved" if status == "allowed" else status
-    items = [_pojun_intercept_row(x) for x in intercept.list_intercepts(task_id=task_id, status=st)]
+    items = [_console_intercept_row(x) for x in intercept.list_intercepts(task_id=task_id, status=st)]
     start = max(0, (page - 1) * size)
     return {"items": items[start:start + size], "total": len(items)}
 
 
 @router.get("/intercept/judge")
-async def poj_get_judge_cfg():
+async def console_get_judge_cfg():
     fcfg = fusion_config.load_config()
     return {
         "enabled": True,
@@ -2441,29 +2441,29 @@ async def poj_get_judge_cfg():
 
 
 @router.put("/intercept/judge")
-async def poj_set_judge_cfg():
+async def console_set_judge_cfg():
     return {"ok": True}
 
 
 @router.get("/intercept/judge/usage")
-async def poj_judge_usage():
+async def console_judge_usage():
     return {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cache_read_tokens": 0, "cache_write_tokens": 0, "daily": []}
 
 
 @router.get("/intercept/tool-config")
-async def poj_get_tool_cfg():
+async def console_get_tool_cfg():
     return {"enabled_tools": ["run_shell", "http_request"]}
 
 
 @router.put("/intercept/tool-config")
-async def poj_set_tool_cfg():
+async def console_set_tool_cfg():
     return {"ok": True}
 
 
 # ---- Logs & Settings ----
 
 @router.get("/logs/history")
-async def poj_logs_history(before: int = 0, limit: int = 200, session: AsyncSession = Depends(get_session)):
+async def console_logs_history(before: int = 0, limit: int = 200, session: AsyncSession = Depends(get_session)):
     q = select(TaskEvent)
     if before > 0:
         q = q.where(TaskEvent.id < before)
@@ -2485,7 +2485,7 @@ async def poj_logs_history(before: int = 0, limit: int = 200, session: AsyncSess
 
 
 @router.get("/logs/stream")
-async def poj_logs_stream(since: int = 0):
+async def console_logs_stream(since: int = 0):
     async def _gen():
         cursor = since
         for _ in range(30):
@@ -2508,7 +2508,7 @@ async def poj_logs_stream(since: int = 0):
 
 
 @router.get("/settings")
-async def poj_get_settings(session: AsyncSession = Depends(get_session)):
+async def console_get_settings(session: AsyncSession = Depends(get_session)):
     await refresh_cache(session)
     eff = effective_settings()
     pub = public_settings_view()
@@ -2540,7 +2540,7 @@ async def poj_get_settings(session: AsyncSession = Depends(get_session)):
 
 
 @router.put("/settings")
-async def poj_put_settings(body: dict[str, Any], session: AsyncSession = Depends(get_session)):
+async def console_put_settings(body: dict[str, Any], session: AsyncSession = Depends(get_session)):
     patch: dict[str, Any] = {}
     fpatch: dict[str, Any] = {}
     if "traffic_capture" in body:
@@ -2558,33 +2558,33 @@ async def poj_put_settings(body: dict[str, Any], session: AsyncSession = Depends
         patch["llm"] = {"mode": "pool" if body["llm_pool_enabled"] else "single"}
     if patch:
         await update_settings(session, patch)
-    return await poj_get_settings(session)
+    return await console_get_settings(session)
 
 
-# ---- Clean defaults for secondary Pojun views ----
+# ---- Clean defaults for secondary Riddle views ----
 
 @router.get("/mcp")
-async def poj_mcp():
+async def console_mcp():
     return {"servers": []}
 
 
 @router.get("/tools")
-async def poj_tools():
+async def console_tools():
     return {"tools": []}
 
 
 @router.get("/tools/inventory")
-async def poj_tools_inventory():
+async def console_tools_inventory():
     return {"tools": [], "summary": {"available": [], "missing": [], "hint": "由 Riddle Worker 原生执行引擎调度"}, "deploy_mode": "host"}
 
 
 @router.get("/conversations")
-async def poj_conversations():
+async def console_conversations():
     return {"conversations": []}
 
 
 @router.get("/notify/meta")
-async def poj_notify_meta():
+async def console_notify_meta():
     return {
         "kinds": [],
         "enabled": False,
@@ -2596,10 +2596,10 @@ async def poj_notify_meta():
 
 
 @router.get("/notify/channels")
-async def poj_notify_channels():
+async def console_notify_channels():
     return {"channels": []}
 
 
 @router.get("/notify/deliveries")
-async def poj_notify_deliveries(page: int = 1, page_size: int = 50):
+async def console_notify_deliveries(page: int = 1, page_size: int = 50):
     return {"deliveries": [], "total": 0, "page": page, "page_size": page_size}

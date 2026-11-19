@@ -143,7 +143,7 @@ export async function http<T>(path: string, init?: RequestInit): Promise<T> {
     return mockHandle<T>(init?.method ?? "GET", path, init?.body ?? null);
   }
   const token = getToken();
-  const r = await fetch(`/api/pojun${path}`, {
+  const r = await fetch(`/api/console${path}`, {
     ...init,
     headers: {
       ...(init?.body ? { "Content-Type": "application/json" } : {}),
@@ -201,7 +201,7 @@ export async function http<T>(path: string, init?: RequestInit): Promise<T> {
 // Token is appended as ?token= because SSE can't carry cookies cross-origin.
 // mockReport returns a canned Markdown report for the demo.
 function mockReport(_task?: string): string {
-  return `# POJUN 渗透测试报告 — Acme Corp
+  return `# 知蠹 Riddle 渗透测试报告 — Acme Corp
 
 ## 概览
 - 范围：acme.com（含 www / admin / api / shop / vpn 子域）
@@ -224,8 +224,8 @@ function mockReport(_task?: string): string {
 
 export function sseUrl(path: string): string {
   const rewritten =
-    path.startsWith("/api/") && !path.startsWith("/api/pojun/")
-      ? `/api/pojun${path.slice(4)}`
+    path.startsWith("/api/") && !path.startsWith("/api/console/")
+      ? `/api/console${path.slice(4)}`
       : path;
   const base =
     process.env.NEXT_PUBLIC_SSE_BASE ??
@@ -509,7 +509,7 @@ export const api = {
     const fd = new FormData();
     for (const f of files) fd.append("file", f);
     const token = getToken();
-    const r = await fetch(`/api/pojun/workspace/upload?path=${encodeURIComponent(dir)}`, {
+    const r = await fetch(`/api/console/workspace/upload?path=${encodeURIComponent(dir)}`, {
       method: "POST",
       headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       body: fd,
@@ -523,7 +523,7 @@ export const api = {
       blob = new Blob([`（demo）${path} 的下载内容示例。`], { type: "text/plain" });
     } else {
       const token = getToken();
-      const r = await fetch(`/api/pojun/workspace/download?path=${encodeURIComponent(path)}`, {
+      const r = await fetch(`/api/console/workspace/download?path=${encodeURIComponent(path)}`, {
         headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       });
       if (!r.ok) throw new Error(`下载失败: ${r.status}`);
@@ -637,7 +637,7 @@ export const api = {
       for (const [k, v] of findingFilterParams(opts.filters)) p.set(k, v);
     }
     const token = getToken();
-    const r = await fetch(`/api/pojun/exploration/findings/export?${p.toString()}`, {
+    const r = await fetch(`/api/console/exploration/findings/export?${p.toString()}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
     if (!r.ok) throw new Error(`export: ${r.status}`);
@@ -711,7 +711,7 @@ export const api = {
   ) => {
     const token = getToken();
     const response = await fetch(
-      `/api/pojun/exploration/findings/${id}/traffic/${bindingId}/body?side=${side}&download=1${contextTask ? `&context_task=${encodeURIComponent(contextTask)}` : ""}`,
+      `/api/console/exploration/findings/${id}/traffic/${bindingId}/body?side=${side}&download=1${contextTask ? `&context_task=${encodeURIComponent(contextTask)}` : ""}`,
       { headers: token ? { Authorization: `Bearer ${token}` } : {} },
     );
     if (!response.ok) {
@@ -773,8 +773,8 @@ export const api = {
   // 任务证据附件：列表 / 下载地址（图片直链同源带 cookie，可直接当 img src）。
   taskArtifacts: (taskId: string) =>
     get<{ artifacts: TaskArtifact[] }>(`/tasks/${taskId}/artifacts`).then((r) => arr(r.artifacts)),
-  artifactUrl: (taskId: string, artifactId: number) => `/api/pojun/tasks/${taskId}/artifacts/${artifactId}`,
-  artifactsExportUrl: (taskId: string) => `/api/pojun/tasks/${taskId}/artifacts/export`,
+  artifactUrl: (taskId: string, artifactId: number) => `/api/console/tasks/${taskId}/artifacts/${artifactId}`,
+  artifactsExportUrl: (taskId: string) => `/api/console/tasks/${taskId}/artifacts/export`,
   scanTaskArtifacts: (taskId: string) =>
     post<{ added: number; skipped: number; truncated: number }>(`/tasks/${taskId}/artifacts/scan`, {}),
   // 修改附件归属（v0.4.20）：finding_id=0 表示任务级。
@@ -791,7 +791,7 @@ export const api = {
   artifactDataPreview: (taskId: string, artifactId: number) =>
     get<DataPreviewPayload>(`/tasks/${encodeURIComponent(taskId)}/artifacts/${artifactId}/data-preview`),
   artifactPreviewUrl: (taskId: string, artifactId: number, page: number) =>
-    `/api/pojun/tasks/${taskId}/artifacts/${artifactId}/preview/${page}`,
+    `/api/console/tasks/${taskId}/artifacts/${artifactId}/preview/${page}`,
   regenerateArtifactPreview: (taskId: string, artifactId: number) =>
     post<{ state: string }>(`/tasks/${taskId}/artifacts/${artifactId}/preview`, {}),
   tokenDaily: (days = 30) => get<DailyTokenBucket[]>(`/tokens/daily?days=${days}`).then(arr),
@@ -1055,13 +1055,13 @@ export const api = {
     } else {
       const token = getToken();
       const qs = opts?.detail ? "?detail=1" : "";
-      const r = await fetch(`/api/pojun/diagnostics/export${qs}`, {
+      const r = await fetch(`/api/console/diagnostics/export${qs}`, {
         headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       });
       if (!r.ok) throw new Error(`诊断包导出失败: ${r.status}`);
       blob = await r.blob();
     }
-    triggerBlobDownload(blob, `pojun-diagnostics-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "")}.zip`);
+    triggerBlobDownload(blob, `riddle-diagnostics-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "")}.zip`);
   },
   vulnintelStatus: () => get<VulnIntelStatus>(`/vulnintel/status`),
   vulnintelSaveConfig: (payload: VulnIntelConfigPatch) => put<{ ok: boolean }>(`/vulnintel/config`, payload),
@@ -1081,7 +1081,7 @@ export const api = {
       summary: { available: string[]; missing: { name: string; install: string }[]; hint: string };
       deploy_mode: "docker" | "host";
     }>(`/tools/inventory`),
-  // 宿主环境:体检(含一键安装可用性)+ 一键安装(由特权助手 pojun-hostd 执行)
+  // 宿主环境:体检(含一键安装可用性)+ 一键安装(由特权助手 riddle-hostd 执行)
   hostenvStatus: () => get<HostenvStatus>(`/hostenv/status`),
   hostenvInstall: (id: string) => post<InstallJob>(`/hostenv/install`, { id }),
   hostenvInstallBatch: (ids: string[]) => post<InstallBatchResult>(`/hostenv/install-batch`, { ids }),
@@ -1134,7 +1134,7 @@ export const api = {
   report: async (task?: string) => {
     if (MOCK) return mockReport(task);
     const token = getToken();
-    const r = await fetch(`/api/pojun/report${tq(task)}`, {
+    const r = await fetch(`/api/console/report${tq(task)}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
     if (!r.ok) throw new Error(`report: ${r.status}`);
@@ -1143,22 +1143,22 @@ export const api = {
   // 任务总报告 Word 导出(浏览器侧触发下载;需带 JWT)
   downloadTaskDocx: async (task: string) => {
     const token = getToken();
-    const r = await fetch(`/api/pojun/report/export${tq(task)}`, {
+    const r = await fetch(`/api/console/report/export${tq(task)}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
     if (!r.ok) throw new Error(`docx: ${r.status}`);
     const blob = await r.blob();
-    triggerBlobDownload(blob, `pojun-report-${task || "active"}-${new Date().toISOString().slice(0, 10)}.docx`);
+    triggerBlobDownload(blob, `riddle-report-${task || "active"}-${new Date().toISOString().slice(0, 10)}.docx`);
   },
   // 单漏洞 Word 导出
   downloadFindingDocx: async (id: number | string) => {
     const token = getToken();
-    const r = await fetch(`/api/pojun/findings/${id}/export`, {
+    const r = await fetch(`/api/console/findings/${id}/export`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
     if (!r.ok) throw new Error(`docx: ${r.status}`);
     const blob = await r.blob();
-    triggerBlobDownload(blob, `pojun-finding-${id}-${new Date().toISOString().slice(0, 10)}.docx`);
+    triggerBlobDownload(blob, `riddle-finding-${id}-${new Date().toISOString().slice(0, 10)}.docx`);
   },
   chatMentions: (kind: string, query: string, signal?: AbortSignal, cursor = "") =>
     http<{ items: ChatMention[]; next_cursor?: string }>(
@@ -1182,7 +1182,7 @@ export const api = {
     const fd = new FormData();
     for (const f of files) fd.append("file", f);
     const token = getToken();
-    const r = await fetch(`/api/pojun/chat/upload?scope=${scope}&id=${encodeURIComponent(id)}`, {
+    const r = await fetch(`/api/console/chat/upload?scope=${scope}&id=${encodeURIComponent(id)}`, {
       method: "POST",
       headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       body: fd,
@@ -1447,7 +1447,7 @@ export const api = {
     const fd = new FormData();
     fd.append("file", file);
     const token = getToken();
-    const r = await fetch(`/api/pojun/skills/upload${overwrite ? "?overwrite=true" : ""}`, {
+    const r = await fetch(`/api/console/skills/upload${overwrite ? "?overwrite=true" : ""}`, {
       method: "POST",
       body: fd,
       headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -1536,7 +1536,7 @@ export const api = {
   interceptGetToolConfig: async (): Promise<{ enabled_tools: string[] }> => {
     if (MOCK) return { enabled_tools: ["bash"] };
     const token = getToken();
-    const r = await fetch("/api/pojun/intercept/tool-config", {
+    const r = await fetch("/api/console/intercept/tool-config", {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
     if (r.status === 404) return { enabled_tools: ["bash"] };
@@ -1546,7 +1546,7 @@ export const api = {
   interceptSetToolConfig: async (enabledTools: string[]): Promise<void> => {
     if (MOCK) return;
     const token = getToken();
-    const r = await fetch("/api/pojun/intercept/tool-config", {
+    const r = await fetch("/api/console/intercept/tool-config", {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",

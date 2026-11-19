@@ -1,6 +1,6 @@
-const TOKEN_KEY = "pojun_token";
+const TOKEN_KEY = "riddle_console_token";
 const RIDDLE_TOKEN_KEY = "riddle_token";
-const LOGOUT_KEY = "pojun_logged_out";
+const LOGOUT_KEY = "riddle_logged_out";
 const COOKIE_MAX_AGE = 7 * 24 * 60 * 60; // 7 天（秒）
 // Standard 3-segment local operator payload ({"alg":"none"}.{"sub":"Riddle"}.local) for keyless local startup.
 const DEFAULT_LOCAL_TOKEN = "eyJhbGciOiJub25lIn0.eyJzdWIiOiJSaWRkbGUifQ.local";

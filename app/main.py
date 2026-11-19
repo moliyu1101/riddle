@@ -34,7 +34,7 @@ from app.agent_runtime import (
     REVIEW_MAX_CONCURRENCY,
     WORKER_MAX_CONCURRENCY,
 )
-from app.api import backup, findings, fusion, intel, pojun_compat, runtime_logs, settings, stream, tasks, update, vulns
+from app.api import backup, findings, fusion, intel, console_compat, runtime_logs, settings, stream, tasks, update, vulns
 from app.backup import run_periodic_backup
 from app.config import worker_config
 from app.db.session import init_db
@@ -239,7 +239,7 @@ app.include_router(runtime_logs.router)
 app.include_router(vulns.router)
 app.include_router(update.router)
 app.include_router(fusion.router)
-app.include_router(pojun_compat.router)
+app.include_router(console_compat.router)
 
 
 @app.get("/health")
@@ -311,7 +311,7 @@ if (WEB_DIR / "assets").exists():
 
 @app.get("/{full_path:path}", include_in_schema=False)
 async def spa_fallback(full_path: str):
-    """Next.js 静态导出多路由托管（对齐 Pojun webui_embed.go 静态资源解析顺序）。"""
+    """Next.js 静态导出多路由托管（按静态文件、目录索引与根页顺序解析）。"""
     clean = (full_path or "").strip("/")
     if clean.startswith(("api/", "workfiles/")) or clean in {"api", "workfiles"}:
         return JSONResponse({"detail": "Not Found"}, status_code=404)

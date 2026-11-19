@@ -19,11 +19,11 @@ _READ_TOKEN_ENV = "RIDDLE_READ_TOKEN"
 _OBSERVER_TOKEN_ENV = "RIDDLE_OBSERVER_TOKEN"
 _AUTH_EXEMPT_PATHS = {
     "/api/auth/status",
-    "/api/pojun/auth/status",
-    "/api/pojun/auth/login",
-    "/api/pojun/auth/init",
-    "/api/pojun/health",
-    "/api/pojun/version",
+    "/api/console/auth/status",
+    "/api/console/auth/login",
+    "/api/console/auth/init",
+    "/api/console/health",
+    "/api/console/version",
     "/health",
     "/favicon.svg",
     "/favicon.ico",
@@ -113,14 +113,14 @@ def token_from_headers(headers: Mapping[str, str]) -> str:
         cookie.load(headers.get("cookie", ""))
     except Exception:
         cookie = SimpleCookie()
-    pojun_ck = cookie.get("pojun_token").value if cookie.get("pojun_token") else ""
-    if pojun_ck.endswith(".local"):
-        pojun_ck = ""
+    console_ck = cookie.get("riddle_console_token").value if cookie.get("riddle_console_token") else ""
+    if console_ck.endswith(".local"):
+        console_ck = ""
     return (
         headers.get("x-riddle-token")
         or _bearer_token(headers.get("authorization"))
         or (cookie.get("riddle_token").value if cookie.get("riddle_token") else "")
-        or pojun_ck
+        or console_ck
         or ""
     ).strip()
 

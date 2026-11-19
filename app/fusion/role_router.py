@@ -1,6 +1,6 @@
 """按角色配模型 + 技能速查块注入 system prompt。
 
-Pojun 的实战教训：技能是「元工具」，如果 system prompt 里一个字都不提，
+工程实践经验：技能是「元工具」，如果 system prompt 里一个字都不提，
 模型几乎不会主动调（实测 56k 次工具调用只用了 8 次 skill）。Riddle 的
 ``app/agents/knowledge.py`` 已有方法论触发词映射，但那是命中后才注入正文，
 缺少一份常驻的「有哪些方法论、什么时候用」速查清单。
