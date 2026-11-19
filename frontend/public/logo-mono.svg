@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-2 -2 52 52">
+  <!-- 破军 · 劈星（单色版：currentColor 随主题） -->
+  <path fill="currentColor" d="M26.2 0.8 L31.86 16.14 L47.2 21.8 L31.86 27.46 L29.26 28.56 L19.44 16.54 L20.54 16.14 Z"/>
+  <path fill="currentColor" d="M21.8 47.2 L16.14 31.86 L0.8 26.2 L19.44 16.54 L31.86 27.46 Z"/>
+  <path fill="currentColor" opacity=".85" d="M33 8 l1.7 4.6 4.6 1.7 -4.6 1.7 -1.7 4.6 -1.7 -4.6 -4.6 -1.7 4.6 -1.7 Z"/>
+</svg>

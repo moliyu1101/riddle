@@ -34,7 +34,7 @@ from app.agent_runtime import (
     REVIEW_MAX_CONCURRENCY,
     WORKER_MAX_CONCURRENCY,
 )
-from app.api import backup, findings, fusion, intel, runtime_logs, settings, stream, tasks, update, vulns
+from app.api import backup, findings, fusion, intel, pojun_compat, runtime_logs, settings, stream, tasks, update, vulns
 from app.backup import run_periodic_backup
 from app.config import worker_config
 from app.db.session import init_db
@@ -239,6 +239,7 @@ app.include_router(runtime_logs.router)
 app.include_router(vulns.router)
 app.include_router(update.router)
 app.include_router(fusion.router)
+app.include_router(pojun_compat.router)
 
 
 @app.get("/health")
@@ -286,13 +287,16 @@ async def favicon_svg():
 
 @app.get("/favicon.ico")
 async def favicon_ico():
-    # 浏览器默认请求 .ico，统一返回同一 SVG，避免 404 噪音
+    ico_file = WEB_DIR / "favicon.ico"
+    if ico_file.is_file():
+        return FileResponse(str(ico_file))
+    # 浏览器默认请求 .ico 且未导出站点图标时兜底返回 SVG
     return Response(content=FAVICON_SVG, media_type="image/svg+xml")
 
 
 @app.get("/logo.png")
 async def logo_png():
-    # 顶栏/登录页品牌 logo：vite 构建时 public/logo.png 会复制到 web/dist/logo.png
+    # 顶栏/登录页品牌 logo：Next.js/Vite 构建时 public/logo.png 会复制到 web/dist/logo.png
     logo_file = WEB_DIR / "logo.png"
     if logo_file.exists():
         return FileResponse(str(logo_file), media_type="image/png",
@@ -300,14 +304,42 @@ async def logo_png():
     return Response(status_code=404)
 
 
-# Vite 资源目录（/assets/*.js|css）
+# Vite 兼容静态资源目录（/assets/*.js|css）
 if (WEB_DIR / "assets").exists():
     app.mount("/assets", StaticFiles(directory=str(WEB_DIR / "assets")), name="assets")
 
 
-@app.get("/")
-async def index():
-    if INDEX_FILE.exists():
-        # no-cache：HTML 每次强制回源校验，避免浏览器缓存旧 index.html 引用旧构建产物
+@app.get("/{full_path:path}", include_in_schema=False)
+async def spa_fallback(full_path: str):
+    """Next.js 静态导出多路由托管（对齐 Pojun webui_embed.go 静态资源解析顺序）。"""
+    clean = (full_path or "").strip("/")
+    if clean.startswith(("api/", "workfiles/")) or clean in {"api", "workfiles"}:
+        return JSONResponse({"detail": "Not Found"}, status_code=404)
+    if not WEB_DIR.exists():
+        if not clean:
+            return {"msg": "前端未构建，请运行 npm --prefix frontend run build 或使用 Docker 镜像"}
+        return JSONResponse({"detail": "Not Found"}, status_code=404)
+
+    web_root = WEB_DIR.resolve()
+    is_hashed_static = clean.startswith("_next/static/")
+    headers = (
+        {"Cache-Control": "public, max-age=31536000, immutable"}
+        if is_hashed_static
+        else {"Cache-Control": "no-cache"}
+    )
+    candidates = (["index.html"] if not clean else [clean, f"{clean}/index.html", f"{clean}.html"])
+    for rel in candidates:
+        cand = (web_root / rel).resolve()
+        try:
+            if not cand.is_relative_to(web_root):
+                continue
+        except ValueError:
+            continue
+        if cand.is_file():
+            return FileResponse(str(cand), headers=headers)
+
+    if is_hashed_static:
+        return JSONResponse({"detail": "Not Found"}, status_code=404)
+    if INDEX_FILE.is_file():
         return FileResponse(str(INDEX_FILE), headers={"Cache-Control": "no-cache"})
-    return {"msg": "前端未构建，请运行 vite build 或使用 Docker 镜像"}
+    return {"msg": "前端未构建，请运行 npm --prefix frontend run build 或使用 Docker 镜像"}

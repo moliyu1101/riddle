@@ -17,7 +17,17 @@ from fastapi import Request
 _TOKEN_ENV = "RIDDLE_API_TOKEN"
 _READ_TOKEN_ENV = "RIDDLE_READ_TOKEN"
 _OBSERVER_TOKEN_ENV = "RIDDLE_OBSERVER_TOKEN"
-_AUTH_EXEMPT_PATHS = {"/api/auth/status", "/health", "/favicon.svg", "/favicon.ico"}
+_AUTH_EXEMPT_PATHS = {
+    "/api/auth/status",
+    "/api/pojun/auth/status",
+    "/api/pojun/auth/login",
+    "/api/pojun/auth/init",
+    "/api/pojun/health",
+    "/api/pojun/version",
+    "/health",
+    "/favicon.svg",
+    "/favicon.ico",
+}
 
 # 设置页可自定义的令牌（DB 持久化，优先于环境变量）。由 settings_service 在
 # 启动与每次配置更新时刷新；环境变量仍是兜底来源。
@@ -46,7 +56,7 @@ SECURITY_HEADERS = {
     "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
     "Content-Security-Policy": (
         "default-src 'self'; "
-        "script-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
         "style-src 'self' 'unsafe-inline'; "
         "img-src 'self' data: https: http:; "
         "connect-src 'self' ws: wss:; "
@@ -103,10 +113,14 @@ def token_from_headers(headers: Mapping[str, str]) -> str:
         cookie.load(headers.get("cookie", ""))
     except Exception:
         cookie = SimpleCookie()
+    pojun_ck = cookie.get("pojun_token").value if cookie.get("pojun_token") else ""
+    if pojun_ck.endswith(".local"):
+        pojun_ck = ""
     return (
         headers.get("x-riddle-token")
         or _bearer_token(headers.get("authorization"))
         or (cookie.get("riddle_token").value if cookie.get("riddle_token") else "")
+        or pojun_ck
         or ""
     ).strip()
 
