@@ -282,16 +282,16 @@ FAVICON_SVG = (
 @app.get("/favicon.svg")
 async def favicon_svg():
     return Response(content=FAVICON_SVG, media_type="image/svg+xml",
-                    headers={"Cache-Control": "public, max-age=86400"})
+                    headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/favicon.ico")
 async def favicon_ico():
     ico_file = WEB_DIR / "favicon.ico"
     if ico_file.is_file():
-        return FileResponse(str(ico_file))
+        return FileResponse(str(ico_file), headers={"Cache-Control": "no-cache"})
     # 浏览器默认请求 .ico 且未导出站点图标时兜底返回 SVG
-    return Response(content=FAVICON_SVG, media_type="image/svg+xml")
+    return Response(content=FAVICON_SVG, media_type="image/svg+xml", headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/logo.png")
@@ -300,7 +300,7 @@ async def logo_png():
     logo_file = WEB_DIR / "logo.png"
     if logo_file.exists():
         return FileResponse(str(logo_file), media_type="image/png",
-                            headers={"Cache-Control": "public, max-age=86400"})
+                            headers={"Cache-Control": "no-cache"})
     return Response(status_code=404)
 
 
