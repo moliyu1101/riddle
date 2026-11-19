@@ -1466,6 +1466,8 @@ async def poj_get_finding(finding_id: str, session: AsyncSession = Depends(get_s
 
 @router.patch("/exploration/findings/{finding_id}")
 async def poj_patch_finding(finding_id: str, body: dict[str, Any], session: AsyncSession = Depends(get_session)):
+    from app.api.findings import UserReviewRequest, user_review
+
     f = await session.get(Finding, finding_id)
     if not f:
         raise HTTPException(404, "漏洞不存在")
@@ -1475,23 +1477,45 @@ async def poj_patch_finding(finding_id: str, body: dict[str, Any], session: Asyn
         f.vuln_type = str(body["vulnclass"]).strip()[:80]
     if "severity" in body and body["severity"]:
         f.severity_claimed = str(body["severity"]).strip().lower()
+
     r = (await session.execute(select(Review).where(Review.finding_id == finding_id))).scalar_one_or_none()
-    if "status" in body and body["status"]:
-        st = str(body["status"]).strip()
+    needs_review_hook = bool(body.get("status") or body.get("severity"))
+    if needs_review_hook:
         if r is None:
-            r = Review(finding_id=f.id, task_id=f.task_id, verdict="accepted", confidence="confirmed", severity_final=f.severity_claimed)
+            r = Review(
+                finding_id=f.id,
+                task_id=f.task_id,
+                verdict="accepted",
+                confidence="confirmed",
+                severity_final=f.severity_claimed,
+            )
             session.add(r)
-        if st in {"confirmed", "resolved", "fixed"}:
-            r.user_status = "passed"
-            r.submitted = st == "resolved"
-        elif st in {"false_positive", "ignored", "duplicate"}:
-            r.user_status = "rejected"
-        else:
-            r.user_status = "pending"
-    if r and "severity" in body and body["severity"]:
-        r.user_severity = str(body["severity"]).strip().lower()
-    await session.commit()
+        await session.commit()
+
+        user_status: str | None = None
+        submitted: bool | None = None
+        if body.get("status"):
+            st = str(body["status"]).strip()
+            if st in {"confirmed", "resolved", "fixed"}:
+                user_status = "passed"
+                submitted = st == "resolved"
+            elif st in {"false_positive", "ignored", "duplicate"}:
+                user_status = "rejected"
+            else:
+                user_status = "pending"
+        sev_map = {"critical": "严重", "high": "高危", "medium": "中危", "low": "低危"}
+        raw_sev = str(body.get("severity") or "").strip().lower()
+        user_severity = sev_map.get(raw_sev, raw_sev) if raw_sev else None
+        await user_review(
+            finding_id,
+            UserReviewRequest(user_status=user_status, user_severity=user_severity, submitted=submitted),
+            session=session,
+        )
+    else:
+        await session.commit()
+
     await session.refresh(f)
+    r = (await session.execute(select(Review).where(Review.finding_id == finding_id))).scalar_one_or_none()
     return _pojun_finding_dict(f, r)
 
 

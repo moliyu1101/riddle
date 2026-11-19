@@ -142,6 +142,7 @@ export interface RiddleTask {
   manual_targets: string[];
   auth_bindings: Array<Record<string, unknown>>;
   model_config_data: Record<string, unknown>;
+  fofa_config?: Record<string, unknown>;
   llm_usage: Record<string, unknown>;
   created_at: string;
   updated_at: string;
@@ -350,6 +351,7 @@ export interface RiddleFinding {
   evidence?: Record<string, unknown>;
   affected_scope?: string;
   kill_chain?: Array<{ method: string; detail: string }>;
+  assistant_messages?: Array<{ role: string; content: string }>;
 }
 
 export interface RiddleVulnStats {
@@ -503,11 +505,14 @@ export const riddleApi = {
   getTask: (id: string) => riddleFetch<RiddleTask>(`/tasks/${encodeURIComponent(id)}`),
   createTask: (body: CreateRiddleTaskInput) =>
     riddleFetch<RiddleTask>("/tasks", { method: "POST", body: JSON.stringify(body) }),
+  updateTask: (id: string, body: Partial<CreateRiddleTaskInput>) =>
+    riddleFetch<RiddleTask>(`/tasks/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(body) }),
   startTask: (id: string) => riddleFetch<RiddleTask>(`/tasks/${encodeURIComponent(id)}/start`, { method: "POST" }),
   pauseTask: (id: string) => riddleFetch<RiddleTask>(`/tasks/${encodeURIComponent(id)}/pause`, { method: "POST" }),
   stopTask: (id: string) => riddleFetch<RiddleTask>(`/tasks/${encodeURIComponent(id)}/stop`, { method: "POST" }),
   deleteTask: (id: string) => riddleFetch<void>(`/tasks/${encodeURIComponent(id)}`, { method: "DELETE" }),
-  getTaskBoard: (id: string) => riddleFetch<Record<string, unknown>>(`/tasks/${encodeURIComponent(id)}/board`),
+  getTaskBoard: (id: string, verbose = false) =>
+    riddleFetch<Record<string, unknown>>(`/tasks/${encodeURIComponent(id)}/board${verbose ? "?verbose=true" : ""}`),
   getTaskTargets: (id: string, status?: string, limit = 200) => {
     const qs = new URLSearchParams({ limit: String(limit) });
     if (status && status !== "all") qs.set("status", status);
@@ -516,6 +521,58 @@ export const riddleApi = {
   skipTaskTarget: (taskId: string, targetId: string) =>
     riddleFetch<{ ok: boolean }>(`/tasks/${encodeURIComponent(taskId)}/targets/${encodeURIComponent(targetId)}/skip`, {
       method: "POST",
+    }),
+  injectTargetDirective: (taskId: string, targetId: string, directive: string) =>
+    riddleFetch<{ ok: boolean; queued?: number }>(
+      `/tasks/${encodeURIComponent(taskId)}/targets/${encodeURIComponent(targetId)}/directive`,
+      { method: "POST", body: JSON.stringify({ directive }) },
+    ),
+  getTargetTrace: (taskId: string, targetId: string, limit = 200) =>
+    riddleFetch<{ target?: Record<string, unknown>; events?: Array<Record<string, unknown>> }>(
+      `/tasks/${encodeURIComponent(taskId)}/targets/${encodeURIComponent(targetId)}/trace?limit=${limit}`,
+    ),
+  cancelEscalation: (taskId: string, findingId: string) =>
+    riddleFetch<{ ok: boolean }>(
+      `/tasks/${encodeURIComponent(taskId)}/escalations/${encodeURIComponent(findingId)}/cancel`,
+      { method: "POST" },
+    ),
+  downloadTaskReportsExport: (taskId: string, format: "md" | "edusrc" = "md") =>
+    downloadWithAuth(
+      `/tasks/${encodeURIComponent(taskId)}/reports-export?format=${format}`,
+      `riddle-reports-${taskId.slice(0, 8)}.${format === "edusrc" ? "json" : "md"}`,
+    ),
+  getFusionGraph: (taskId: string) =>
+    riddleFetch<{
+      task_id: string;
+      nodes: Array<{ id: string; graph: string; kind: string; label: string; ref_id?: string; payload?: Record<string, unknown> }>;
+      edges: Array<{ id: string; kind: string; src: string; dst: string }>;
+      coverage: Record<string, unknown>;
+    }>(`/fusion/graphs/${encodeURIComponent(taskId)}`),
+  rebuildFusionGraph: (taskId: string) =>
+    riddleFetch<Record<string, unknown>>(`/fusion/graphs/${encodeURIComponent(taskId)}/rebuild`, { method: "POST" }),
+  listFindingVersions: (findingId: string) =>
+    riddleFetch<
+      Array<{
+        version: number;
+        source: string;
+        note: string;
+        created_at: string;
+        snapshot: Record<string, unknown>;
+      }>
+    >(`/findings/${encodeURIComponent(findingId)}/versions`),
+  restoreFindingVersion: (findingId: string, version: number, note = "") =>
+    riddleFetch<{ ok: boolean; version: number; note: string }>(
+      `/findings/${encodeURIComponent(findingId)}/versions/${version}/restore`,
+      { method: "POST", body: JSON.stringify({ note }) },
+    ),
+  askFindingAssistant: (findingId: string, message: string) =>
+    riddleFetch<{
+      answer: string;
+      tool_logs: Array<Record<string, unknown>>;
+      messages: Array<{ role: string; content: string }>;
+    }>(`/findings/${encodeURIComponent(findingId)}/assistant`, {
+      method: "POST",
+      body: JSON.stringify({ message }),
     }),
   parseTargets: (text: string) =>
     riddleFetch<ParseTargetsResult>("/tasks/parse-targets", {

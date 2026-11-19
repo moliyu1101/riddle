@@ -41,6 +41,7 @@ export default function AssetsAndHardTargetsPage() {
   const [selectedHardIds, setSelectedHardIds] = React.useState<string[]>([]);
   const [injectIntel, setInjectIntel] = React.useState(true);
   const [reviving, setReviving] = React.useState(false);
+  const [revivedTaskIds, setRevivedTaskIds] = React.useState<string[]>([]);
 
   // Tab 3: Killsweep
   const [killsweeps, setKillsweeps] = React.useState<KillsweepItem[]>([]);
@@ -149,9 +150,10 @@ export default function AssetsAndHardTargetsPage() {
         limit: 50,
         inject_latest_intel: injectIntel,
       });
-      toast.success(
-        `唤醒回捞成功：已重置 ${Number(res.revived ?? res.count ?? 0)} 个硬骨头目标重新入队`,
-      );
+      const count = Number(res.revived_count ?? res.revived ?? res.count ?? 0);
+      const tids = Array.isArray(res.task_ids) ? (res.task_ids as string[]) : [];
+      setRevivedTaskIds(tids);
+      toast.success(`唤醒回捞成功：已重置 ${count} 个硬骨头目标重新入队`);
       await loadHardTargets();
     } catch (err) {
       toast.error(`回捞失败：${err instanceof Error ? err.message : String(err)}`);
@@ -280,6 +282,39 @@ export default function AssetsAndHardTargetsPage() {
               </Button>
             </div>
           </div>
+
+          {revivedTaskIds.length > 0 ? (
+            <Card className="border-emerald-500/40 bg-emerald-500/5">
+              <CardContent className="flex flex-wrap items-center justify-between gap-3 p-3 text-xs">
+                <span>
+                  硬骨头目标已重新入队，涉及 <b>{revivedTaskIds.length}</b> 个任务（若任务处于暂停/停止状态需启动后继续挖掘）。
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    onClick={async () => {
+                      let ok = 0;
+                      for (const tid of revivedTaskIds) {
+                        try {
+                          await riddleApi.startTask(tid);
+                          ok += 1;
+                        } catch {
+                          // task may already be running
+                        }
+                      }
+                      toast.success(`已向 ${ok} 个涉及任务发送启动指令`);
+                      setRevivedTaskIds([]);
+                    }}
+                  >
+                    <Play className="mr-1.5 size-3.5" /> 立即启动涉及任务
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setRevivedTaskIds([])}>
+                    关闭
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
 
           <Card>
             <CardContent className="p-0">

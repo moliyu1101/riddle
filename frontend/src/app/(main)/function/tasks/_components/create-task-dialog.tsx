@@ -60,6 +60,7 @@ interface CreateTaskDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated: (task: RiddleTask) => void | Promise<void>;
+  editTask?: RiddleTask | null;
 }
 
 const VULN_DIRECTION_PRESETS = [
@@ -124,7 +125,8 @@ const SOURCE_OPTIONS: Array<{
   { id: "site", title: "单站协作", desc: "多 Worker 协同深挖单站", icon: Crosshair },
 ];
 
-export function CreateTaskDialog({ open, onOpenChange, onCreated }: CreateTaskDialogProps) {
+export function CreateTaskDialog({ open, onOpenChange, onCreated, editTask }: CreateTaskDialogProps) {
+  const isEdit = Boolean(editTask);
   const [activeTab, setActiveTab] = React.useState<SectionTab>("basic");
   const [settings, setSettings] = React.useState<RiddleSettingsResponse | null>(null);
   const [creating, setCreating] = React.useState(false);
@@ -165,7 +167,7 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated }: CreateTaskDi
   // Footer launch option
   const [startImmediately, setStartImmediately] = React.useState(false);
 
-  // Load global defaults & engine availability when dialog opens
+  // Load global defaults & engine availability (or prefill when editing)
   React.useEffect(() => {
     if (!open) return;
     let alive = true;
@@ -174,19 +176,59 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated }: CreateTaskDi
       .then((s) => {
         if (!alive) return;
         setSettings(s);
-        if (s.defaults?.engine) setEngine(s.defaults.engine);
-        if (s.defaults?.concurrency) setConcurrency(s.defaults.concurrency);
-        if (typeof s.defaults?.deepen_cap === "number") setDeepenCap(s.defaults.deepen_cap);
-        if (s.fofa?.max_pages) setMaxPages(s.fofa.max_pages);
-        if (s.fofa?.page_size) setPageSize(s.fofa.page_size);
+        if (!editTask) {
+          if (s.defaults?.engine) setEngine(s.defaults.engine);
+          if (s.defaults?.concurrency) setConcurrency(s.defaults.concurrency);
+          if (typeof s.defaults?.deepen_cap === "number") setDeepenCap(s.defaults.deepen_cap);
+          if (s.fofa?.max_pages) setMaxPages(s.fofa.max_pages);
+          if (s.fofa?.page_size) setPageSize(s.fofa.page_size);
+        }
       })
       .catch(() => {
         // fallback silently to defaults
       });
+
+    if (editTask) {
+      setActiveTab("basic");
+      setName(editTask.name || "");
+      setSrcType(editTask.src_type === "enterprise" ? "enterprise" : "edusrc");
+      const ts = editTask.target_source;
+      setTargetSource(ts === "manual" || ts === "both" || ts === "site" ? ts : "fofa");
+      setEngine(editTask.engine || "fofa");
+      setFofaQuery(editTask.fofa_query || "");
+      const fc = (editTask.fofa_config || {}) as Record<string, unknown>;
+      if (typeof fc.max_pages === "number") setMaxPages(fc.max_pages);
+      if (typeof fc.page_size === "number") setPageSize(fc.page_size);
+      setSkipSiteRecon(Boolean(fc.skip_site_recon));
+      setManualText((editTask.manual_targets || []).join("\n"));
+      setSelectedVulns(editTask.vuln_types || []);
+      setGuardOps(editTask.guard_ops || []);
+      setSrcRules(editTask.src_rules || "");
+      setConcurrency(editTask.concurrency || 3);
+      setDeepenCap(typeof editTask.deepen_cap === "number" ? editTask.deepen_cap : 2);
+      setAuthText("");
+      setAuthParsed(null);
+      setAutoGoals(false);
+      riddleApi
+        .getGoals(editTask.id)
+        .then((res) => {
+          if (!alive) return;
+          const list: EditableGoal[] = (res.goals ?? []).map((g, idx) => ({
+            id: String(g.id ?? g.goal_key ?? `g_${idx + 1}`),
+            title: String(g.title ?? ""),
+            criteria: String(g.criteria ?? ""),
+            kind: typeof g.kind === "string" ? g.kind : "finding",
+            match: Array.isArray(g.match) ? (g.match as string[]) : [],
+          }));
+          setPreviewGoals(list);
+          if (list.length > 0) setAutoGoals(true);
+        })
+        .catch(() => setPreviewGoals([]));
+    }
     return () => {
       alive = false;
     };
-  }, [open]);
+  }, [open, editTask]);
 
   // Debounced live parse-query
   React.useEffect(() => {
@@ -386,7 +428,7 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated }: CreateTaskDi
         }
       }
 
-      const created = await riddleApi.createTask({
+      const payload = {
         name: name.trim(),
         src_type: srcType,
         vuln_types: selectedVulns,
@@ -396,7 +438,7 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated }: CreateTaskDi
         engine: targetSource === "fofa" || targetSource === "both" ? engine : "",
         fofa_query: targetSource === "fofa" || targetSource === "both" ? fofaQuery.trim() : "",
         manual_targets: targetSource === "fofa" ? [] : manualLines,
-        auth_bindings: authBindings,
+        ...(authBindings.length > 0 || !isEdit ? { auth_bindings: authBindings } : {}),
         fofa_config: {
           max_pages: maxPages,
           page_size: pageSize,
@@ -404,7 +446,12 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated }: CreateTaskDi
         },
         concurrency,
         deepen_cap: deepenCap,
-      });
+      };
+
+      const saved =
+        isEdit && editTask
+          ? await riddleApi.updateTask(editTask.id, payload)
+          : await riddleApi.createTask(payload);
 
       if (autoGoals) {
         try {
@@ -412,40 +459,44 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated }: CreateTaskDi
             const validGoals = previewGoals.filter((g) => g.title.trim() && g.criteria.trim());
             if (validGoals.length > 0) {
               await riddleApi.saveGoals(
-                created.id,
+                saved.id,
                 validGoals.map((g) => ({ ...g })),
               );
             }
-          } else {
+          } else if (!isEdit) {
             const suggested = await riddleApi.suggestGoals({
-              task_id: created.id,
-              name: created.name,
-              src_type: created.src_type,
+              task_id: saved.id,
+              name: saved.name,
+              src_type: saved.src_type,
               vuln_types: selectedVulns,
               targets: manualLines,
               fofa_query: fofaQuery.trim(),
             });
             if (suggested.goals?.length) {
-              await riddleApi.saveGoals(created.id, suggested.goals);
+              await riddleApi.saveGoals(saved.id, suggested.goals);
             }
           }
         } catch {
-          // Goal gate creation is non-fatal
+          // Goal gate save is non-fatal
         }
       }
 
-      if (startImmediately) {
-        await riddleApi.startTask(created.id);
+      if (!isEdit && startImmediately) {
+        await riddleApi.startTask(saved.id);
       }
 
       toast.success(
-        startImmediately ? `任务「${created.name}」已创建并立即启动` : `任务「${created.name}」创建成功`,
+        isEdit
+          ? `任务「${saved.name}」配置已更新`
+          : startImmediately
+            ? `任务「${saved.name}」已创建并立即启动`
+            : `任务「${saved.name}」创建成功`,
       );
-      resetForm();
+      if (!isEdit) resetForm();
       onOpenChange(false);
-      await onCreated(created);
+      await onCreated(saved);
     } catch (err) {
-      toast.error(`创建任务失败：${err instanceof Error ? err.message : String(err)}`);
+      toast.error(`${isEdit ? "保存" : "创建"}任务失败：${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setCreating(false);
     }
@@ -462,9 +513,13 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated }: CreateTaskDi
                 <Target className="size-4" />
               </div>
               <div>
-                <DialogTitle className="text-lg">新建知蠹自主挖掘任务</DialogTitle>
+                <DialogTitle className="text-lg">
+                  {isEdit ? `编辑任务 — ${editTask?.name}` : "新建知蠹自主挖掘任务"}
+                </DialogTitle>
                 <DialogDescription className="text-xs">
-                  配置 SRC 模式、资产来源、测试凭据与执行护栏；各分页可随时自由切换。
+                  {isEdit
+                    ? "修改测绘语法将自动重置翻页进度重新探测；凭据留空则保留原绑定。"
+                    : "配置 SRC 模式、资产来源、测试凭据与执行护栏；各分页可随时自由切换。"}
                 </DialogDescription>
               </div>
             </div>
@@ -1285,10 +1340,12 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated }: CreateTaskDi
                     </>
                   ) : null}
                 </div>
-                <label className="flex cursor-pointer items-center gap-2 text-xs font-medium">
-                  <Switch checked={startImmediately} onCheckedChange={setStartImmediately} />
-                  <span>创建后立即启动</span>
-                </label>
+                {!isEdit ? (
+                  <label className="flex cursor-pointer items-center gap-2 text-xs font-medium">
+                    <Switch checked={startImmediately} onCheckedChange={setStartImmediately} />
+                    <span>创建后立即启动</span>
+                  </label>
+                ) : null}
               </div>
 
               {/* Action Buttons */}
@@ -1310,8 +1367,10 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated }: CreateTaskDi
                 <Button type="submit" size="sm" disabled={creating}>
                   {creating ? (
                     <>
-                      <Loader2 className="mr-1.5 size-3.5 animate-spin" /> 正在创建…
+                      <Loader2 className="mr-1.5 size-3.5 animate-spin" /> {isEdit ? "正在保存…" : "正在创建…"}
                     </>
+                  ) : isEdit ? (
+                    "保存修改"
                   ) : startImmediately ? (
                     "创建并立即启动"
                   ) : (

@@ -1,530 +1,959 @@
 "use client";
 
 import * as React from "react";
-
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-
-import { ArchiveIcon, ArrowLeftIcon, BotIcon, BrainIcon, CheckIcon, CircleAlertIcon, PauseIcon, PlayIcon } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import {
+  Activity,
+  ArrowLeft,
+  Bot,
+  Bug,
+  Check,
+  CheckCircle2,
+  Download,
+  Flag,
+  Flame,
+  GitBranch,
+  History,
+  Pause,
+  Pencil,
+  Play,
+  RefreshCw,
+  Send,
+  ShieldBan,
+  Sparkles,
+  Square,
+  X,
+  Zap,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { StatusBadge } from "@/components/status-badge";
-import { TaskLLMProfileChain } from "@/components/task-llm-profile-chain";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Popover,
-  PopoverContent,
-  PopoverDescription,
-  PopoverHeader,
-  PopoverTitle,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import { Spinner } from "@/components/ui/spinner";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { api } from "@/lib/api";
-import type { LLMProfile, Task } from "@/lib/types";
+import {
+  riddleApi,
+  riddleFetch,
+  type KillsweepItem,
+  type RiddleFinding,
+  type RiddleTarget,
+  type RiddleTask,
+} from "@/lib/riddle-api";
 
-import { AssetsTab } from "./_tabs/assets-tab";
-import { BroadcastTab } from "./_tabs/broadcast-tab";
-import { CoverageGraphTab } from "./_tabs/coverage-graph-tab";
-import { FindingsTab } from "./_tabs/findings-tab";
-import { GraphTab } from "./_tabs/graph-tab";
-import { InterceptTab } from "./_tabs/intercept-tab";
-import { OverviewTab } from "./_tabs/overview-tab";
-import { ReportTab } from "./_tabs/report-tab";
-import { RetestsTab } from "./_tabs/retests-tab";
-import { SessionsTab } from "./_tabs/sessions-tab";
+import { CreateTaskDialog } from "../_components/create-task-dialog";
 
-const TABS = [
-  { value: "sessions", label: "会话" },
-  { value: "overview", label: "总览" },
-  { value: "graph", label: "探索链路" },
-  { value: "broadcast", label: "播报板" },
-  { value: "findings", label: "发现" },
-  { value: "retests", label: "复测" },
-  { value: "assets", label: "测试资产" },
-  { value: "coverage", label: "资产覆盖图" },
-  { value: "intercept", label: "拦截审批" },
-  { value: "report", label: "报告" },
-];
-
-function taskProfileIDs(task: Task): string[] {
-  if (task.llm_profile_ids && task.llm_profile_ids.length > 0) {
-    return task.llm_profile_ids.map(String);
-  }
-  return task.llm_profile_id ? [String(task.llm_profile_id)] : [];
+interface LiveWorkerItem {
+  worker_id?: string;
+  target_id?: string;
+  target?: string;
+  url?: string;
+  host?: string;
+  status?: string;
+  action?: string;
+  score?: number;
+  phase?: string;
+  progress?: number;
+  round?: number;
+  findings?: number;
 }
 
-function TaskLLMControl({ task, profiles, onUpdated }: { task: Task; profiles: LLMProfile[]; onUpdated: () => void }) {
-  const [open, setOpen] = React.useState(false);
-  const [profileIDs, setProfileIDs] = React.useState<string[]>(() => taskProfileIDs(task));
-  const [activeProfileID, setActiveProfileID] = React.useState(
-    task.active_llm_profile_id ? String(task.active_llm_profile_id) : (taskProfileIDs(task)[0] ?? ""),
-  );
-  const [saving, setSaving] = React.useState(false);
-  const popoverContentRef = React.useRef<HTMLDivElement>(null);
+interface LiveEscalationItem {
+  finding_id: string;
+  title?: string;
+  severity?: string;
+  action?: string;
+  started_at?: string;
+}
 
-  const chain = taskProfileIDs(task);
-  const exhausted = task.llm_failover_state === "chain_exhausted";
-  // 任何状态都可以改链,终态也不例外:任务结束后主 Agent 对话仍走这条链,
-  // 链上模型出问题时必须能换掉,否则已完成任务就没法继续交互。
-  const terminal = ["done", "failed", "timeout"].includes(task.status);
-  // A null active profile on an exhausted, non-empty chain is a persisted end
-  // cursor. Keep the status display honest; choosing the first profile is only
-  // the editor's reset draft and does not mean it is currently active.
-  let activeID = chain[0] ?? "";
-  if (exhausted) activeID = "";
-  if (task.active_llm_profile_id) activeID = String(task.active_llm_profile_id);
-  const activeProfile = profiles.find((profile) => profile.id === activeID);
-  const currentLabel = exhausted
-    ? "配置链已耗尽"
-    : (activeProfile?.name ?? (activeID ? `配置 #${activeID}` : "跟随默认配置"));
-  const activeIndex = chain.indexOf(activeID);
-  const backupCount = activeIndex >= 0 ? Math.max(0, chain.length - activeIndex - 1) : 0;
-  const currentTitle = [currentLabel, activeProfile?.model, backupCount > 0 ? `${backupCount} 个备用` : ""]
-    .filter(Boolean)
-    .join(" · ");
-  let editorDescription = "调整顺序或当前配置后，将从下一次 LLM 调用开始生效。";
-  if (terminal) editorDescription = "任务已结束，改动只影响后续的主 Agent 对话。";
-  let saveLabel = "保存";
-  if (exhausted) saveLabel = "保存并重置";
-  if (saving) saveLabel = "保存中";
+interface BoardPayload {
+  task_status?: string;
+  live_workers?: LiveWorkerItem[];
+  live_escalations?: LiveEscalationItem[];
+  stats?: Record<string, number>;
+  vuln_dist?: Array<{ type: string; count: number }>;
+  concurrency?: number;
+  worker_summary?: { running?: number; escalating?: number; idle?: number };
+  throttle?: { cap?: number; base_cap?: number; reasons?: string[]; queued?: number; llm_under_cooldown?: boolean };
+  tab_summary?: Record<string, number>;
+  events?: Array<Record<string, unknown>>;
+  goal_summary?: { configured?: boolean; total?: number; achieved?: number; terminal_state?: string; summary?: string } | null;
+}
 
-  const syncDraft = React.useCallback(() => {
-    const next = taskProfileIDs(task);
-    setProfileIDs(next);
-    setActiveProfileID(task.active_llm_profile_id ? String(task.active_llm_profile_id) : (next[0] ?? ""));
-  }, [task]);
-
-  const handleOpenChange = (next: boolean) => {
-    setOpen(next);
-    if (next) syncDraft();
-  };
-
-  const handleProfileIDsChange = (next: string[]) => {
-    setProfileIDs(next);
-    setActiveProfileID((current) => (next.includes(current) ? current : (next[0] ?? "")));
-  };
-
-  const save = async () => {
-    setSaving(true);
-    try {
-      const result = await api.updateTaskLLMProfiles(
-        task.id,
-        profileIDs.map(Number),
-        activeProfileID ? Number(activeProfileID) : undefined,
-      );
-      if (result.switch_event) {
-        toast.info(result.switch_event.summary, { id: `task-${task.id}-llm-${result.switch_event.seq}` });
-      } else {
-        toast.success(
-          result.reopened_intents > 0
-            ? `LLM 配置已更新，并恢复 ${result.reopened_intents} 条额度阻塞意图`
-            : "LLM 配置已更新",
-        );
-      }
-      setOpen(false);
-      onUpdated();
-    } catch (error) {
-      toast.error(`更新失败：${(error as Error).message}`);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <Popover open={open} onOpenChange={handleOpenChange}>
-      <PopoverTrigger asChild>
-        <Button
-          size="sm"
-          variant={exhausted ? "destructive" : "outline"}
-          aria-label="查看或切换任务 LLM 配置"
-          title={currentTitle}
-        >
-          <BrainIcon data-icon="inline-start" />
-          <span className="hidden max-w-36 truncate lg:inline">{currentLabel}</span>
-          {backupCount > 0 && <span className="hidden text-muted-foreground xl:inline">+{backupCount}</span>}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent ref={popoverContentRef} align="start" className="w-[min(28rem,calc(100vw-2rem))] gap-4 p-4">
-        <PopoverHeader>
-          <PopoverTitle>任务 LLM 配置链</PopoverTitle>
-          <PopoverDescription>{editorDescription}</PopoverDescription>
-        </PopoverHeader>
-
-        {exhausted && (
-          <Alert variant="destructive">
-            <CircleAlertIcon />
-            <AlertTitle>配置链额度已耗尽</AlertTitle>
-            <AlertDescription>
-              {task.llm_failover_reason ?? "所有已选配置均被判定为额度不足。保存配置链可重置故障状态。"}
-            </AlertDescription>
-          </Alert>
-        )}
-
-        <TaskLLMProfileChain
-          profiles={profiles}
-          value={profileIDs}
-          onValueChange={handleProfileIDsChange}
-          activeProfileId={activeProfileID}
-          onActiveProfileChange={setActiveProfileID}
-          inputId="task-llm-profiles"
-          disabled={saving}
-          portalContainer={popoverContentRef}
-        />
-
-        <div className="flex justify-end gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={() => setOpen(false)}>
-            关闭
-          </Button>
-          <Button type="button" size="sm" onClick={save} disabled={saving}>
-            {saving && <Spinner data-icon="inline-start" />}
-            {saveLabel}
-          </Button>
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
+function extractFindings(res: { items?: RiddleFinding[] } | RiddleFinding[]): RiddleFinding[] {
+  return Array.isArray(res) ? res : res.items ?? [];
 }
 
 function TaskDetailInner() {
-  const router = useRouter();
   const searchParams = useSearchParams();
-  const id = searchParams.get("id") ?? "";
-  const [task, setTask] = React.useState<Task | null>(null);
-  const [paused, setPaused] = React.useState(false);
-  const [loaded, setLoaded] = React.useState(false);
-  const [tab, setTab] = React.useState(searchParams.get("tab") || "sessions");
-  const [interceptPendingCount, setInterceptPendingCount] = React.useState(0);
-  const [profiles, setProfiles] = React.useState<LLMProfile[]>([]);
-  const [archiving, setArchiving] = React.useState(false);
+  const taskId = searchParams.get("id") ?? "";
+
+  const [task, setTask] = React.useState<RiddleTask | null>(null);
+  const [board, setBoard] = React.useState<BoardPayload | null>(null);
+  const [targets, setTargets] = React.useState<RiddleTarget[]>([]);
+  const [targetStatus, setTargetStatus] = React.useState("all");
+  const [findings, setFindings] = React.useState<RiddleFinding[]>([]);
+  const [killsweeps, setKillsweeps] = React.useState<KillsweepItem[]>([]);
+  const [goals, setGoals] = React.useState<Array<Record<string, unknown>>>([]);
+  const [goalEval, setGoalEval] = React.useState<Record<string, unknown> | null>(null);
+  const [graphData, setGraphData] = React.useState<{
+    nodes: Array<Record<string, unknown>>;
+    edges: Array<Record<string, unknown>>;
+    coverage: Record<string, unknown>;
+  } | null>(null);
+
+  const [loading, setLoading] = React.useState(true);
+  const [editOpen, setEditOpen] = React.useState(false);
+
+  // Mid-run directive input map by target_id
+  const [directiveMap, setDirectiveMap] = React.useState<Record<string, string>>({});
+
+  // Target Trace Drawer
+  const [traceTarget, setTraceTarget] = React.useState<{ id: string; label: string } | null>(null);
+  const [traceEvents, setTraceEvents] = React.useState<Array<Record<string, unknown>>>([]);
+  const [traceLoading, setTraceLoading] = React.useState(false);
+
+  const loadCore = React.useCallback(
+    async (quiet = false) => {
+      if (!taskId) return;
+      if (!quiet) setLoading(true);
+      try {
+        const [tRes, bRes, tgRes, fRes, kRes, gRes, grRes] = await Promise.allSettled([
+          riddleApi.getTask(taskId),
+          riddleApi.getTaskBoard(taskId),
+          riddleApi.getTaskTargets(taskId, targetStatus, 200),
+          riddleApi.listTaskFindings(taskId, { limit: 200 }),
+          riddleApi.listKillsweeps(taskId),
+          riddleApi.getGoals(taskId),
+          riddleApi.getFusionGraph(taskId),
+        ]);
+        if (tRes.status === "fulfilled") setTask(tRes.value);
+        if (bRes.status === "fulfilled") setBoard(bRes.value as BoardPayload);
+        if (tgRes.status === "fulfilled") setTargets(tgRes.value);
+        if (fRes.status === "fulfilled") setFindings(extractFindings(fRes.value));
+        if (kRes.status === "fulfilled") setKillsweeps(kRes.value);
+        if (gRes.status === "fulfilled") setGoals(gRes.value.goals ?? []);
+        if (grRes.status === "fulfilled") setGraphData(grRes.value);
+      } catch (err) {
+        if (!quiet) toast.error(`加载任务详情失败：${err instanceof Error ? err.message : String(err)}`);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [taskId, targetStatus],
+  );
 
   React.useEffect(() => {
-    api
-      .llmProfiles()
-      .then(setProfiles)
-      .catch(() => setProfiles([]));
-  }, []);
-
-  // 任务不存在时停止**所有**与该任务相关的轮询。
-  //
-  // 为什么：任务被删/归档后，/api/tasks/{id} 一直返回 404，但页面仍每 5 秒
-  // 拉一次 —— 实测一个已删除的任务详情页在 50 秒内发了 10 次 404（外加同样
-  // 次数的 stats 404），全程没有任何信息量。UI 本来就能显示「任务已被删除」
-  // （见下面的 !task 分支），所以停掉轮询不会丢任何用户可见的信息。
-  //
-  // 只在 404（资源确实不存在）时停：网络抖动、5xx 属于临时故障，继续重试。
-  //
-  // 这个标志是**共享**的：本页有两处与任务相关的轮询（任务本身 + 该任务的
-  // 待审批数），两处都要停——漏一处就等于没修。
-  // 用 state 而不是 ref：两个轮询（任务本身 + 该任务的待审批数）是两个独立
-  // 的 effect，用 ref 的话「谁先拿到 404」就变成竞态——拦截那个 API 对不存在的
-  // 任务返回的是 200 空列表（不是 404），它自己永远发现不了任务没了。
-  // 做成 state 后，任务轮询一旦确认缺失，另一个 effect 立即重建并停掉。
-  const [taskMissing, setTaskMissing] = React.useState(false);
-
-  React.useEffect(() => {
-    if (taskMissing) return;
-    let alive = true;
-    const load = () => {
-      api
-        .interceptTask(id)
-        .then((rows) => {
-          if (alive) setInterceptPendingCount(rows.filter((r) => r.status === "pending").length);
-        })
-        .catch(() => {
-          // Polling is best-effort; the next interval retries automatically.
-        });
-    };
-    void load();
-    const t = setInterval(load, 5000);
-    return () => {
-      alive = false;
-      clearInterval(t);
-    };
-  }, [id, taskMissing]);
-
-  const taskLoadInFlight = React.useRef<string | null>(null);
-  const load = React.useCallback(() => {
-    if (taskLoadInFlight.current === id) return;
-    // 任务已确认不存在 → 不再拉。taskMissing 进依赖后，这个 useCallback 会重建，
-    // 上面的 effect 也会随之重建（用的是新的 load），轮询就此停下。
-    if (taskMissing) return;
-    taskLoadInFlight.current = id;
-    Promise.all([api.task(id), api.stats(id).catch(() => null)])
-      .then(([task, s]) => {
-        if (taskLoadInFlight.current !== id) return;
-        const base = { ...task };
-        const at = s?.active_task;
-        if (at) {
-          base.in_flight = at.in_flight;
-          base.goals_total = at.goals_total;
-          base.goals_met = at.goals_met;
-          base.engine_mode = s?.engine_mode ?? at.engine_mode;
-          base.paused = at.paused;
-        }
-        setTask(base);
-        setPaused(at?.paused ?? base.paused ?? false);
-        setAutopilot(Boolean(base.autopilot));
-      })
-      .catch((err: unknown) => {
-        const status = (err as { status?: number } | null)?.status;
-        if (status === 404) {
-          // 任务真的不在了：停轮询，UI 显示「已被删除」。
-          setTaskMissing(true);
-        }
-        // 其他错误（含 5xx/网络）保留上一次渲染状态，下一轮继续试。
-      })
-      .finally(() => {
-        if (taskLoadInFlight.current === id) {
-          taskLoadInFlight.current = null;
-          setLoaded(true);
-        }
-      });
-  }, [id, taskMissing]);
-  React.useEffect(() => {
-    load();
-    const timer = setInterval(load, 5000);
+    void loadCore(false);
+    const timer = setInterval(() => void loadCore(true), 5000);
     return () => clearInterval(timer);
-  }, [load]);
+  }, [loadCore]);
 
-  const [autopilot, setAutopilot] = React.useState(false);
-  const [togglingAutopilot, setTogglingAutopilot] = React.useState(false);
-
-  async function toggleAutopilot() {
+  const handleControl = async (action: "start" | "pause" | "stop") => {
     if (!task) return;
-    const next = !autopilot;
-    setTogglingAutopilot(true);
     try {
-      // 开启时顺带 resume：暂停/排队中的任务一键继续，这就是「一键推进」。
-      const r = await api.setTaskAutopilot(task.id, next, next);
-      setAutopilot(next);
-      if (r.resumed) setPaused(false);
-      toast.success(next ? (r.resumed ? "已开启自主推进并恢复任务" : "已开启自主推进") : "已关闭自主推进");
-    } catch (e) {
-      toast.error(`操作失败：${(e as Error).message}`);
+      if (action === "start") await riddleApi.startTask(task.id);
+      else if (action === "pause") await riddleApi.pauseTask(task.id);
+      else await riddleApi.stopTask(task.id);
+      toast.success(action === "start" ? "任务已启动" : action === "pause" ? "任务已暂停" : "任务已停止");
+      await loadCore(true);
+    } catch (err) {
+      toast.error(`操作失败：${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const handleInjectDirective = async (targetId: string) => {
+    const text = (directiveMap[targetId] || "").trim();
+    if (!text || !taskId) {
+      toast.error("请输入人工干预指令");
+      return;
+    }
+    try {
+      await riddleApi.injectTargetDirective(taskId, targetId, text);
+      toast.success("已注入实时人工指令，将在 Worker 下一步 LLM 调用前生效");
+      setDirectiveMap((prev) => ({ ...prev, [targetId]: "" }));
+    } catch (err) {
+      toast.error(`注入指令失败：${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const openTrace = async (targetId: string, label: string) => {
+    setTraceTarget({ id: targetId, label });
+    setTraceLoading(true);
+    setTraceEvents([]);
+    try {
+      const res = await riddleApi.getTargetTrace(taskId, targetId, 200);
+      setTraceEvents(res.events ?? []);
+    } catch (err) {
+      toast.error(`加载轨迹失败：${err instanceof Error ? err.message : String(err)}`);
     } finally {
-      setTogglingAutopilot(false);
+      setTraceLoading(false);
     }
-  }
+  };
 
-  async function togglePause() {
-    if (task && ["done", "failed", "timeout"].includes(task.status)) return;
-    const next = !paused;
+  const handleSkipTarget = async (targetId: string) => {
     try {
-      await api.controlTask(id, next ? "pause" : "resume");
-      setPaused(next);
-      toast.success(next ? "已暂停探索" : "已恢复探索");
-    } catch (e) {
-      toast.error(`操作失败：${(e as Error).message}`);
+      await riddleApi.skipTaskTarget(taskId, targetId);
+      toast.success("已跳过该目标");
+      await loadCore(true);
+    } catch (err) {
+      toast.error(`跳过失败：${err instanceof Error ? err.message : String(err)}`);
     }
-  }
+  };
 
-  async function archiveTask() {
-    if (!task || archiving) return;
-    setArchiving(true);
+  const handleCancelEscalation = async (findingId: string) => {
     try {
-      await api.archiveTask(task.id);
-      toast.success("任务已加入归档队列");
-      router.push("/function/tasks");
-    } catch (error) {
-      toast.error(`归档失败：${(error as Error).message}`);
-      setArchiving(false);
+      await riddleApi.cancelEscalation(taskId, findingId);
+      toast.success("已取消该扩大危害任务");
+      await loadCore(true);
+    } catch (err) {
+      toast.error(`取消失败：${err instanceof Error ? err.message : String(err)}`);
     }
-  }
+  };
 
-  if (!task) {
+  const handleQuickReview = async (f: RiddleFinding, status: "passed" | "rejected") => {
+    try {
+      const res = await riddleApi.reviewFinding(f.id, { user_status: status });
+      toast.success(
+        status === "passed"
+          ? res.killsweep_triggered
+            ? "复审通过并已触发通杀 Hunter"
+            : "复审通过"
+          : "已驳回该漏洞",
+      );
+      await loadCore(true);
+    } catch (err) {
+      toast.error(`复审失败：${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const handleSuggestGoals = async () => {
+    try {
+      const res = await riddleApi.suggestGoals({ task_id: taskId });
+      setGoals(res.goals ?? []);
+      toast.success(`已拆解 ${res.count} 条可核验目标，请点击保存`);
+    } catch (err) {
+      toast.error(`拆解失败：${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const handleSaveAndEvaluateGoals = async () => {
+    try {
+      await riddleApi.saveGoals(taskId, goals);
+      const ev = await riddleFetch<Record<string, unknown>>(`/fusion/goals/${encodeURIComponent(taskId)}/evaluate`, {
+        method: "POST",
+      });
+      setGoalEval(ev);
+      toast.success("已保存并重新评估目标闸门");
+      await loadCore(true);
+    } catch (err) {
+      toast.error(`保存失败：${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const handleRebuildGraph = async () => {
+    try {
+      await riddleApi.rebuildFusionGraph(taskId);
+      toast.success("资产图 × 探索图重建完成");
+      await loadCore(true);
+    } catch (err) {
+      toast.error(`重建双图失败：${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  if (!taskId) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 p-10 text-center">
-        <p className="text-muted-foreground">{loaded ? `任务 ${id} 已被删除、归档或不存在` : "加载中…"}</p>
-        {loaded && (
-          <Button asChild variant="outline">
-            <Link href="/function/tasks">
-              <ArrowLeftIcon /> 返回任务列表
-            </Link>
-          </Button>
-        )}
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 p-12 text-center">
+        <p className="text-sm text-muted-foreground">缺少任务 ID 参数</p>
+        <Button variant="outline" size="sm" asChild>
+          <Link href="/function/tasks">返回挖掘任务列表</Link>
+        </Button>
       </div>
     );
   }
 
-  const completed = task.status === "done";
-  const terminal = ["done", "failed", "timeout"].includes(task.status);
-  const archiveLifecycleEligible = terminal || paused || task.status === "paused";
-  const canArchive = archiveLifecycleEligible && !task.archive_blocked_by_task_id;
-  let archiveDisabledReason = task.queued ? "排队中的任务必须先暂停" : "运行中的任务必须先暂停";
-  if (archiveLifecycleEligible && task.archive_blocked_by_task_id) {
-    archiveDisabledReason = `任务被未归档任务 #${task.archive_blocked_by_task_id} 直接继承，请先归档依赖任务`;
-  }
-  const engineMode = paused ? "paused" : (task.engine_mode ?? "idle");
-  let controlVariant: "default" | "secondary" | "outline" = "outline";
-  let controlIcon = <PauseIcon data-icon="inline-start" />;
-  let controlLabel = "暂停";
-  if (terminal) {
-    controlVariant = "secondary";
-    controlIcon = <CheckIcon data-icon="inline-start" />;
-    controlLabel = completed ? "已完成" : "已结束";
-  } else if (paused) {
-    controlVariant = "default";
-    controlIcon = <PlayIcon data-icon="inline-start" />;
-    controlLabel = "恢复";
-  }
-  const archiveTrigger = (
-    <Button
-      size="icon-sm"
-      variant="ghost"
-      disabled={!canArchive || archiving}
-      aria-label={canArchive ? "归档任务" : archiveDisabledReason}
-    >
-      {archiving ? <Spinner /> : <ArchiveIcon />}
-    </Button>
-  );
+  const liveWorkers = board?.live_workers ?? [];
+  const liveEscalations = board?.live_escalations ?? [];
+  const vulnDist = board?.vuln_dist ?? [];
+  const events = board?.events ?? [];
+  const stats = board?.stats ?? {};
+  const totalTargets = Number(stats.total_targets ?? task?.total_targets ?? 0);
+  const doneTargets = Number(stats.done_targets ?? task?.stats?.done_targets ?? 0);
+  const progressPct = totalTargets > 0 ? Math.min(100, Math.round((doneTargets / totalTargets) * 100)) : 0;
+  const pendingReview = Number(board?.tab_summary?.review ?? task?.pending_user_review ?? 0);
+  const passedCount = Number(board?.tab_summary?.submit ?? task?.stats?.user_passed ?? 0);
+  const throttle = board?.throttle;
 
   return (
-    <Tabs value={tab} onValueChange={setTab} className="flex flex-1 flex-col gap-0">
-      {/* Top fixed area */}
-      <header className="sticky top-0 z-10 flex flex-col gap-2 border-b bg-background/95 px-4 py-2.5 backdrop-blur lg:px-6">
-        <div className="flex items-center gap-2">
+    <div className="flex min-h-0 flex-1 flex-col">
+      {/* Sticky Mission Control Header */}
+      <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center justify-between gap-3 border-b bg-background/85 px-4 backdrop-blur-md lg:px-6">
+        <div className="flex min-w-0 items-center gap-2">
           <SidebarTrigger className="-ml-1" />
-          <Button asChild variant="ghost" size="icon" className="size-7">
+          <Separator orientation="vertical" className="h-4" />
+          <Button variant="ghost" size="sm" className="px-2" asChild>
             <Link href="/function/tasks">
-              <ArrowLeftIcon />
+              <ArrowLeft className="mr-1 size-4" /> 任务列表
             </Link>
           </Button>
-          <h1 className="min-w-0 flex-1 truncate font-semibold text-sm" title={task.name || task.description}>
-            {task.name || task.description}
-          </h1>
-          <code className="hidden rounded bg-muted px-1.5 py-0.5 font-mono text-muted-foreground text-xs sm:inline">
-            {task.id}
-          </code>
-          <Separator orientation="vertical" className="mx-1 hidden h-4 sm:block" />
-          <span className="hidden sm:inline-flex">
-            <TaskLLMControl task={task} profiles={profiles} onUpdated={load} />
-          </span>
-          <span className="hidden sm:inline-flex">
-            <StatusBadge domain={terminal ? "task" : "engine"} value={terminal ? task.status : engineMode} dot />
-          </span>
-          <span className="hidden sm:inline-flex">{canArchive ? (
-            <AlertDialog>
-              <AlertDialogTrigger asChild>{archiveTrigger}</AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>归档任务 #{task.id}？</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    任务图谱、关联记录、独占资产与流量、工作文件和 LLM
-                    历史将压缩到冷存储。归档完成后可在任务列表的“已归档”页还原。
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>取消</AlertDialogCancel>
-                  <AlertDialogAction onClick={() => void archiveTask()}>确认归档</AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          ) : (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="inline-flex">{archiveTrigger}</span>
-              </TooltipTrigger>
-              <TooltipContent>{archiveDisabledReason}</TooltipContent>
-            </Tooltip>
-          )}
-          </span>
-          <Button
-            size="sm"
-            variant={autopilot ? "default" : "outline"}
-            onClick={toggleAutopilot}
-            disabled={terminal || togglingAutopilot}
-            title="自主推进：停滞自动重规划、目标未达成不收尾、deadline 自动延长（审批门照常生效）"
-          >
-            <BotIcon className="size-4" />
-            {autopilot ? "自主推进中" : "自主推进"}
-          </Button>
-          <Button size="sm" variant={controlVariant} onClick={togglePause} disabled={terminal}>
-            {controlIcon}
-            {controlLabel}
-          </Button>
+          <Separator orientation="vertical" className="h-4" />
+          <h1 className="truncate font-semibold text-base">{task?.name || (loading ? "加载中…" : taskId)}</h1>
+          {task ? <StatusBadge domain="task" value={task.status} dot /> : null}
+          {task ? (
+            <Badge variant="outline" className="hidden sm:inline-flex text-xs">
+              {task.src_type === "edusrc" ? "EduSRC" : "企业SRC"}
+            </Badge>
+          ) : null}
         </div>
-        {/* 手机端第二行：状态/模型/归档（桌面在首行） */}
-        <div className="flex flex-wrap items-center gap-2 sm:hidden">
-          <StatusBadge domain={terminal ? "task" : "engine"} value={terminal ? task.status : engineMode} dot />
-          <TaskLLMControl task={task} profiles={profiles} onUpdated={load} />
-          <span className="inline-flex">{archiveTrigger}</span>
-        </div>
-        <p className="line-clamp-2 text-muted-foreground text-xs sm:truncate">{task.goal}</p>
-        {/* Tabs */}
-        <div className="no-scrollbar min-w-0 overflow-x-auto max-sm:[mask-image:linear-gradient(to_right,#000_88%,transparent)]">
-          <TabsList variant="default" className="min-w-max">
-            {TABS.map((t) => (
-              <TabsTrigger key={t.value} value={t.value}>
-                {t.label}
-                {t.value === "intercept" && interceptPendingCount > 0 && (
-                  <span className="ml-1.5 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-amber-500 px-1 font-semibold text-[10px] text-white leading-none">
-                    {interceptPendingCount > 99 ? "99+" : interceptPendingCount}
-                  </span>
-                )}
-              </TabsTrigger>
-            ))}
-          </TabsList>
+
+        <div className="flex shrink-0 items-center gap-1.5">
+          <Button variant="outline" size="sm" onClick={() => void loadCore(true)}>
+            <RefreshCw className="size-3.5" />
+          </Button>
+          {task ? (
+            <>
+              <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
+                <Pencil className="mr-1.5 size-3.5" /> 编辑
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  void riddleApi
+                    .downloadTaskReportsExport(task.id, "md")
+                    .catch((e) => toast.error(e instanceof Error ? e.message : String(e)))
+                }
+              >
+                <Download className="mr-1.5 size-3.5" /> 导出报告包
+              </Button>
+              {task.status === "running" ? (
+                <Button variant="secondary" size="sm" onClick={() => void handleControl("pause")}>
+                  <Pause className="mr-1.5 size-3.5" /> 暂停
+                </Button>
+              ) : (
+                <Button size="sm" onClick={() => void handleControl("start")}>
+                  <Play className="mr-1.5 size-3.5" /> 启动
+                </Button>
+              )}
+              {task.status === "running" || task.status === "paused" ? (
+                <Button variant="destructive" size="sm" onClick={() => void handleControl("stop")}>
+                  <Square className="mr-1 size-3.5" /> 停止
+                </Button>
+              ) : null}
+            </>
+          ) : null}
         </div>
       </header>
 
-      {/* Tab content */}
-      <div className="flex-1 p-4 lg:p-6">
-        <TabsContent value="sessions" className="mt-0">
-          <SessionsTab taskId={id} />
-        </TabsContent>
-        <TabsContent value="overview" className="mt-0">
-          <OverviewTab taskId={id} />
-        </TabsContent>
-        <TabsContent value="graph" className="mt-0">
-          <GraphTab taskId={id} />
-        </TabsContent>
-        <TabsContent value="broadcast" className="mt-0">
-          <BroadcastTab taskId={id} />
-        </TabsContent>
-        <TabsContent value="findings" className="mt-0">
-          <FindingsTab taskId={id} />
-        </TabsContent>
-        <TabsContent value="retests" className="mt-0">
-          <RetestsTab key={id} taskId={id} />
-        </TabsContent>
-        <TabsContent value="assets" className="mt-0">
-          <AssetsTab taskId={id} />
-        </TabsContent>
-        <TabsContent value="coverage" className="mt-0">
-          <CoverageGraphTab taskId={id} coverageEnabled={task?.coverage_enabled !== false} />
-        </TabsContent>
-        <TabsContent value="intercept" className="mt-0">
-          <InterceptTab taskId={id} />
-        </TabsContent>
-        <TabsContent value="report" className="mt-0">
-          <ReportTab taskId={id} />
-        </TabsContent>
+      <div className="flex flex-1 flex-col gap-5 p-4 md:p-6">
+        {/* Top 5 Live Telemetry Cards */}
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+          <Card>
+            <CardHeader className="pb-1">
+              <CardDescription className="text-xs">目标推进进度</CardDescription>
+              <CardTitle className="text-xl tabular-nums">
+                {doneTargets} / {totalTargets}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-1">
+              <Progress value={progressPct} className="h-1.5" />
+              <div className="text-[11px] text-muted-foreground">完成 {progressPct}%</div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-1">
+              <CardDescription className="text-xs">在跑 Worker / 节流上限</CardDescription>
+              <CardTitle className="text-xl tabular-nums">
+                {board?.worker_summary?.running ?? liveWorkers.length} / {throttle?.cap ?? task?.concurrency ?? 3}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="text-[11px] text-muted-foreground">
+              扩大危害 {board?.worker_summary?.escalating ?? liveEscalations.length}
+              {throttle?.llm_under_cooldown ? " · LLM 冷却中" : ""}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-1">
+              <CardDescription className="text-xs">待人工复审</CardDescription>
+              <CardTitle className="text-xl tabular-nums text-amber-600 dark:text-amber-400">{pendingReview}</CardTitle>
+            </CardHeader>
+            <CardContent className="text-[11px] text-muted-foreground">总线索 {findings.length} 条</CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-1">
+              <CardDescription className="text-xs">复审通过 / 通杀</CardDescription>
+              <CardTitle className="text-xl tabular-nums text-emerald-600 dark:text-emerald-400">
+                {passedCount} / {killsweeps.length}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="text-[11px] text-muted-foreground">可一键打包导出 Markdown / EduSRC JSON</CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-1">
+              <CardDescription className="text-xs">融合目标闸门</CardDescription>
+              <CardTitle className="text-xl tabular-nums">
+                {board?.goal_summary?.configured
+                  ? `${board.goal_summary.achieved ?? 0} / ${board.goal_summary.total ?? 0}`
+                  : "未配置"}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="text-[11px] text-muted-foreground truncate">
+              {board?.goal_summary?.summary || "可在目标与双图页签拆解"}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* 6 Riddle Operational Tabs */}
+        <Tabs defaultValue="live" className="space-y-4">
+          <TabsList className="flex-wrap h-auto">
+            <TabsTrigger value="live">
+              <Activity className="mr-1.5 size-3.5" /> 实时作战矩阵 ({liveWorkers.length})
+            </TabsTrigger>
+            <TabsTrigger value="targets">目标队列与轨迹 ({targets.length})</TabsTrigger>
+            <TabsTrigger value="findings">
+              <Bug className="mr-1.5 size-3.5" /> 漏洞与复审 ({findings.length})
+            </TabsTrigger>
+            <TabsTrigger value="killsweep">
+              <Zap className="mr-1.5 size-3.5" /> 通杀扩展 ({killsweeps.length})
+            </TabsTrigger>
+            <TabsTrigger value="goals">
+              <GitBranch className="mr-1.5 size-3.5" /> 目标闸门与双图
+            </TabsTrigger>
+            <TabsTrigger value="config">配置快照</TabsTrigger>
+          </TabsList>
+
+          {/* Tab 1: Live Worker Matrix + Mid-Run Directive + Escalations + Events */}
+          <TabsContent value="live" className="space-y-4">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+              {/* Active Workers */}
+              <div className="space-y-3 lg:col-span-2">
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <Bot className="size-4 text-primary" /> 在跑 Worker 矩阵与实时人工干预
+                    </CardTitle>
+                    <CardDescription className="text-xs">
+                      每 5 秒自动同步；可向任意在跑 Worker 注入定向指令（下一轮 LLM 推理前即刻生效）或查看落库轨迹。
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {liveWorkers.length === 0 ? (
+                      <div className="rounded-lg border border-dashed py-10 text-center text-xs text-muted-foreground">
+                        当前无活跃运行中的 Worker。若任务处于暂停或已创建状态，点击右上角「启动」开始挖掘。
+                      </div>
+                    ) : (
+                      liveWorkers.map((w, idx) => {
+                        const tid = w.target_id || w.worker_id || String(idx);
+                        const label = w.url || w.target || w.host || tid;
+                        return (
+                          <div key={tid} className="space-y-2.5 rounded-xl border bg-muted/15 p-3.5">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="min-w-0 flex-1">
+                                <div className="truncate font-mono text-xs font-semibold">{label}</div>
+                                <div className="mt-0.5 text-xs text-muted-foreground">
+                                  {w.action || "正在探索目标…"}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                {w.phase ? <Badge variant="outline" className="text-[11px]">{w.phase}</Badge> : null}
+                                <Button variant="ghost" size="sm" onClick={() => void openTrace(tid, label)}>
+                                  <History className="mr-1 size-3.5" /> 轨迹
+                                </Button>
+                                <Button variant="ghost" size="sm" onClick={() => void handleSkipTarget(tid)}>
+                                  <ShieldBan className="mr-1 size-3.5" /> 跳过
+                                </Button>
+                              </div>
+                            </div>
+                            <Progress value={Number(w.progress ?? 0)} className="h-1.5" />
+                            <div className="flex items-center gap-2">
+                              <Input
+                                className="h-8 bg-background text-xs"
+                                placeholder="向该 Worker 注入实时人工指令（如：重点测试 /api/admin 越权接口）…"
+                                value={directiveMap[tid] ?? ""}
+                                onChange={(e) => setDirectiveMap((prev) => ({ ...prev, [tid]: e.target.value }))}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") void handleInjectDirective(tid);
+                                }}
+                              />
+                              <Button size="sm" variant="secondary" className="h-8" onClick={() => void handleInjectDirective(tid)}>
+                                <Send className="mr-1 size-3.5" /> 下发
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Active Escalations */}
+                {liveEscalations.length > 0 ? (
+                  <Card className="border-amber-500/40">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="flex items-center gap-2 text-sm">
+                        <Flame className="size-4 text-amber-500" /> 正在进行的危害扩大任务 ({liveEscalations.length})
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      {liveEscalations.map((esc) => (
+                        <div key={esc.finding_id} className="flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs">
+                          <div className="min-w-0">
+                            <div className="truncate font-medium">{esc.title || esc.finding_id}</div>
+                            <div className="text-muted-foreground">{esc.action || "扩大危害深挖中…"}</div>
+                          </div>
+                          <Button size="sm" variant="outline" onClick={() => void handleCancelEscalation(esc.finding_id)}>
+                            取消扩大
+                          </Button>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                ) : null}
+              </div>
+
+              {/* Right Column: Vuln Dist + Live Events */}
+              <div className="space-y-4">
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">漏洞类型分布</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {vulnDist.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">暂无发现分布数据</p>
+                    ) : (
+                      vulnDist.map((item) => (
+                        <div key={item.type} className="flex items-center justify-between text-xs">
+                          <span className="truncate">{item.type}</span>
+                          <Badge variant="secondary" className="tabular-nums">{item.count}</Badge>
+                        </div>
+                      ))
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">最新作战动态 ({events.length})</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="max-h-80 space-y-2 overflow-y-auto pr-1 text-xs">
+                      {events.length === 0 ? (
+                        <p className="text-muted-foreground">暂无作战事件记录</p>
+                      ) : (
+                        events.slice(0, 30).map((ev, i) => (
+                          <div key={i} className="rounded border bg-muted/20 p-2 space-y-0.5">
+                            <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                              <span className="font-mono font-medium uppercase">{String(ev.agent ?? "system")}</span>
+                              <span>{String(ev.ts ?? "").replace("T", " ").slice(11, 19)}</span>
+                            </div>
+                            <div className="break-all leading-relaxed">{String(ev.message ?? ev.kind ?? "")}</div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          </TabsContent>
+
+          {/* Tab 2: Targets & Trace */}
+          <TabsContent value="targets" className="space-y-3">
+            <div className="flex items-center justify-between">
+              <Select value={targetStatus} onValueChange={setTargetStatus}>
+                <SelectTrigger className="w-[170px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部状态</SelectItem>
+                  <SelectItem value="alive">队列 / 探测中</SelectItem>
+                  <SelectItem value="done">已完成</SelectItem>
+                  <SelectItem value="dead">硬骨头 (dead)</SelectItem>
+                  <SelectItem value="skipped">已跳过</SelectItem>
+                </SelectContent>
+              </Select>
+              <span className="text-xs text-muted-foreground">共 {targets.length} 条目标</span>
+            </div>
+            <Card>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>目标 URL / 标题</TableHead>
+                      <TableHead>学校 / 机构</TableHead>
+                      <TableHead>优先级</TableHead>
+                      <TableHead>状态</TableHead>
+                      <TableHead className="text-right">操作</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {targets.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="h-24 text-center text-sm text-muted-foreground">
+                          暂无匹配目标
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      targets.map((t) => (
+                        <TableRow key={t.id}>
+                          <TableCell className="max-w-[320px]">
+                            <div className="truncate font-mono text-xs font-medium">{t.url || t.host}</div>
+                            <div className="truncate text-xs text-muted-foreground">{t.title || t.ip || "-"}</div>
+                          </TableCell>
+                          <TableCell className="text-xs">{t.school || t.org || "-"}</TableCell>
+                          <TableCell className="text-xs tabular-nums">{Number(t.priority_score ?? 0).toFixed(1)}</TableCell>
+                          <TableCell>
+                            <Badge variant={t.status === "done" ? "default" : "secondary"}>{t.status}</Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="inline-flex gap-1">
+                              <Button variant="ghost" size="sm" onClick={() => void openTrace(t.id, t.url || t.host)}>
+                                <History className="mr-1 size-3.5" /> 轨迹
+                              </Button>
+                              {t.status === "queued" || t.status === "scanning" ? (
+                                <Button variant="ghost" size="sm" onClick={() => void handleSkipTarget(t.id)}>
+                                  跳过
+                                </Button>
+                              ) : null}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Tab 3: Task Findings */}
+          <TabsContent value="findings" className="space-y-3">
+            <Card>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>漏洞标题与目标</TableHead>
+                      <TableHead>等级 / 证据门禁</TableHead>
+                      <TableHead>复审状态</TableHead>
+                      <TableHead className="text-right">操作</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {findings.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={4} className="h-24 text-center text-sm text-muted-foreground">
+                          本任务暂未发现漏洞线索。
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      findings.map((f) => {
+                        const sev = f.review?.effective_severity || f.severity_claimed || "中危";
+                        return (
+                          <TableRow key={f.id}>
+                            <TableCell className="max-w-[360px]">
+                              <Link
+                                href={`/function/findings/detail?id=${encodeURIComponent(f.id)}`}
+                                className="block truncate font-medium text-sm hover:text-primary hover:underline"
+                              >
+                                {f.title}
+                              </Link>
+                              <div className="truncate text-xs text-muted-foreground">{f.target_url}</div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-1.5">
+                                <StatusBadge domain="severity" value={sev} />
+                                {f.fusion_evidence?.tier_label ? (
+                                  <Badge variant="outline" className="text-[11px]">
+                                    {f.fusion_evidence.tier_label}
+                                  </Badge>
+                                ) : null}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <StatusBadge
+                                domain="finding"
+                                value={f.review?.user_status || f.review?.verdict || f.status || "pending"}
+                                dot
+                              />
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="inline-flex items-center gap-1">
+                                <Button size="sm" variant="ghost" onClick={() => void handleQuickReview(f, "passed")}>
+                                  <Check className="size-3.5 text-emerald-600" />
+                                </Button>
+                                <Button size="sm" variant="ghost" onClick={() => void handleQuickReview(f, "rejected")}>
+                                  <X className="size-3.5 text-destructive" />
+                                </Button>
+                                <Button size="sm" variant="outline" asChild>
+                                  <Link href={`/function/findings/detail?id=${encodeURIComponent(f.id)}`}>详情</Link>
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Tab 4: Killsweeps */}
+          <TabsContent value="killsweep" className="space-y-3">
+            <Card>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>通杀产品与源漏洞</TableHead>
+                      <TableHead>FOFA 扩面语句</TableHead>
+                      <TableHead>命中资产 / 衍生洞</TableHead>
+                      <TableHead className="text-right">操作</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {killsweeps.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={4} className="h-24 text-center text-sm text-muted-foreground">
+                          暂无通杀分析记录（人工复审通过漏洞后自动触发）。
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      killsweeps.map((k) => (
+                        <TableRow key={k.id}>
+                          <TableCell className="max-w-[260px]">
+                            <div className="truncate font-medium text-sm">{k.product_name || k.vuln_type}</div>
+                            <div className="truncate text-xs text-muted-foreground">{k.origin_title}</div>
+                          </TableCell>
+                          <TableCell className="max-w-[240px] truncate font-mono text-xs">{k.fofa_query || "-"}</TableCell>
+                          <TableCell className="text-xs tabular-nums">
+                            资产 {k.asset_count} (高校 {k.edu_count}) · 衍生 {k.derived_count}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="inline-flex gap-1">
+                              {k.has_sites ? (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={async () => {
+                                    await riddleApi.enqueueKillsweep(taskId, k.id, 3);
+                                    toast.success("已批量入队 3 个同款验证站点");
+                                    await loadCore(true);
+                                  }}
+                                >
+                                  入队 3 站
+                                </Button>
+                              ) : null}
+                              {k.retryable ? (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={async () => {
+                                    await riddleApi.retryKillsweep(taskId, k.id);
+                                    toast.success("已重启通杀分析");
+                                    await loadCore(true);
+                                  }}
+                                >
+                                  重试
+                                </Button>
+                              ) : null}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Tab 5: Goals & Dual Graph */}
+          <TabsContent value="goals" className="space-y-4">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between pb-3">
+                  <div>
+                    <CardTitle className="flex items-center gap-1.5 text-base">
+                      <Flag className="size-4 text-primary" /> 融合验收目标闸门
+                    </CardTitle>
+                    <CardDescription className="text-xs">
+                      {goalEval ? String(goalEval.summary ?? "") : board?.goal_summary?.summary || "定义可核验验收标准"}
+                    </CardDescription>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <Button size="sm" variant="outline" onClick={() => void handleSuggestGoals()}>
+                      <Sparkles className="mr-1 size-3.5" /> 智能拆解
+                    </Button>
+                    <Button size="sm" onClick={() => void handleSaveAndEvaluateGoals()} disabled={goals.length === 0}>
+                      保存并评估
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {goals.length === 0 ? (
+                    <p className="py-6 text-center text-xs text-muted-foreground">尚未设置目标闸门，点击右上角「智能拆解」。</p>
+                  ) : (
+                    goals.map((g, idx) => (
+                      <div key={idx} className="space-y-1.5 rounded-lg border p-2.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <Input
+                            className="h-8 text-xs font-medium"
+                            value={String(g.title ?? "")}
+                            onChange={(e) =>
+                              setGoals((prev) => prev.map((x, i) => (i === idx ? { ...x, title: e.target.value } : x)))
+                            }
+                          />
+                          <Badge variant={g.status === "achieved" ? "default" : "secondary"}>
+                            {g.status === "achieved" ? (
+                              <span className="flex items-center gap-1">
+                                <CheckCircle2 className="size-3" /> 达成
+                              </span>
+                            ) : (
+                              String(g.status ?? "pending")
+                            )}
+                          </Badge>
+                        </div>
+                        <Input
+                          className="h-7 text-xs text-muted-foreground"
+                          value={String(g.criteria ?? "")}
+                          onChange={(e) =>
+                            setGoals((prev) => prev.map((x, i) => (i === idx ? { ...x, criteria: e.target.value } : x)))
+                          }
+                        />
+                      </div>
+                    ))
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between pb-3">
+                  <div>
+                    <CardTitle className="flex items-center gap-1.5 text-base">
+                      <GitBranch className="size-4 text-primary" /> 资产图 × 探索图覆盖度
+                    </CardTitle>
+                    <CardDescription className="text-xs">从主表旁路重建双图节点、血缘边与端点覆盖度</CardDescription>
+                  </div>
+                  <Button size="sm" variant="outline" onClick={() => void handleRebuildGraph()}>
+                    <RefreshCw className="mr-1.5 size-3.5" /> 重建双图
+                  </Button>
+                </CardHeader>
+                <CardContent className="space-y-3 text-xs">
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="rounded-lg border p-2.5 text-center">
+                      <div className="text-muted-foreground">图节点</div>
+                      <div className="mt-1 font-semibold text-lg tabular-nums">{graphData?.nodes?.length ?? 0}</div>
+                    </div>
+                    <div className="rounded-lg border p-2.5 text-center">
+                      <div className="text-muted-foreground">血缘边</div>
+                      <div className="mt-1 font-semibold text-lg tabular-nums">{graphData?.edges?.length ?? 0}</div>
+                    </div>
+                    <div className="rounded-lg border p-2.5 text-center">
+                      <div className="text-muted-foreground">覆盖率</div>
+                      <div className="mt-1 font-semibold text-lg tabular-nums">
+                        {Math.round(Number(graphData?.coverage?.ratio ?? 0) * 100)}%
+                      </div>
+                    </div>
+                  </div>
+                  {graphData?.coverage ? (
+                    <pre className="max-h-48 overflow-auto rounded-lg border bg-muted/30 p-2.5 font-mono text-[11px]">
+                      {JSON.stringify(graphData.coverage, null, 2)}
+                    </pre>
+                  ) : null}
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          {/* Tab 6: Config Snapshot */}
+          <TabsContent value="config">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle className="text-base">任务配置快照</CardTitle>
+                  <CardDescription className="text-xs">随时点击右侧按钮修改测绘语句、并发、凭据或八大护栏</CardDescription>
+                </div>
+                <Button size="sm" variant="outline" onClick={() => setEditOpen(true)}>
+                  <Pencil className="mr-1.5 size-3.5" /> 编辑任务配置
+                </Button>
+              </CardHeader>
+              <CardContent className="grid grid-cols-1 gap-4 text-xs md:grid-cols-2">
+                <div className="space-y-2 rounded-lg border p-3">
+                  <div><span className="text-muted-foreground">测绘来源：</span>{task?.target_source} ({task?.engine || "默认"})</div>
+                  <div><span className="text-muted-foreground">查询语句：</span><span className="font-mono">{task?.fofa_query || "-"}</span></div>
+                  <div><span className="text-muted-foreground">手动目标：</span>{task?.manual_targets?.length ?? 0} 条</div>
+                  <div><span className="text-muted-foreground">绑定凭据：</span>{task?.auth_bindings?.length ?? 0} 条</div>
+                </div>
+                <div className="space-y-2 rounded-lg border p-3">
+                  <div><span className="text-muted-foreground">并发 / 深挖上限：</span>{task?.concurrency} / {task?.deepen_cap}</div>
+                  <div><span className="text-muted-foreground">漏洞方向：</span>{(task?.vuln_types || []).join("、") || "全面挖掘"}</div>
+                  <div><span className="text-muted-foreground">八大操作护栏：</span>{(task?.guard_ops || []).join(", ") || "无"}</div>
+                  <div><span className="text-muted-foreground">附加 SRC 规则：</span>{task?.src_rules || "-"}</div>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </div>
-    </Tabs>
+
+      {/* Edit Task Modal (reusing CreateTaskDialog) */}
+      <CreateTaskDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        editTask={task}
+        onCreated={async () => {
+          await loadCore(true);
+        }}
+      />
+
+      {/* Target Trace Drawer */}
+      <Sheet open={Boolean(traceTarget)} onOpenChange={(o) => !o && setTraceTarget(null)}>
+        <SheetContent className="w-full overflow-y-auto sm:max-w-2xl">
+          <SheetHeader>
+            <SheetTitle>目标执行轨迹回放</SheetTitle>
+            <SheetDescription className="truncate font-mono text-xs">{traceTarget?.label}</SheetDescription>
+          </SheetHeader>
+          <div className="mt-4 space-y-2">
+            {traceLoading ? (
+              <p className="py-10 text-center text-xs text-muted-foreground">正在拉取细粒度轨迹事件…</p>
+            ) : traceEvents.length === 0 ? (
+              <p className="py-10 text-center text-xs text-muted-foreground">暂无该目标的执行轨迹记录</p>
+            ) : (
+              traceEvents.map((ev, idx) => (
+                <div key={idx} className="rounded-lg border bg-muted/20 p-2.5 text-xs space-y-1">
+                  <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                    <Badge variant="outline" className="font-mono text-[10px]">{String(ev.kind ?? "trace")}</Badge>
+                    <span>{String(ev.ts ?? "").replace("T", " ").slice(0, 19)}</span>
+                  </div>
+                  <div className="break-all leading-relaxed">{String(ev.message ?? "")}</div>
+                </div>
+              ))
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
+    </div>
   );
 }
 
-// useSearchParams must sit under a Suspense boundary for static export.
 export default function TaskDetailPage() {
   return (
-    <React.Suspense fallback={null}>
+    <React.Suspense fallback={<div className="p-8 text-center text-sm text-muted-foreground">正在加载任务作战大屏…</div>}>
       <TaskDetailInner />
     </React.Suspense>
   );

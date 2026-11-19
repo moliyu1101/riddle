@@ -7,6 +7,7 @@ import {
   Eye,
   Flag,
   Pause,
+  Pencil,
   Play,
   Plus,
   RefreshCw,
@@ -60,6 +61,7 @@ export default function TasksPage() {
   const [statusFilter, setStatusFilter] = React.useState("all");
   const [srcFilter, setSrcFilter] = React.useState("all");
   const [createOpen, setCreateOpen] = React.useState(false);
+  const [editingTask, setEditingTask] = React.useState<RiddleTask | null>(null);
 
   // Fusion Goal Dialog state
   const [goalTask, setGoalTask] = React.useState<RiddleTask | null>(null);
@@ -183,7 +185,13 @@ export default function TasksPage() {
               <RefreshCw className="mr-1.5 size-3.5" />
               刷新
             </Button>
-            <Button size="sm" onClick={() => setCreateOpen(true)}>
+            <Button
+              size="sm"
+              onClick={() => {
+                setEditingTask(null);
+                setCreateOpen(true);
+              }}
+            >
               <Plus className="mr-1.5 size-3.5" />
               新建挖掘任务
             </Button>
@@ -330,6 +338,17 @@ export default function TasksPage() {
                                 <Eye className="size-4" />
                               </Link>
                             </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title="编辑任务配置"
+                              onClick={() => {
+                                setEditingTask(t);
+                                setCreateOpen(true);
+                              }}
+                            >
+                              <Pencil className="size-4" />
+                            </Button>
                             <Button variant="ghost" size="icon" title="融合目标闸门" onClick={() => void openGoalsModal(t)}>
                               <Flag className="size-4" />
                             </Button>
@@ -362,10 +381,14 @@ export default function TasksPage() {
         </CardContent>
       </Card>
 
-      {/* Optimized Riddle Task Creation Dialog */}
+      {/* Optimized Riddle Task Creation / Edit Dialog */}
       <CreateTaskDialog
         open={createOpen}
-        onOpenChange={setCreateOpen}
+        onOpenChange={(open) => {
+          setCreateOpen(open);
+          if (!open) setEditingTask(null);
+        }}
+        editTask={editingTask}
         onCreated={async () => {
           await loadTasks(true);
         }}
