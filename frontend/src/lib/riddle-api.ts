@@ -159,18 +159,75 @@ export interface RiddleTask {
   } | null;
 }
 
+export interface AuthBindingInput {
+  target?: string;
+  username?: string;
+  password?: string;
+  cookie?: string;
+  authorization?: string;
+  login_url?: string;
+  raw?: string;
+  note?: string;
+}
+
 export interface CreateRiddleTaskInput {
   name: string;
   src_type: "edusrc" | "enterprise" | string;
   vuln_types: string[];
   src_rules?: string;
   guard_ops?: string[];
-  target_source: "fofa" | "manual" | "both" | "assist" | string;
+  target_source: "fofa" | "manual" | "both" | "site" | string;
   engine?: string;
   fofa_query?: string;
   manual_targets?: string[];
+  auth_bindings?: AuthBindingInput[];
+  fofa_config?: {
+    max_pages?: number;
+    page_size?: number;
+    intent_mode?: string;
+    skip_site_recon?: boolean;
+  };
   concurrency?: number;
   deepen_cap?: number;
+}
+
+export interface ParseTargetsResult {
+  total_lines: number;
+  valid: number;
+  domains: number;
+  ips: number;
+  with_note: number;
+  ignored: string[];
+  ignored_total: number;
+}
+
+export interface ParseQueryResult {
+  looks_like_syntax: boolean;
+  token_count: number;
+  joins: string[];
+  fields: string[];
+  keywords: Record<string, string[]>;
+  issues: string[];
+  summary: string;
+  engine_hint: string;
+  syntax_mismatch: string;
+  field_sheet: Array<Record<string, string>>;
+}
+
+export interface ParseAuthBatchResult {
+  total_lines: number;
+  parsed: number;
+  bindings: AuthBindingInput[];
+  ignored: string[];
+  ignored_total: number;
+  by_kind: Record<string, number>;
+}
+
+export interface ParseForbiddenOpsResult {
+  forbidden: Array<{ id: string; label: string }>;
+  count: number;
+  labels: string;
+  all: Array<{ id: string; label: string }>;
 }
 
 export interface RiddleTarget {
@@ -461,15 +518,25 @@ export const riddleApi = {
       method: "POST",
     }),
   parseTargets: (text: string) =>
-    riddleFetch<{ total_lines: number; valid: number; domains: number; ips: number; ignored: string[] }>(
-      "/tasks/parse-targets",
-      { method: "POST", body: JSON.stringify({ text }) },
-    ),
-  parseQuery: (engine: string, query: string, src_type: string) =>
-    riddleFetch<{ looks_like_syntax: boolean; issues: string[]; summary: string; syntax_mismatch: string }>(
-      "/tasks/parse-query",
-      { method: "POST", body: JSON.stringify({ engine, query, src_type }) },
-    ),
+    riddleFetch<ParseTargetsResult>("/tasks/parse-targets", {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    }),
+  parseQuery: (engine: string, query: string, src_type: string, intent_mode = "") =>
+    riddleFetch<ParseQueryResult>("/tasks/parse-query", {
+      method: "POST",
+      body: JSON.stringify({ engine, query, src_type, intent_mode }),
+    }),
+  parseAuthBatch: (text: string) =>
+    riddleFetch<ParseAuthBatchResult>("/tasks/parse-auth-batch", {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    }),
+  parseForbiddenOps: (text: string) =>
+    riddleFetch<ParseForbiddenOpsResult>("/tasks/parse-forbidden-ops", {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    }),
 
   // Hard Targets
   getHardTargetsStats: () => riddleFetch<HardTargetsStats>("/tasks/hard-targets/stats"),

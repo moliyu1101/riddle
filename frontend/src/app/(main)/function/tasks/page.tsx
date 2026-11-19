@@ -22,7 +22,6 @@ import { StatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -32,49 +31,18 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Textarea } from "@/components/ui/textarea";
 import { riddleApi, riddleFetch, type RiddleTask } from "@/lib/riddle-api";
 
-const VULN_DIRECTION_PRESETS = [
-  "SQL注入",
-  "RCE",
-  "未授权访问",
-  "文件上传",
-  "任意文件读取",
-  "逻辑越权",
-  "信息泄露",
-  "SSRF/XXE",
-];
-
-const GUARD_OP_DEFS = [
-  { id: "db_dump", label: "脱库/拖库/删库" },
-  { id: "db_delete", label: "删除数据" },
-  { id: "db_write", label: "写入/篡改数据" },
-  { id: "cache_clear", label: "清缓存" },
-  { id: "cred_change", label: "改密/重置凭证" },
-  { id: "brute_force", label: "爆破/暴力破解" },
-  { id: "dos", label: "压测/DoS/轰炸" },
-  { id: "webshell", label: "落 webshell/后门" },
-];
-
-const ENGINES = [
-  { id: "fofa", label: "FOFA" },
-  { id: "quake", label: "Quake (360)" },
-  { id: "hunter", label: "Hunter (鹰图)" },
-  { id: "zoomeye", label: "ZoomEye" },
-  { id: "shodan", label: "Shodan" },
-  { id: "censys", label: "Censys" },
-];
+import { CreateTaskDialog } from "./_components/create-task-dialog";
 
 const SOURCE_LABELS: Record<string, string> = {
   fofa: "测绘发现",
   manual: "手动导入",
   both: "测绘 + 手动",
-  assist: "单站协作",
+  site: "单站协作",
 };
 
 function calcProgress(t: RiddleTask): number {
@@ -91,25 +59,7 @@ export default function TasksPage() {
   const [search, setSearch] = React.useState("");
   const [statusFilter, setStatusFilter] = React.useState("all");
   const [srcFilter, setSrcFilter] = React.useState("all");
-
-  // Create Dialog state
   const [createOpen, setCreateOpen] = React.useState(false);
-  const [creating, setCreating] = React.useState(false);
-  const [name, setName] = React.useState("");
-  const [srcType, setSrcType] = React.useState<"edusrc" | "enterprise">("edusrc");
-  const [targetSource, setTargetSource] = React.useState<"fofa" | "manual" | "both" | "assist">("fofa");
-  const [engine, setEngine] = React.useState("fofa");
-  const [fofaQuery, setFofaQuery] = React.useState("");
-  const [manualText, setManualText] = React.useState("");
-  const [selectedVulns, setSelectedVulns] = React.useState<string[]>([]);
-  const [guardOps, setGuardOps] = React.useState<string[]>(["db_dump", "db_delete", "dos", "webshell"]);
-  const [srcRules, setSrcRules] = React.useState("");
-  const [concurrency, setConcurrency] = React.useState(3);
-  const [deepenCap, setDeepenCap] = React.useState(2);
-  const [autoGoals, setAutoGoals] = React.useState(true);
-  const [startImmediately, setStartImmediately] = React.useState(false);
-  const [queryHint, setQueryHint] = React.useState("");
-  const [parseHint, setParseHint] = React.useState("");
 
   // Fusion Goal Dialog state
   const [goalTask, setGoalTask] = React.useState<RiddleTask | null>(null);
@@ -169,99 +119,6 @@ export default function TasksPage() {
       await loadTasks(true);
     } catch (err) {
       toast.error(`操作失败：${err instanceof Error ? err.message : String(err)}`);
-    }
-  };
-
-  const handleParseQuery = async () => {
-    if (!fofaQuery.trim()) return;
-    try {
-      const res = await riddleApi.parseQuery(engine, fofaQuery.trim(), srcType);
-      setQueryHint(res.syntax_mismatch || res.issues?.[0] || res.summary || "语法有效");
-    } catch (err) {
-      setQueryHint(err instanceof Error ? err.message : String(err));
-    }
-  };
-
-  const handleParseTargets = async () => {
-    if (!manualText.trim()) return;
-    try {
-      const res = await riddleApi.parseTargets(manualText);
-      setParseHint(`共 ${res.total_lines} 行 · 有效 ${res.valid} 条（域名 ${res.domains} / IP ${res.ips}）`);
-    } catch (err) {
-      setParseHint(err instanceof Error ? err.message : String(err));
-    }
-  };
-
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim()) {
-      toast.error("请输入任务名称");
-      return;
-    }
-    const manualTargets = manualText
-      .split(/\r?\n/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-    if ((targetSource === "manual" || targetSource === "assist") && manualTargets.length === 0) {
-      toast.error("手动/单站协作模式请至少输入一条目标 URL 或域名");
-      return;
-    }
-    if (targetSource === "fofa" && !fofaQuery.trim()) {
-      toast.error("测绘模式请输入查询语法");
-      return;
-    }
-
-    setCreating(true);
-    try {
-      const created = await riddleApi.createTask({
-        name: name.trim(),
-        src_type: srcType,
-        vuln_types: selectedVulns,
-        src_rules: srcRules.trim(),
-        guard_ops: guardOps,
-        target_source: targetSource,
-        engine,
-        fofa_query: fofaQuery.trim(),
-        manual_targets: manualTargets,
-        concurrency,
-        deepen_cap: deepenCap,
-      });
-
-      if (autoGoals) {
-        try {
-          const suggested = await riddleApi.suggestGoals({
-            task_id: created.id,
-            name: created.name,
-            src_type: created.src_type,
-            vuln_types: selectedVulns,
-            targets: manualTargets,
-            fofa_query: fofaQuery.trim(),
-          });
-          if (suggested.goals?.length) {
-            await riddleApi.saveGoals(created.id, suggested.goals);
-          }
-        } catch {
-          // Goal suggestion failure should not block task creation
-        }
-      }
-
-      if (startImmediately) {
-        await riddleApi.startTask(created.id);
-      }
-
-      toast.success(`任务「${created.name}」创建成功`);
-      setCreateOpen(false);
-      setName("");
-      setFofaQuery("");
-      setManualText("");
-      setSrcRules("");
-      setQueryHint("");
-      setParseHint("");
-      await loadTasks(true);
-    } catch (err) {
-      toast.error(`创建失败：${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      setCreating(false);
     }
   };
 
@@ -505,216 +362,14 @@ export default function TasksPage() {
         </CardContent>
       </Card>
 
-      {/* New Riddle Task Dialog */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>新建知蠹自主挖掘任务</DialogTitle>
-            <DialogDescription>
-              配置 SRC 模式、资产测绘来源、漏洞挖掘偏好与任务级高危操作护栏。
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={(e) => void handleCreate(e)} className="space-y-4">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="task-name">任务名称 *</Label>
-                <Input
-                  id="task-name"
-                  placeholder="例如：华东高校 11 月 EduSRC 专项"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>SRC 规则模式</Label>
-                <Select value={srcType} onValueChange={(v) => setSrcType(v as "edusrc" | "enterprise")}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="edusrc">EduSRC (高校 / 公益 SRC)</SelectItem>
-                    <SelectItem value="enterprise">企业 SRC / 授权项目</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label>资产来源方式</Label>
-                <Select
-                  value={targetSource}
-                  onValueChange={(v) => setTargetSource(v as "fofa" | "manual" | "both" | "assist")}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="fofa">空间测绘发现</SelectItem>
-                    <SelectItem value="manual">手动导入目标清单</SelectItem>
-                    <SelectItem value="both">测绘 + 手动联合</SelectItem>
-                    <SelectItem value="assist">单站协同定向挖掘</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>空间测绘引擎</Label>
-                <Select value={engine} onValueChange={setEngine}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ENGINES.map((eng) => (
-                      <SelectItem key={eng.id} value={eng.id}>
-                        {eng.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {(targetSource === "fofa" || targetSource === "both") && (
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="fofa-query">测绘查询语法 ({engine.toUpperCase()})</Label>
-                  <Button type="button" variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => void handleParseQuery()}>
-                    校验查询语法
-                  </Button>
-                </div>
-                <Input
-                  id="fofa-query"
-                  className="font-mono text-xs"
-                  placeholder='domain="edu.cn" && title="统一身份认证"'
-                  value={fofaQuery}
-                  onChange={(e) => setFofaQuery(e.target.value)}
-                />
-                {queryHint ? <p className="text-xs text-muted-foreground">{queryHint}</p> : null}
-              </div>
-            )}
-
-            {(targetSource === "manual" || targetSource === "both" || targetSource === "assist") && (
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="manual-targets">手动目标列表（每行一个 URL / 域名 / IP）</Label>
-                  <Button type="button" variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => void handleParseTargets()}>
-                    预览解析统计
-                  </Button>
-                </div>
-                <Textarea
-                  id="manual-targets"
-                  rows={4}
-                  className="font-mono text-xs"
-                  placeholder={"https://portal.example.edu.cn\n10.0.0.1:8080 # 备注"}
-                  value={manualText}
-                  onChange={(e) => setManualText(e.target.value)}
-                />
-                {parseHint ? <p className="text-xs text-muted-foreground">{parseHint}</p> : null}
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <Label>重点漏洞方向（可选多选）</Label>
-              <div className="flex flex-wrap gap-1.5">
-                {VULN_DIRECTION_PRESETS.map((v) => {
-                  const active = selectedVulns.includes(v);
-                  return (
-                    <Button
-                      key={v}
-                      type="button"
-                      size="sm"
-                      variant={active ? "default" : "outline"}
-                      className="h-7 text-xs"
-                      onClick={() =>
-                        setSelectedVulns((prev) => (prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v]))
-                      }
-                    >
-                      {v}
-                    </Button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label>任务级八大高危操作硬拦截</Label>
-              <div className="grid grid-cols-2 gap-2 rounded-lg border p-3 sm:grid-cols-4">
-                {GUARD_OP_DEFS.map((op) => {
-                  const checked = guardOps.includes(op.id);
-                  return (
-                    <label key={op.id} className="flex cursor-pointer items-center gap-2 text-xs">
-                      <Checkbox
-                        checked={checked}
-                        onCheckedChange={(val) =>
-                          setGuardOps((prev) =>
-                            val ? [...new Set([...prev, op.id])] : prev.filter((x) => x !== op.id),
-                          )
-                        }
-                      />
-                      <span>{op.label}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="concurrency">Worker 并发数</Label>
-                <Input
-                  id="concurrency"
-                  type="number"
-                  min={1}
-                  max={20}
-                  value={concurrency}
-                  onChange={(e) => setConcurrency(Number(e.target.value) || 3)}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="deepen-cap">深挖最大轮次</Label>
-                <Input
-                  id="deepen-cap"
-                  type="number"
-                  min={0}
-                  max={10}
-                  value={deepenCap}
-                  onChange={(e) => setDeepenCap(Number(e.target.value) || 0)}
-                />
-              </div>
-              <div className="flex flex-col justify-end gap-2 pb-1">
-                <label className="flex cursor-pointer items-center gap-2 text-xs">
-                  <Checkbox checked={autoGoals} onCheckedChange={(v) => setAutoGoals(Boolean(v))} />
-                  <span>自动生成融合目标闸门</span>
-                </label>
-                <label className="flex cursor-pointer items-center gap-2 text-xs">
-                  <Checkbox checked={startImmediately} onCheckedChange={(v) => setStartImmediately(Boolean(v))} />
-                  <span>创建后立即启动任务</span>
-                </label>
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="src-rules">附加 SRC 范围说明 / 禁止事项（可选）</Label>
-              <Textarea
-                id="src-rules"
-                rows={2}
-                placeholder="例如：严禁脱库或压测登录接口，优先挖掘统一认证与教务系统漏洞"
-                value={srcRules}
-                onChange={(e) => setSrcRules(e.target.value)}
-              />
-            </div>
-
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
-                取消
-              </Button>
-              <Button type="submit" disabled={creating}>
-                {creating ? "正在创建…" : "创建任务"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      {/* Optimized Riddle Task Creation Dialog */}
+      <CreateTaskDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onCreated={async () => {
+          await loadTasks(true);
+        }}
+      />
 
       {/* Fusion Goal Gate Modal */}
       <Dialog open={Boolean(goalTask)} onOpenChange={(open) => !open && setGoalTask(null)}>

@@ -47,7 +47,7 @@ const SOURCE_LABEL: Record<string, string> = {
   fofa: "测绘",
   manual: "手动",
   both: "测绘+手动",
-  assist: "单站协作",
+  site: "单站协作",
 };
 
 function getProgressPct(t: RiddleTask): number {
