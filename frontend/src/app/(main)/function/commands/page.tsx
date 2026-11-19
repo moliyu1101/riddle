@@ -12,7 +12,9 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { PageHeader } from "@/components/page-header";
 import { api } from "@/lib/api";
+import { riddleApi, type RiddleTask } from "@/lib/riddle-api";
 import type { CommandRecord, ToolStat } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -54,7 +56,12 @@ export default function CommandsPage() {
   const [size, setSize] = React.useState(50);
   const [query, setQuery] = React.useState("");
   const [queryQ, setQueryQ] = React.useState("");
-  const [taskFilter, setTaskFilter] = React.useState("");
+  const [taskFilter, setTaskFilter] = React.useState("all");
+  const [tasks, setTasks] = React.useState<RiddleTask[]>([]);
+
+  React.useEffect(() => {
+    riddleApi.listTasks().then(setTasks).catch(() => setTasks([]));
+  }, []);
 
   const [commands, setCommands] = React.useState<CommandRecord[]>([]);
   const [total, setTotal] = React.useState(0);
@@ -85,7 +92,7 @@ export default function CommandsPage() {
     let alive = true;
     setLoading(true);
     api
-      .commands({ task: taskFilter || undefined, q: queryQ || undefined, page, size })
+      .commands({ task: taskFilter && taskFilter !== "all" ? taskFilter : undefined, q: queryQ || undefined, page, size })
       .then((r) => {
         if (!alive) return;
         setCommands(r.commands ?? []);
@@ -108,7 +115,7 @@ export default function CommandsPage() {
     let alive = true;
     setStatsLoading(true);
     api
-      .commandStats({ task: taskFilter || undefined, q: queryQ || undefined })
+      .commandStats({ task: taskFilter && taskFilter !== "all" ? taskFilter : undefined, q: queryQ || undefined })
       .then((r) => alive && setStats(r.stats ?? []))
       .catch(() => alive && setStats([]))
       .finally(() => alive && setStatsLoading(false));
@@ -126,34 +133,43 @@ export default function CommandsPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-2">
-          <TerminalIcon className="h-5 w-5 text-muted-foreground" />
-          <h1 className="font-semibold text-xl tracking-tight">工具执行</h1>
-          <Badge variant="secondary">{total}</Badge>
-        </div>
-      </div>
+      <PageHeader
+        title="执行回放"
+        description={`按任务检索 Worker 调用 Shell / HTTP / 浏览器等安全工具的历史记录与耗时分布（共 ${total} 条）。`}
+        actions={
+          <Button variant="outline" size="sm" onClick={() => setStatsOpen(true)}>
+            <BarChart3Icon className="mr-1.5 size-3.5" />
+            工具调用统计
+          </Button>
+        }
+      />
 
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative max-w-sm flex-1">
+        <div className="relative max-w-sm flex-1 min-w-[200px]">
           <SearchIcon className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="搜索工具 / 参数..."
+            placeholder="搜索工具名、命令或参数…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="h-8 pl-8"
+            className="h-9 pl-8"
           />
         </div>
-        <Input
-          placeholder="任务 ID"
-          className="h-8 w-28"
-          value={taskFilter}
-          onChange={(e) => setTaskFilter(e.target.value.replace(/\D/g, ""))}
-        />
+        <Select value={taskFilter} onValueChange={setTaskFilter}>
+          <SelectTrigger className="h-9 w-[210px]">
+            <SelectValue placeholder="按任务筛选" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">全部任务</SelectItem>
+            {tasks.map((t) => (
+              <SelectItem key={t.id} value={t.id}>
+                {t.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Select value={String(size)} onValueChange={(v) => setSize(Number(v))}>
-          <SelectTrigger size="sm" className="w-28">
+          <SelectTrigger className="h-9 w-28">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -164,11 +180,6 @@ export default function CommandsPage() {
             ))}
           </SelectContent>
         </Select>
-
-        <Button variant="outline" size="sm" className="h-8" onClick={() => setStatsOpen(true)}>
-          <BarChart3Icon className="size-4" />
-          统计
-        </Button>
 
         <div className="ml-auto flex items-center gap-2 text-muted-foreground text-xs">
           <span className="tabular-nums">

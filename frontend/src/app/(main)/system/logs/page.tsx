@@ -1,232 +1,293 @@
 "use client";
 
 import * as React from "react";
-import { Input } from "@/components/ui/input";
+import { AlertTriangle, Pause, Play, Radio, RefreshCw, Search, Trash2 } from "lucide-react";
+import { toast } from "sonner";
+
+import { PageHeader } from "@/components/page-header";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { sseUrl } from "@/lib/api";
-import { MOCK } from "@/lib/mock/enabled";
+import { riddleApi } from "@/lib/riddle-api";
 import type { LogLine } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-// Mock demo：无后端 SSE，塞几行示例日志。
-const MOCK_LOGS: LogLine[] = [
-  { seq: 1, ts: "2026-07-26T03:55:00Z", level: "info", tag: "engine", text: "Riddle backend listening on :18800 (workers=3)" },
-  { seq: 2, ts: "2026-07-26T03:55:01Z", level: "info", tag: "config", text: "LLM configured from DB: anthropic / claude-opus-4-8" },
-  { seq: 3, ts: "2026-07-26T03:56:10Z", level: "info", tag: "planner", text: "task t-acme-web: 第 3 轮规划，生成意图 i-4" },
-  { seq: 4, ts: "2026-07-26T03:57:00Z", level: "warn", tag: "guard", text: "block bash: 目标越界 out.evil.example 不在 scope 内" },
-  { seq: 5, ts: "2026-07-26T03:57:30Z", level: "info", tag: "work#1", text: "report_finding: Default Credentials (high) 已落库" },
-  { seq: 6, ts: "2026-07-26T03:58:20Z", level: "error", tag: "work#3", text: "intercept: mysqldump 命中破坏性规则，等待人工审批" },
-];
-
-const levelTone: Record<LogLine["level"], string> = {
-  info: "text-foreground/80",
+const LEVEL_TONE: Record<string, string> = {
+  error: "text-rose-600 dark:text-rose-400",
   warn: "text-amber-600 dark:text-amber-400",
-  error: "text-red-600 dark:text-red-400",
-};
-const levelDot: Record<LogLine["level"], string> = {
-  info: "bg-muted-foreground/40",
-  warn: "bg-amber-500",
-  error: "bg-red-500",
+  info: "text-foreground/80",
 };
 
-function fmtTime(ts: string) {
-  const d = new Date(ts);
-  if (Number.isNaN(d.getTime())) return "";
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
-}
+export default function RuntimeLogsPage() {
+  // Tab 1: Structured Runtime Anomaly Logs
+  const [stats, setStats] = React.useState<{ total: number; errors: number; warns: number; by_agent: Record<string, number> } | null>(null);
+  const [logs, setLogs] = React.useState<Array<Record<string, unknown>>>([]);
+  const [level, setLevel] = React.useState("all");
+  const [agent, setAgent] = React.useState("all");
+  const [search, setSearch] = React.useState("");
+  const [loading, setLoading] = React.useState(true);
 
-export default function LogsPage() {
-  const [lines, setLines] = React.useState<LogLine[]>([]);
-  const [q, setQ] = React.useState("");
-  const [level, setLevel] = React.useState<"all" | LogLine["level"]>("all");
+  // Tab 2: Live SSE Stream
+  const [streamLines, setStreamLines] = React.useState<LogLine[]>([]);
   const [paused, setPaused] = React.useState(false);
-  const [loadingHistory, setLoadingHistory] = React.useState(false);
-  const [hasMore, setHasMore] = React.useState(false);
-  const bottom = React.useRef<HTMLDivElement>(null);
-  const stick = React.useRef(true);
+  const [connected, setConnected] = React.useState(false);
+  const [streamQuery, setStreamQuery] = React.useState("");
   const pausedRef = React.useRef(false);
   pausedRef.current = paused;
 
-  // Minimum db_id seen — used as the cursor for loading older history.
-  const minDbId = React.useMemo(() => {
-    let min = 0;
-    for (const l of lines) {
-      if (l.db_id && (min === 0 || l.db_id < min)) min = l.db_id;
+  const loadAnomalies = React.useCallback(async () => {
+    setLoading(true);
+    try {
+      const [sRes, lRes] = await Promise.all([
+        riddleApi.getRuntimeLogStats(),
+        riddleApi.listRuntimeLogs({ level, agent, q: search.trim() || undefined, limit: 150 }),
+      ]);
+      setStats(sRes);
+      setLogs(lRes.items ?? []);
+    } catch (err) {
+      toast.error(`加载运行日志失败：${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setLoading(false);
     }
-    return min;
-  }, [lines]);
+  }, [level, agent, search]);
 
-  // Live tail via SSE. on connect, replays whatever is in the ring (includes
-  // DB-restored history from the last 100 rows written before restart).
   React.useEffect(() => {
-    if (MOCK) {
-      setLines(MOCK_LOGS);
-      return;
+    void loadAnomalies();
+  }, [loadAnomalies]);
+
+  React.useEffect(() => {
+    let es: EventSource | null = null;
+    try {
+      es = new EventSource(sseUrl("/logs/stream"));
+      es.onopen = () => setConnected(true);
+      es.onerror = () => setConnected(false);
+      es.onmessage = (evt) => {
+        if (pausedRef.current) return;
+        try {
+          const parsed = JSON.parse(evt.data) as LogLine;
+          setStreamLines((prev) => [...prev.slice(-300), parsed]);
+        } catch {
+          // ignore non-json heartbeat
+        }
+      };
+    } catch {
+      setConnected(false);
     }
-    const es = new EventSource(sseUrl("/api/logs/stream?since=0"));
-    es.onmessage = (e) => {
-      if (pausedRef.current) return;
-      try {
-        const l = JSON.parse(e.data) as LogLine;
-        setLines((prev) => (prev.some((x) => x.seq === l.seq) ? prev : [...prev, l].slice(-3000)));
-      } catch {
-        /* ignore malformed frame */
-      }
+    return () => {
+      es?.close();
     };
-    return () => es.close();
   }, []);
 
-  // Mark "has more" once we have any db_id in view.
-  React.useEffect(() => {
-    if (minDbId > 1) setHasMore(true);
-  }, [minDbId]);
-
-  async function loadOlderHistory() {
-    if (loadingHistory) return;
-    setLoadingHistory(true);
-    try {
-      const params = minDbId > 0 ? `?before=${minDbId}&limit=200` : `?limit=200`;
-      const res = await fetch(`/api/pojun/logs/history${params}`);
-      if (!res.ok) return;
-      const data = await res.json() as { items: LogLine[]; has_more: boolean };
-      if (data.items?.length) {
-        // Assign synthetic seq numbers below current minimum to keep dedup working.
-        setLines((prev) => {
-          const minSeq = prev.reduce((m, l) => Math.min(m, l.seq ?? 0), 0);
-          const older = data.items.map((l, i) => ({
-            ...l,
-            seq: minSeq - data.items.length + i,
-          }));
-          // Prepend, dedup by db_id, cap at 5000.
-          const merged = [...older, ...prev];
-          const seen = new Set<number>();
-          const deduped = merged.filter((l) => {
-            if (!l.db_id) return true;
-            if (seen.has(l.db_id)) return false;
-            seen.add(l.db_id);
-            return true;
-          });
-          return deduped.slice(-5000);
-        });
-      }
-      setHasMore(data.has_more ?? false);
-    } finally {
-      setLoadingHistory(false);
-    }
-  }
-
-  const filtered = React.useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    return lines.filter(
-      (l) =>
-        (level === "all" || l.level === level) &&
-        (!needle || l.text.toLowerCase().includes(needle) || l.tag.toLowerCase().includes(needle)),
+  const agentKeys = Object.keys(stats?.by_agent ?? {});
+  const filteredStream = React.useMemo(() => {
+    const q = streamQuery.trim().toLowerCase();
+    if (!q) return streamLines;
+    return streamLines.filter(
+      (l) => l.text.toLowerCase().includes(q) || l.tag.toLowerCase().includes(q) || l.level.toLowerCase().includes(q),
     );
-  }, [lines, q, level]);
-
-  React.useEffect(() => {
-    if (stick.current && !paused) bottom.current?.scrollIntoView();
-  }, [paused]);
-
-  const counts = React.useMemo(() => {
-    let warn = 0,
-      error = 0;
-    for (const l of lines) {
-      if (l.level === "warn") warn++;
-      else if (l.level === "error") error++;
-    }
-    return { warn, error, total: lines.length };
-  }, [lines]);
+  }, [streamLines, streamQuery]);
 
   return (
-    <div className="flex flex-1 flex-col gap-3">
-      <div>
-        <h1 className="font-semibold text-xl tracking-tight">系统日志</h1>
-        <p className="text-muted-foreground text-sm">后端实时日志流(planner / worker / 数据库 / 流量 …)</p>
-      </div>
-      <div className="flex flex-1 flex-col gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <Input
-            placeholder="过滤(文本 / tag)…"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            className="h-8 max-w-xs"
-          />
-          <div className="flex gap-1">
-            {(["all", "info", "warn", "error"] as const).map((lv) => (
-              <Button
-                key={lv}
-                size="sm"
-                variant={level === lv ? "default" : "outline"}
-                className="h-8"
-                onClick={() => setLevel(lv)}
-              >
-                {lv === "all" ? "全部" : lv}
-              </Button>
-            ))}
-          </div>
-          <Button
-            size="sm"
-            variant={paused ? "default" : "outline"}
-            className="h-8"
-            onClick={() => setPaused((p) => !p)}
-          >
-            {paused ? "已暂停" : "暂停"}
+    <div className="flex flex-1 flex-col gap-5">
+      <PageHeader
+        title="运行日志与异常诊断"
+        description="全局聚合各任务 Worker / Reviewer / Killsweep 运行异常，同时提供实时 SSE 事件流监控。"
+        actions={
+          <Button variant="outline" size="sm" onClick={() => void loadAnomalies()}>
+            <RefreshCw className="mr-1.5 size-3.5" /> 刷新日志
           </Button>
-          <Button size="sm" variant="outline" className="h-8" onClick={() => setLines([])}>
-            清空
-          </Button>
-          <span className="ml-auto text-muted-foreground text-xs">
-            {counts.total} 行 ·{" "}
-            <span className="text-amber-600 dark:text-amber-400">{counts.warn} 警告</span> ·{" "}
-            <span className="text-red-600 dark:text-red-400">{counts.error} 错误</span>
-          </span>
-        </div>
+        }
+      />
 
-        <div
-          onScroll={(e) => {
-            const el = e.currentTarget;
-            stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-          }}
-          className="h-[calc(100vh-14rem)] overflow-auto rounded-lg border bg-card p-2 font-mono text-xs leading-relaxed"
-        >
-          {hasMore && (
-            <div className="flex justify-center py-2">
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 text-xs"
-                disabled={loadingHistory}
-                onClick={loadOlderHistory}
-              >
-                {loadingHistory ? "加载中…" : "加载更早日志"}
+      <Tabs defaultValue="anomalies" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="anomalies">
+            <AlertTriangle className="mr-1.5 size-3.5" /> 全局异常诊断 ({stats?.total ?? 0})
+          </TabsTrigger>
+          <TabsTrigger value="stream">
+            <Radio className="mr-1.5 size-3.5" /> 实时事件流
+            <span
+              className={cn(
+                "ml-1.5 size-2 rounded-full",
+                connected ? "bg-emerald-500" : "bg-muted-foreground/40",
+              )}
+            />
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="anomalies" className="space-y-4">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <Card>
+              <CardHeader className="pb-1">
+                <CardDescription className="text-xs">累计异常事件</CardDescription>
+                <CardTitle className="text-2xl tabular-nums">{stats?.total ?? 0}</CardTitle>
+              </CardHeader>
+            </Card>
+            <Card>
+              <CardHeader className="pb-1">
+                <CardDescription className="text-xs">错误 (Error)</CardDescription>
+                <CardTitle className="text-2xl tabular-nums text-rose-600 dark:text-rose-400">
+                  {stats?.errors ?? 0}
+                </CardTitle>
+              </CardHeader>
+            </Card>
+            <Card>
+              <CardHeader className="pb-1">
+                <CardDescription className="text-xs">告警 (Warn)</CardDescription>
+                <CardTitle className="text-2xl tabular-nums text-amber-600 dark:text-amber-400">
+                  {stats?.warns ?? 0}
+                </CardTitle>
+              </CardHeader>
+            </Card>
+            <Card>
+              <CardHeader className="pb-1">
+                <CardDescription className="text-xs">涉及 Agent 模块</CardDescription>
+                <CardTitle className="text-2xl tabular-nums">{agentKeys.length}</CardTitle>
+              </CardHeader>
+            </Card>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative min-w-[220px] flex-1 max-w-md">
+              <Search className="pointer-events-none absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
+              <Input
+                placeholder="检索错误详情、状态码、任务名…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-8"
+              />
+            </div>
+            <Select value={level} onValueChange={setLevel}>
+              <SelectTrigger className="w-[140px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部级别</SelectItem>
+                <SelectItem value="error">Error</SelectItem>
+                <SelectItem value="warn">Warn</SelectItem>
+                <SelectItem value="info">Info</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={agent} onValueChange={setAgent}>
+              <SelectTrigger className="w-[160px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部 Agent</SelectItem>
+                {agentKeys.map((a) => (
+                  <SelectItem key={a} value={a}>
+                    {a} ({stats?.by_agent?.[a] ?? 0})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <Card>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[155px]">时间</TableHead>
+                    <TableHead className="w-[90px]">级别</TableHead>
+                    <TableHead className="w-[120px]">Agent</TableHead>
+                    <TableHead>异常详情</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {loading ? (
+                    <TableRow>
+                      <TableCell colSpan={4} className="h-24 text-center text-sm text-muted-foreground">
+                        正在加载全局运行异常日志…
+                      </TableCell>
+                    </TableRow>
+                  ) : logs.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={4} className="h-24 text-center text-sm text-muted-foreground">
+                        当前无运行异常日志，系统运行平稳。
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    logs.map((row, idx) => {
+                      const lv = String(row.level ?? "info");
+                      return (
+                        <TableRow key={String(row.id ?? idx)}>
+                          <TableCell className="font-mono text-xs text-muted-foreground whitespace-nowrap">
+                            {String(row.created_at ?? "").replace("T", " ").slice(0, 19)}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={lv === "error" ? "destructive" : lv === "warn" ? "secondary" : "outline"}>
+                              {lv}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="font-mono text-xs">{String(row.agent ?? "-")}</TableCell>
+                          <TableCell className="max-w-[560px]">
+                            <div className="text-xs break-all leading-relaxed">{String(row.message ?? "")}</div>
+                            {row.task_name ? (
+                              <div className="mt-0.5 text-[11px] text-muted-foreground">
+                                任务：{String(row.task_name)}
+                              </div>
+                            ) : null}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="stream" className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="relative min-w-[220px] flex-1 max-w-md">
+              <Search className="pointer-events-none absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
+              <Input
+                placeholder="实时过滤日志关键词…"
+                value={streamQuery}
+                onChange={(e) => setStreamQuery(e.target.value)}
+                className="pl-8"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => setPaused((p) => !p)}>
+                {paused ? <Play className="mr-1.5 size-3.5" /> : <Pause className="mr-1.5 size-3.5" />}
+                {paused ? "恢复接收" : "暂停滚屏"}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setStreamLines([])}>
+                <Trash2 className="mr-1.5 size-3.5" /> 清空
               </Button>
             </div>
-          )}
-          {filtered.length === 0 ? (
-            <p className="py-10 text-center text-muted-foreground">暂无日志。</p>
-          ) : (
-            filtered.map((l) => {
-              const body =
-                l.tag && l.text.startsWith(`[${l.tag}]`)
-                  ? l.text.slice(l.tag.length + 2).trimStart()
-                  : l.text;
-              return (
-                <div key={l.seq} className="flex items-start gap-2 px-1 py-0.5 hover:bg-muted/40">
-                  <span className={cn("mt-1.5 size-1.5 shrink-0 rounded-full", levelDot[l.level])} />
-                  <span className="shrink-0 text-muted-foreground tabular-nums">{fmtTime(l.ts)}</span>
-                  {l.tag && (
-                    <span className="shrink-0 rounded bg-muted px-1 text-[10px] text-foreground/70">{l.tag}</span>
-                  )}
-                  <span className={cn("min-w-0 whitespace-pre-wrap break-words", levelTone[l.level])}>{body}</span>
-                </div>
-              );
-            })
-          )}
-          <div ref={bottom} />
-        </div>
-      </div>
+          </div>
+          <Card>
+            <CardContent className="p-3">
+              <div className="h-[460px] overflow-y-auto rounded-lg bg-muted/30 p-3 font-mono text-xs space-y-1">
+                {filteredStream.length === 0 ? (
+                  <div className="flex h-full items-center justify-center text-muted-foreground">
+                    {connected ? "已连接实时事件流，等待任务事件推送…" : "实时流连接中或暂无事件输出…"}
+                  </div>
+                ) : (
+                  filteredStream.map((line, i) => (
+                    <div key={`${line.seq}-${i}`} className="flex items-start gap-2 leading-relaxed">
+                      <span className="shrink-0 text-muted-foreground">{line.ts.slice(11, 19)}</span>
+                      <Badge variant="outline" className="h-4 px-1 text-[10px] shrink-0">
+                        {line.tag}
+                      </Badge>
+                      <span className={cn("break-all", LEVEL_TONE[line.level] ?? "")}>{line.text}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

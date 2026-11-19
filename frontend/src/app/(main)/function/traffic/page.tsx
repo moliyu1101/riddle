@@ -1,831 +1,438 @@
 "use client";
 
 import * as React from "react";
-
 import {
-  ArrowDownWideNarrowIcon,
-  ArrowUpNarrowWideIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  EraserIcon,
-  FilterXIcon,
-  ListChecksIcon,
-  Loader2Icon,
-  RadioTowerIcon,
-  SearchIcon,
-  Trash2Icon,
+  Activity,
+  FolderSearch,
+  Link2,
+  Loader2,
+  RefreshCw,
+  Search,
+  Upload,
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { HttpCodeBlock } from "@/components/http-code-block";
-import { LinkTrafficDialog } from "@/components/link-traffic-dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { SortableHead } from "@/components/ui/sortable-head";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { api } from "@/lib/api";
-import { useStoredSortPreference } from "@/lib/sort-preference";
-import type { TrafficDetail, TrafficExchange, TrafficHost, TrafficResp } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { riddleApi, type RiddleFinding, type RiddleTask } from "@/lib/riddle-api";
 
-function fmtTime(ts: string) {
-  return new Date(ts).toLocaleString("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
+interface TrafficRow {
+  id: string;
+  role: string;
+  method: string;
+  url: string;
+  status_code: number;
+  request_head: string;
+  response_head: string;
+  body_sha256: string;
+  finding_id: string;
+  created_at: string;
 }
 
-function fmtBytes(n: number) {
-  if (n <= 0) return "0 B";
-  // GB matters for the reclaimed-space figure a full purge reports; a capture-heavy
-  // instance can hand back several.
-  const units = ["B", "KB", "MB", "GB"];
-  const i = Math.min(Math.floor(Math.log(n) / Math.log(1024)), units.length - 1);
-  const v = n / 1024 ** i;
-  return `${i === 0 ? v : v.toFixed(1)} ${units[i]}`;
-}
+const ROLE_META: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
+  baseline: { label: "基线 (baseline)", variant: "outline" },
+  proof: { label: "实证 (proof)", variant: "destructive" },
+  verification: { label: "复验 (verification)", variant: "default" },
+  supporting: { label: "佐证 (supporting)", variant: "secondary" },
+};
 
-function statusTone(status: number) {
-  if (status >= 500) return "text-red-500";
-  if (status >= 400) return "text-amber-500";
-  if (status >= 300) return "text-blue-500";
-  if (status >= 200) return "text-emerald-500";
+function statusTone(code: number): string {
+  if (code >= 500) return "text-rose-600 dark:text-rose-400 font-semibold";
+  if (code >= 400) return "text-amber-600 dark:text-amber-400 font-medium";
+  if (code >= 200 && code < 300) return "text-emerald-600 dark:text-emerald-400 font-medium";
   return "text-muted-foreground";
 }
 
-function MethodBadge({ method }: { method: string }) {
-  return <Badge className="shrink-0 font-mono">{method}</Badge>;
-}
+export default function TrafficLedgerPage() {
+  const [tasks, setTasks] = React.useState<RiddleTask[]>([]);
+  const [selectedTaskId, setSelectedTaskId] = React.useState("");
+  const [trafficEnabled, setTrafficEnabled] = React.useState(false);
 
-// Older captures may predate Host persistence because net/http keeps Host
-// outside Request.Header. Fill it for display while newly recorded traffic is
-// fixed at the recorder layer as well.
-function requestWithHost(raw: string, exchange: TrafficExchange): string {
-  if (!raw.trim() || /^host\s*:/im.test(raw)) return raw;
-  let host = exchange.host;
-  try {
-    host = new URL(exchange.url).host || host;
-  } catch {
-    // Relative or legacy URLs fall back to the indexed host.
-  }
-  const newline = raw.includes("\r\n") ? "\r\n" : "\n";
-  const firstLineEnd = raw.indexOf(newline);
-  if (firstLineEnd < 0) return `${raw}${newline}Host: ${host}`;
-  return `${raw.slice(0, firstLineEnd + newline.length)}Host: ${host}${newline}${raw.slice(firstLineEnd + newline.length)}`;
-}
+  const [items, setItems] = React.useState<TrafficRow[]>([]);
+  const [loading, setLoading] = React.useState(false);
+  const [roleFilter, setRoleFilter] = React.useState("all");
+  const [methodFilter, setMethodFilter] = React.useState("all");
+  const [search, setSearch] = React.useState("");
 
-// Fixed method set (server filters exact-match); avoids deriving options from a
-// single page, which would only ever list the methods on that page.
-const METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"];
-const PAGE_SIZES = [25, 50, 100, 200];
-type HostCountSortDirection = "asc" | "desc";
+  // Import Dialog
+  const [importOpen, setImportOpen] = React.useState(false);
+  const [discoveredDirs, setDiscoveredDirs] = React.useState<string[]>([]);
+  const [customDir, setCustomDir] = React.useState("");
+  const [importing, setImporting] = React.useState(false);
 
-// Server-sortable columns. The list is sent to the backend verbatim as `sort`,
-// which whitelists these same names, so keep them in sync with traffic.Page.
-const SORT_FIELDS = ["ts", "status", "resp_len"] as const;
-type SortField = (typeof SORT_FIELDS)[number];
-const SORT_STORAGE_KEY = "traffic-sort";
+  // Inspector & Binding Sheet
+  const [activeRow, setActiveRow] = React.useState<TrafficRow | null>(null);
+  const [taskFindings, setTaskFindings] = React.useState<RiddleFinding[]>([]);
+  const [bindFindingId, setBindFindingId] = React.useState("");
+  const [bindRole, setBindRole] = React.useState("proof");
+  const [binding, setBinding] = React.useState(false);
 
-// Status-class buckets for the filter dropdown; the value is sent as `status`,
-// which the backend reads as either an exact code or an "Nxx" class band.
-const STATUS_BUCKETS = ["2xx", "3xx", "4xx", "5xx"];
-
-export default function TrafficPage() {
-  const [selectedFlows, setSelectedFlows] = React.useState<Set<string>>(() => new Set());
-  const [linking, setLinking] = React.useState(false);
-  const [page, setPage] = React.useState(0);
-  const [size, setSize] = React.useState(50);
-  const [host, setHost] = React.useState(""); // raw host input
-  const [hostQ, setHostQ] = React.useState(""); // debounced → server
-  const [query, setQuery] = React.useState(""); // raw free-text input
-  const [queryQ, setQueryQ] = React.useState(""); // debounced → server
-  const [method, setMethod] = React.useState("all");
-
-  // Advanced filters (issue #177): response-body content, path, status class and
-  // response-size range. Text inputs are debounced like host/query; the status
-  // select applies immediately.
-  const [body, setBody] = React.useState("");
-  const [bodyQ, setBodyQ] = React.useState("");
-  const [path, setPath] = React.useState("");
-  const [pathQ, setPathQ] = React.useState("");
-  const [statusFilter, setStatusFilter] = React.useState("all");
-  const [respMin, setRespMin] = React.useState("");
-  const [respMinQ, setRespMinQ] = React.useState("");
-  const [respMax, setRespMax] = React.useState("");
-  const [respMaxQ, setRespMaxQ] = React.useState("");
-  const [sort, setSort] = useStoredSortPreference<SortField>(SORT_STORAGE_KEY, SORT_FIELDS, "ts", "desc");
-
-  const [traffic, setTraffic] = React.useState<TrafficResp | null>(null);
-  const [selected, setSelected] = React.useState<TrafficExchange | null>(null);
-  const [detail, setDetail] = React.useState<TrafficDetail | null>(null);
-  const [detailLoading, setDetailLoading] = React.useState(false);
-
-  const [hosts, setHosts] = React.useState<TrafficHost[]>([]); // target picker
-  const [selectedHosts, setSelectedHosts] = React.useState<string[]>([]); // checked in picker
-  const [pickerOpen, setPickerOpen] = React.useState(false);
-  const [hostCountSortDirection, setHostCountSortDirection] = React.useState<HostCountSortDirection>("desc");
-
-  const [deleteMode, setDeleteMode] = React.useState<"filter" | "selected" | "all" | null>(null); // null = dialog closed
-  const [deleting, setDeleting] = React.useState(false);
-  const [reloadTick, setReloadTick] = React.useState(0); // manual refetch trigger
-
-  // Debounce both filters so we don't refetch on every keystroke.
   React.useEffect(() => {
-    const t = setTimeout(() => setHostQ(host.trim()), 300);
-    return () => clearTimeout(t);
-  }, [host]);
-  React.useEffect(() => {
-    const t = setTimeout(() => setQueryQ(query.trim()), 300);
-    return () => clearTimeout(t);
-  }, [query]);
-  React.useEffect(() => {
-    const t = setTimeout(() => setBodyQ(body.trim()), 300);
-    return () => clearTimeout(t);
-  }, [body]);
-  React.useEffect(() => {
-    const t = setTimeout(() => setPathQ(path.trim()), 300);
-    return () => clearTimeout(t);
-  }, [path]);
-  React.useEffect(() => {
-    const t = setTimeout(() => setRespMinQ(respMin.trim()), 300);
-    return () => clearTimeout(t);
-  }, [respMin]);
-  React.useEffect(() => {
-    const t = setTimeout(() => setRespMaxQ(respMax.trim()), 300);
-    return () => clearTimeout(t);
-  }, [respMax]);
+    Promise.allSettled([riddleApi.listTasks(), riddleApi.getFusionConfig()]).then(([tRes, fRes]) => {
+      if (tRes.status === "fulfilled") {
+        setTasks(tRes.value);
+        if (tRes.value.length > 0) setSelectedTaskId(tRes.value[0].id);
+      }
+      if (fRes.status === "fulfilled") {
+        setTrafficEnabled(Boolean(fRes.value.config.traffic_enabled));
+      }
+    });
+  }, []);
 
-  const hasAdvancedFilter = Boolean(bodyQ || pathQ || respMinQ || respMaxQ) || statusFilter !== "all";
-  const resetAdvancedFilters = () => {
-    setBody("");
-    setBodyQ("");
-    setPath("");
-    setPathQ("");
-    setStatusFilter("all");
-    setRespMin("");
-    setRespMinQ("");
-    setRespMax("");
-    setRespMaxQ("");
+  const loadTraffic = React.useCallback(async () => {
+    if (!selectedTaskId) return;
+    setLoading(true);
+    try {
+      const [trRes, fRes] = await Promise.allSettled([
+        riddleApi.listFusionTraffic(selectedTaskId, 200),
+        riddleApi.listTaskFindings(selectedTaskId, { limit: 100 }),
+      ]);
+      if (trRes.status === "fulfilled") setItems(trRes.value.items ?? []);
+      if (fRes.status === "fulfilled") {
+        const arr = Array.isArray(fRes.value) ? fRes.value : fRes.value.items ?? [];
+        setTaskFindings(arr);
+      }
+    } catch (err) {
+      toast.error(`加载实证流量失败：${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedTaskId]);
+
+  React.useEffect(() => {
+    void loadTraffic();
+  }, [loadTraffic]);
+
+  const filtered = React.useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return items.filter((it) => {
+      if (roleFilter !== "all" && it.role !== roleFilter) return false;
+      if (methodFilter !== "all" && it.method.toUpperCase() !== methodFilter) return false;
+      if (!q) return true;
+      return (
+        it.url.toLowerCase().includes(q) ||
+        it.request_head.toLowerCase().includes(q) ||
+        it.body_sha256.toLowerCase().includes(q)
+      );
+    });
+  }, [items, roleFilter, methodFilter, search]);
+
+  const openImportModal = async () => {
+    setImportOpen(true);
+    try {
+      const res = await riddleApi.discoverTrafficDirs();
+      setDiscoveredDirs(res.dirs ?? []);
+    } catch {
+      setDiscoveredDirs([]);
+    }
   };
 
-  // Any filter/size/sort change resets to the first page.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: these values intentionally trigger a page reset.
-  React.useEffect(() => {
-    setPage(0);
-  }, [hostQ, queryQ, method, size, bodyQ, pathQ, statusFilter, respMinQ, respMaxQ, sort]);
-
-  // Load the current page. Auto-refresh only on page 0 (newest) so paging back
-  // through history isn't yanked out from under the user.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reloadTick is an explicit manual-refetch trigger.
-  React.useEffect(() => {
-    let alive = true;
-    const load = () => {
-      api
-        .traffic(page, size, hostQ, method, queryQ, {
-          body: bodyQ,
-          path: pathQ,
-          status: statusFilter,
-          respMin: respMinQ,
-          respMax: respMaxQ,
-          sort: sort.field,
-          order: sort.direction,
-        })
-        .then((r) => {
-          if (alive) setTraffic(r);
-        })
-        .catch(() => {
-          // Keep the last successful snapshot during transient refresh failures.
-        });
-      api
-        .trafficHosts()
-        .then((r) => {
-          if (alive) setHosts(r.hosts ?? []);
-        })
-        .catch(() => {
-          // Keep the last successful host list during transient refresh failures.
-        });
-    };
-    load();
-    const t = setInterval(() => {
-      if (page !== 0) return; // only auto-refresh the newest page
-      load();
-    }, 5000);
-    return () => {
-      alive = false;
-      clearInterval(t);
-    };
-  }, [page, size, hostQ, method, queryQ, bodyQ, pathQ, statusFilter, respMinQ, respMaxQ, sort, reloadTick]);
-
-  // Delete traffic for the current host filter (substring) or the checked
-  // hosts (exact batch), then refetch.
-  const allSelected = hosts.length > 0 && hosts.every((h) => selectedHosts.includes(h.host));
-  const sortedHosts = React.useMemo(
-    () =>
-      [...hosts].sort((a, b) => {
-        const countOrder = hostCountSortDirection === "asc" ? a.count - b.count : b.count - a.count;
-        return countOrder || a.host.localeCompare(b.host);
-      }),
-    [hosts, hostCountSortDirection],
-  );
-
-  // "清空" for the unfiltered purge, "删除" for the host-scoped ones — the dialog's
-  // title and its confirm button both follow from which is in play.
-  const deleteVerb = deleteMode === "all" ? "清空" : "删除";
-  const deleteTitle = deleteMode
-    ? {
-        all: "清空全部流量记录？",
-        selected: `删除选中的 ${selectedHosts.length} 个目标的全部流量？`,
-        filter: "删除该目标的全部流量？",
-      }[deleteMode]
-    : "";
-
-  // `reclaimed` only comes back from the full purge; the host-scoped deletions
-  // report the row count alone.
-  const requestDelete = (mode: "filter" | "selected" | "all"): Promise<{ deleted: number; reclaimed?: number }> => {
-    if (mode === "all") return api.trafficDeleteAll();
-    if (mode === "selected") return api.trafficDeleteHosts(selectedHosts);
-    return api.trafficDeleteHost(hostQ);
-  };
-
-  const confirmDelete = () => {
-    if (!deleteMode) return;
-    setDeleting(true);
-    const mode = deleteMode;
-    requestDelete(mode)
-      .then((r) => {
-        setDeleteMode(null);
-        setSelected(null);
-        setDetail(null);
-        if (mode !== "filter") {
-          setSelectedHosts([]);
-          setPickerOpen(false);
-        }
-        if (mode === "all") {
-          // Reclaimed space is the whole point of compacting an emptied index, so say so.
-          const reclaimed = r.reclaimed ?? 0;
-          const freed = reclaimed > 0 ? `，释放 ${fmtBytes(reclaimed)} 存储` : "";
-          toast.success(`已清空 ${r.deleted} 条流量${freed}`);
-        }
-        setPage(0);
-        setReloadTick((t) => t + 1);
-      })
-      .catch((e) => {
-        // Keep the confirmation open so the user can retry a failed deletion.
-        if (mode === "all") toast.error(`清空失败：${(e as Error).message}`);
-      })
-      .finally(() => setDeleting(false));
-  };
-
-  // Lazy-load the raw request/response for the selected exchange.
-  React.useEffect(() => {
-    if (!selected) {
-      setDetail(null);
+  const handleImport = async (dir = "") => {
+    if (!selectedTaskId) {
+      toast.error("请先选择一个目标任务");
       return;
     }
-    let alive = true;
-    setDetailLoading(true);
-    setDetail(null);
-    api
-      .trafficExchange(selected.id)
-      .then((d) => {
-        if (alive) setDetail(d);
-      })
-      .catch(() => {
-        if (alive) setDetail({ req: "（无法加载报文）", resp: "" });
-      })
-      .finally(() => {
-        if (alive) setDetailLoading(false);
-      });
-    return () => {
-      alive = false;
-    };
-  }, [selected]);
+    setImporting(true);
+    try {
+      const res = await riddleApi.importTraffic(selectedTaskId, dir);
+      toast.success(`导入完成：扫描 ${res.scanned_rows} 条，新增入库 ${res.imported} 条`);
+      setImportOpen(false);
+      await loadTraffic();
+    } catch (err) {
+      toast.error(`导入失败：${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setImporting(false);
+    }
+  };
 
-  // Toggle direction when re-clicking the active column, else sort the new column
-  // newest/largest-first.
-  const toggleSort = (field: SortField) =>
-    setSort((prev) =>
-      prev.field === field
-        ? { field, direction: prev.direction === "asc" ? "desc" : "asc" }
-        : { field, direction: "desc" },
-    );
-
-  const exchanges = React.useMemo(() => traffic?.exchanges ?? [], [traffic]);
-  const total = traffic?.total ?? exchanges.length;
-  const pageCount = Math.max(1, Math.ceil(total / size));
-  const rangeStart = total === 0 ? 0 : page * size + 1;
-  const rangeEnd = page * size + exchanges.length;
+  const handleBind = async () => {
+    if (!activeRow || !bindFindingId) {
+      toast.error("请选择要绑定的漏洞记录");
+      return;
+    }
+    setBinding(true);
+    try {
+      await riddleApi.bindFusionTraffic(bindFindingId, [activeRow.id], bindRole);
+      toast.success("已成功绑定至漏洞证据链，导出公文报告时将自动收录");
+      await loadTraffic();
+      setActiveRow((prev) => (prev ? { ...prev, finding_id: bindFindingId, role: bindRole } : null));
+    } catch (err) {
+      toast.error(`绑定失败：${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setBinding(false);
+    }
+  };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="min-w-0">
-          <h1 className="font-semibold text-xl tracking-tight">流量</h1>
-          <p className="text-muted-foreground text-sm">全局录制代理 · 所有 HTTP 往来</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-          <span
-            className={cn(
-              "inline-flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-0.5 font-medium text-xs",
-              traffic?.enabled
-                ? "border-emerald-500/20 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
-                : "border-transparent bg-muted text-muted-foreground",
-            )}
-          >
-            <RadioTowerIcon className="size-3.5" />
-            {traffic?.enabled ? "录制中" : "已停用"}
-          </span>
-          {traffic?.proxy && <span className="font-mono text-muted-foreground text-xs">{traffic.proxy}</span>}
-          <span className="text-muted-foreground text-xs">
-            共 <span className="tabular-nums">{traffic?.count ?? 0}</span> 条
-          </span>
-        </div>
-      </div>
-
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-2">
-        <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
-          <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" className="h-8">
-              <ListChecksIcon className="size-3.5" />
-              {selectedHosts.length > 0 ? `选择目标（${selectedHosts.length}）` : "选择目标…"}
+    <div className="flex flex-1 flex-col gap-5">
+      <PageHeader
+        title="实证流量库"
+        description="按任务归集 executor 留痕的 HTTP 原始流量，支持 baseline / proof / verification / supporting 四类证据链绑定与公文报告引用。"
+        actions={
+          <>
+            <Badge variant={trafficEnabled ? "default" : "secondary"} className="h-8 px-2.5 text-xs">
+              <Activity className="mr-1.5 size-3.5" />
+              流量留痕：{trafficEnabled ? "已开启" : "未开启"}
+            </Badge>
+            <Button variant="outline" size="sm" onClick={() => void openImportModal()}>
+              <FolderSearch className="mr-1.5 size-3.5" /> 导入工作区 JSONL
             </Button>
-          </PopoverTrigger>
-          <PopoverContent
-            className="w-[calc(100vw-2rem)] p-0 data-closed:animate-none data-open:animate-none sm:w-80"
-            align="start"
-            collisionPadding={16}
-          >
-            <div className="flex items-center justify-between border-b px-3 py-2">
-              <span className="font-medium text-muted-foreground text-xs">按目标批量删除</span>
-              <div className="flex items-center gap-1">
-                {hosts.length > 0 && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        onClick={() => setHostCountSortDirection((current) => (current === "desc" ? "asc" : "desc"))}
-                        aria-label={
-                          hostCountSortDirection === "desc"
-                            ? "数据包数量当前倒序，点击切换为正序"
-                            : "数据包数量当前正序，点击切换为倒序"
-                        }
-                      >
-                        {hostCountSortDirection === "desc" ? <ArrowDownWideNarrowIcon /> : <ArrowUpNarrowWideIcon />}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>按数据包数量{hostCountSortDirection === "desc" ? "倒序" : "正序"}</TooltipContent>
-                  </Tooltip>
-                )}
-                {hosts.length > 0 && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-2 text-xs"
-                    onClick={() => setSelectedHosts(allSelected ? [] : hosts.map((h) => h.host))}
-                  >
-                    {allSelected ? "取消全选" : "全选"}
-                  </Button>
-                )}
-              </div>
-            </div>
-            <div className="max-h-64 overflow-y-auto">
-              {hosts.length === 0 ? (
-                <div className="px-3 py-6 text-center text-muted-foreground text-xs">暂无流量记录</div>
-              ) : (
-                sortedHosts.map((h, index) => (
-                  <label
-                    key={h.host}
-                    htmlFor={`traffic-host-${index}`}
-                    className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent"
-                  >
-                    <Checkbox
-                      id={`traffic-host-${index}`}
-                      checked={selectedHosts.includes(h.host)}
-                      onCheckedChange={() =>
-                        setSelectedHosts((prev) =>
-                          prev.includes(h.host) ? prev.filter((x) => x !== h.host) : [...prev, h.host],
-                        )
-                      }
-                    />
-                    <span className="truncate font-mono">{h.host}</span>
-                    <span className="ml-auto shrink-0 text-muted-foreground tabular-nums">{h.count}</span>
-                  </label>
-                ))
-              )}
-            </div>
-            <div className="border-t p-2">
-              <Button
-                variant="destructive"
-                size="sm"
-                className="w-full"
-                disabled={selectedHosts.length === 0}
-                onClick={() => {
-                  setDeleteMode("selected");
-                  setPickerOpen(false);
-                }}
-              >
-                删除选中（{selectedHosts.length}）
-              </Button>
-            </div>
-          </PopoverContent>
-        </Popover>
-        <div className="relative w-full sm:w-48">
-          <Input placeholder="host…" value={host} onChange={(e) => setHost(e.target.value)} className="h-8" />
-        </div>
-        <Button
-          variant="destructive"
-          size="sm"
-          className="h-8"
-          disabled={!hostQ || deleting}
-          title={hostQ ? undefined : "先在左侧选择目标或输入 host"}
-          onClick={() => setDeleteMode("filter")}
-        >
-          <Trash2Icon className="size-3.5" />
-          删除该目标
-        </Button>
-        {/* Outline rather than a second destructive button: this one ignores every
-            filter, so it must not look one mis-click away from "删除该目标". */}
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
-          disabled={!traffic?.count || deleting}
-          title={traffic?.count ? "删除全部流量并压实存储" : "当前没有流量记录"}
-          onClick={() => setDeleteMode("all")}
-        >
-          <EraserIcon className="size-3.5" />
-          清空全部
-        </Button>
-        <div className="relative w-full sm:max-w-sm sm:flex-1">
-          <SearchIcon className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="搜索全部（URL / 方法 / 类型 / 状态码…）"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="h-8 pl-8"
-          />
-        </div>
-        <Select value={method} onValueChange={setMethod}>
-          <SelectTrigger size="sm" className="w-full sm:w-32">
-            <SelectValue placeholder="方法" />
+            <Button variant="outline" size="sm" onClick={() => void loadTraffic()}>
+              <RefreshCw className="mr-1.5 size-3.5" /> 刷新
+            </Button>
+          </>
+        }
+      />
+
+      {/* Filter Bar */}
+      <div className="flex flex-wrap items-center gap-3">
+        <Select value={selectedTaskId} onValueChange={setSelectedTaskId}>
+          <SelectTrigger className="w-[230px]">
+            <SelectValue placeholder="选择任务" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">全部方法</SelectItem>
-            {METHODS.map((m) => (
-              <SelectItem key={m} value={m}>
-                {m}
+            {tasks.map((t) => (
+              <SelectItem key={t.id} value={t.id}>
+                {t.name}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
-        <Select value={String(size)} onValueChange={(v) => setSize(Number(v))}>
-          <SelectTrigger size="sm" className="w-full sm:w-28">
+        <Select value={roleFilter} onValueChange={setRoleFilter}>
+          <SelectTrigger className="w-[170px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {PAGE_SIZES.map((n) => (
-              <SelectItem key={n} value={String(n)}>
-                {n} / 页
-              </SelectItem>
-            ))}
+            <SelectItem value="all">全部证据角色</SelectItem>
+            <SelectItem value="proof">实证 (proof)</SelectItem>
+            <SelectItem value="verification">复验 (verification)</SelectItem>
+            <SelectItem value="baseline">基线 (baseline)</SelectItem>
+            <SelectItem value="supporting">佐证 (supporting)</SelectItem>
           </SelectContent>
         </Select>
-
-        <div className="ml-auto flex items-center gap-2 text-muted-foreground text-xs">
-          <span className="tabular-nums">
-            {rangeStart}–{rangeEnd} / {total}
-          </span>
-          <Button
-            variant="outline"
-            size="icon"
-            className="size-8"
-            disabled={page <= 0}
-            onClick={() => setPage((p) => Math.max(0, p - 1))}
-          >
-            <ChevronLeftIcon />
-          </Button>
-          <span className="tabular-nums">
-            {page + 1} / {pageCount}
-          </span>
-          <Button
-            variant="outline"
-            size="icon"
-            className="size-8"
-            disabled={page + 1 >= pageCount}
-            onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
-          >
-            <ChevronRightIcon />
-          </Button>
-        </div>
-      </div>
-
-      {/* Advanced filters (issue #177): narrow 660k+ exchanges down to the one packet. */}
-      <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 px-2 py-1.5">
-        <span className="pl-1 font-medium text-muted-foreground text-xs">高级筛选</span>
-        <div className="relative w-full sm:w-56">
-          <Input
-            placeholder="响应内容（正文关键词，≥3字）"
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            className="h-8"
-          />
-        </div>
-        <div className="relative w-full sm:w-52">
-          <Input
-            placeholder="路径（如 /api/user/…）"
-            value={path}
-            onChange={(e) => setPath(e.target.value)}
-            className="h-8"
-          />
-        </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger size="sm" className="w-28">
-            <SelectValue placeholder="状态码" />
+        <Select value={methodFilter} onValueChange={setMethodFilter}>
+          <SelectTrigger className="w-[130px]">
+            <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">全部状态码</SelectItem>
-            {STATUS_BUCKETS.map((s) => (
-              <SelectItem key={s} value={s}>
-                {s}
-              </SelectItem>
-            ))}
+            <SelectItem value="all">全部方法</SelectItem>
+            <SelectItem value="GET">GET</SelectItem>
+            <SelectItem value="POST">POST</SelectItem>
+            <SelectItem value="PUT">PUT</SelectItem>
+            <SelectItem value="DELETE">DELETE</SelectItem>
           </SelectContent>
         </Select>
-        <div className="flex w-full flex-wrap items-center gap-1 text-muted-foreground text-xs sm:w-auto">
-          <span>响应长度</span>
+        <div className="relative min-w-[200px] flex-1 max-w-md">
+          <Search className="pointer-events-none absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
           <Input
-            type="number"
-            min={0}
-            placeholder="最小(B)"
-            value={respMin}
-            onChange={(e) => setRespMin(e.target.value)}
-            className="h-8 w-24 max-sm:min-w-0 max-sm:flex-1"
-          />
-          <span>–</span>
-          <Input
-            type="number"
-            min={0}
-            placeholder="最大(B)"
-            value={respMax}
-            onChange={(e) => setRespMax(e.target.value)}
-            className="h-8 w-24"
+            placeholder="搜索 URL、请求头或 SHA256…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-8"
           />
         </div>
-        {hasAdvancedFilter ? (
-          <Button variant="ghost" size="sm" className="h-8" onClick={resetAdvancedFilters}>
-            <FilterXIcon className="size-3.5" />
-            清除筛选
-          </Button>
-        ) : null}
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-muted-foreground text-sm">已选 {selectedFlows.size} 条流量</span>
-        <Button variant="outline" size="sm" disabled={selectedFlows.size === 0} onClick={() => setLinking(true)}>
-          关联到漏洞
-        </Button>
-        {selectedFlows.size > 0 ? (
-          <Button variant="ghost" size="sm" onClick={() => setSelectedFlows(new Set())}>
-            清空选择
-          </Button>
-        ) : null}
-      </div>
-      {/* History table */}
-      <div className="flex h-[calc(100vh-15rem)] min-h-0 flex-col">
-        <Card className="flex min-h-0 flex-1 flex-col overflow-hidden py-0">
-          <div className="min-h-0 flex-1 overflow-auto">
-            <Table>
-              <TableHeader className="sticky top-0 z-10 bg-card">
+      {/* Traffic Table */}
+      <Card>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[80px]">方法</TableHead>
+                <TableHead className="w-[80px]">状态码</TableHead>
+                <TableHead>请求 URL</TableHead>
+                <TableHead className="w-[150px]">证据角色</TableHead>
+                <TableHead className="w-[140px]">绑定状态</TableHead>
+                <TableHead className="w-[130px]">摘要</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
                 <TableRow>
-                  <TableHead className="w-10">
-                    <Checkbox
-                      aria-label="选择本页流量"
-                      checked={exchanges.length > 0 && exchanges.every((e) => selectedFlows.has(e.id))}
-                      onCheckedChange={(checked) =>
-                        setSelectedFlows((previous) => {
-                          const next = new Set(previous);
-                          for (const e of exchanges) {
-                            if (checked === true) next.add(e.id);
-                            else next.delete(e.id);
-                          }
-                          return next;
-                        })
-                      }
-                    />
-                  </TableHead>
-                  <SortableHead
-                    field="ts"
-                    label="时间"
-                    activeField={sort.field}
-                    direction={sort.direction}
-                    onSort={toggleSort}
-                    className="hidden w-36 md:table-cell"
-                  />
-                  <TableHead className="hidden w-44 md:table-cell">host</TableHead>
-                  <TableHead className="w-20">方法</TableHead>
-                  <TableHead>URL</TableHead>
-                  <SortableHead
-                    field="status"
-                    label="状态码"
-                    activeField={sort.field}
-                    direction={sort.direction}
-                    onSort={toggleSort}
-                    className="w-20"
-                  />
-                  <TableHead className="hidden w-36 md:table-cell">content-type</TableHead>
-                  <SortableHead
-                    field="resp_len"
-                    label="响应长度"
-                    activeField={sort.field}
-                    direction={sort.direction}
-                    onSort={toggleSort}
-                    align="right"
-                    className="hidden w-24 text-right md:table-cell"
-                  />
+                  <TableCell colSpan={6} className="h-24 text-center text-sm text-muted-foreground">
+                    正在加载任务实证流量…
+                  </TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {exchanges.map((e) => (
-                  <TableRow
-                    key={e.id}
-                    className={cn("cursor-pointer", selected?.id === e.id && "bg-accent hover:bg-accent")}
-                    onClick={() => setSelected(e)}
-                  >
-                    <TableCell>
-                      <Checkbox
-                        aria-label={`选择流量 ${e.id}`}
-                        checked={selectedFlows.has(e.id)}
-                        onClick={(event) => event.stopPropagation()}
-                        onCheckedChange={(checked) =>
-                          setSelectedFlows((previous) => {
-                            const next = new Set(previous);
-                            if (checked === true) next.add(e.id);
-                            else next.delete(e.id);
-                            return next;
-                          })
-                        }
-                      />
-                    </TableCell>
-                    <TableCell className="hidden text-muted-foreground text-xs tabular-nums md:table-cell">{fmtTime(e.ts)}</TableCell>
-                    <TableCell className="hidden font-mono text-xs md:table-cell">{e.host}</TableCell>
-                    <TableCell>
-                      <MethodBadge method={e.method} />
-                    </TableCell>
-                    <TableCell className="max-w-0">
-                      <span className="line-clamp-2 break-all font-mono text-xs md:line-clamp-1 md:truncate">{e.url}</span>
-                      <span className="mt-0.5 block text-muted-foreground text-[10px] md:hidden">{e.content_type || "—"} · {fmtBytes(e.resp_len)}</span>
-                    </TableCell>
-                    <TableCell>
-                      <span className={cn("font-mono font-semibold text-xs tabular-nums", statusTone(e.status))}>
-                        {e.status}
-                      </span>
-                    </TableCell>
-                    <TableCell className="hidden text-muted-foreground text-xs md:table-cell">{e.content_type}</TableCell>
-                    <TableCell className="hidden text-right text-xs tabular-nums md:table-cell">{fmtBytes(e.resp_len)}</TableCell>
-                  </TableRow>
-                ))}
-                {exchanges.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={8} className="py-12 text-center text-muted-foreground text-sm">
-                      {traffic === null ? "加载中…" : "没有匹配的流量。"}
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </Card>
-      </div>
+              ) : filtered.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="h-28 text-center text-sm text-muted-foreground">
+                    当前任务暂无入库流量。可在「融合护栏与审批」开启流量留痕后，点击右上角「导入工作区 JSONL」。
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filtered.map((row) => {
+                  const meta = ROLE_META[row.role] ?? { label: row.role || "supporting", variant: "secondary" as const };
+                  return (
+                    <TableRow
+                      key={row.id}
+                      className="cursor-pointer hover:bg-muted/40"
+                      onClick={() => {
+                        setActiveRow(row);
+                        setBindFindingId(row.finding_id || "");
+                        setBindRole(row.role || "proof");
+                      }}
+                    >
+                      <TableCell>
+                        <Badge variant="outline" className="font-mono text-xs">
+                          {row.method}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className={`font-mono text-xs tabular-nums ${statusTone(row.status_code)}`}>
+                        {row.status_code || "-"}
+                      </TableCell>
+                      <TableCell className="max-w-[360px] truncate font-mono text-xs">{row.url}</TableCell>
+                      <TableCell>
+                        <Badge variant={meta.variant} className="text-[11px]">
+                          {meta.label}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        {row.finding_id ? (
+                          <Badge variant="default" className="text-[11px]">
+                            <Link2 className="mr-1 size-3" /> 已绑定漏洞
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground">未绑定</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="font-mono text-[11px] text-muted-foreground">
+                        {(row.body_sha256 || "").slice(0, 12) || "-"}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
 
-      {linking ? (
-        <LinkTrafficDialog
-          trafficIds={[...selectedFlows]}
-          onClose={() => setLinking(false)}
-          onBound={() => setSelectedFlows(new Set())}
-        />
-      ) : null}
-      <Sheet open={selected !== null} onOpenChange={(open) => !open && setSelected(null)}>
-        <SheetContent className="w-full! max-w-none! gap-0 p-0 sm:w-[48rem]! sm:max-w-[48rem]!">
-          {selected && (
-            <>
-              <SheetHeader className="border-b px-5 py-4">
-                <div className="flex items-center gap-2 pr-8">
-                  <MethodBadge method={selected.method} />
-                  <Badge variant="secondary" className={cn("font-mono tabular-nums", statusTone(selected.status))}>
-                    {selected.status}
-                  </Badge>
-                  <span className="ml-auto text-muted-foreground text-xs tabular-nums">{fmtTime(selected.ts)}</span>
+      {/* Import Dialog */}
+      <Dialog open={importOpen} onOpenChange={setImportOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>从工作区导入实证流量 JSONL</DialogTitle>
+            <DialogDescription>
+              自动发现 executor 落盘的 <span className="font-mono">fusion_traffic.jsonl</span> 并按 SHA256 幂等去重入库。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {discoveredDirs.length > 0 ? (
+              <div className="space-y-1.5">
+                <Label className="text-xs">已发现的工作区目录（点击单项导入）</Label>
+                <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                  {discoveredDirs.map((dir) => (
+                    <div key={dir} className="flex items-center justify-between gap-2 rounded border px-2.5 py-1.5 text-xs">
+                      <span className="truncate font-mono">{dir}</span>
+                      <Button size="sm" variant="outline" disabled={importing} onClick={() => void handleImport(dir)}>
+                        导入
+                      </Button>
+                    </div>
+                  ))}
                 </div>
-                <SheetTitle className="break-all font-mono">{selected.host}</SheetTitle>
-                <SheetDescription className="break-all font-mono">{selected.url}</SheetDescription>
-              </SheetHeader>
-              <Tabs defaultValue="request" className="min-h-0 flex-1 gap-0">
-                <TabsList className="mx-5 mt-4 grid w-auto grid-cols-2">
-                  <TabsTrigger value="request">请求 Request</TabsTrigger>
-                  <TabsTrigger value="response">响应 Response</TabsTrigger>
-                </TabsList>
-                <TabsContent value="request" className="min-h-0 overflow-auto">
-                  {detailLoading ? (
-                    <div className="flex items-center gap-2 p-5 text-muted-foreground text-xs">
-                      <Loader2Icon className="size-3.5 animate-spin" />
-                      加载报文…
-                    </div>
-                  ) : (
-                    <HttpCodeBlock raw={requestWithHost(detail?.req ?? "", selected)} />
-                  )}
-                </TabsContent>
-                <TabsContent value="response" className="min-h-0 overflow-auto">
-                  {detailLoading ? (
-                    <div className="flex items-center gap-2 p-5 text-muted-foreground text-xs">
-                      <Loader2Icon className="size-3.5 animate-spin" />
-                      加载报文…
-                    </div>
-                  ) : (
-                    <HttpCodeBlock raw={detail?.resp ?? ""} />
-                  )}
-                </TabsContent>
-              </Tabs>
-            </>
-          )}
+              </div>
+            ) : (
+              <div className="rounded-lg border border-dashed p-4 text-center text-xs text-muted-foreground">
+                当前工作区暂未扫描到 <span className="font-mono">fusion_traffic.jsonl</span> 文件，也可手动指定路径。
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <Label className="text-xs">自定义目录路径（留空则全量扫描）</Label>
+              <Input
+                className="font-mono text-xs"
+                placeholder="例如：work/target_xxx"
+                value={customDir}
+                onChange={(e) => setCustomDir(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setImportOpen(false)}>
+              取消
+            </Button>
+            <Button disabled={importing} onClick={() => void handleImport(customDir.trim())}>
+              {importing ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : <Upload className="mr-1.5 size-4" />}
+              {customDir.trim() ? "导入指定目录" : "一键全量扫描导入"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* HTTP Inspector & Finding Binding Sheet */}
+      <Sheet open={Boolean(activeRow)} onOpenChange={(o) => !o && setActiveRow(null)}>
+        <SheetContent className="w-full overflow-y-auto sm:max-w-2xl">
+          <SheetHeader>
+            <SheetTitle className="font-mono text-sm">
+              {activeRow?.method} {activeRow?.status_code}
+            </SheetTitle>
+            <SheetDescription className="break-all font-mono text-xs">{activeRow?.url}</SheetDescription>
+          </SheetHeader>
+          {activeRow ? (
+            <div className="mt-5 space-y-4">
+              <div className="space-y-2 rounded-lg border p-3">
+                <Label className="text-xs font-medium">绑定到漏洞证据链</Label>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  <Select value={bindFindingId} onValueChange={setBindFindingId}>
+                    <SelectTrigger className="sm:col-span-2">
+                      <SelectValue placeholder="选择本任务漏洞…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {taskFindings.map((f) => (
+                        <SelectItem key={f.id} value={f.id}>
+                          {f.title}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={bindRole} onValueChange={setBindRole}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="proof">实证 (proof)</SelectItem>
+                      <SelectItem value="verification">复验 (verification)</SelectItem>
+                      <SelectItem value="baseline">基线 (baseline)</SelectItem>
+                      <SelectItem value="supporting">佐证 (supporting)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button size="sm" disabled={binding || !bindFindingId} onClick={() => void handleBind()}>
+                  <Link2 className="mr-1.5 size-3.5" /> 确认绑定证据
+                </Button>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">请求报文头 (request_head)</Label>
+                <pre className="max-h-56 overflow-auto rounded-lg border bg-muted/35 p-3 font-mono text-xs whitespace-pre-wrap">
+                  {activeRow.request_head || "(空)"}
+                </pre>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">响应报文头 (response_head)</Label>
+                <pre className="max-h-56 overflow-auto rounded-lg border bg-muted/35 p-3 font-mono text-xs whitespace-pre-wrap">
+                  {activeRow.response_head || "(空)"}
+                </pre>
+              </div>
+            </div>
+          ) : null}
         </SheetContent>
       </Sheet>
-
-      <AlertDialog
-        open={deleteMode !== null}
-        onOpenChange={(o) => {
-          if (!o) setDeleteMode(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{deleteTitle}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {deleteMode === "all" && (
-                <>
-                  将永久删除全部 <span className="font-semibold tabular-nums">{traffic?.count ?? 0}</span>{" "}
-                  条流量记录（含请求/响应原文），忽略当前的筛选条件，此操作不可撤销。已绑定到漏洞的流量证据保存在独立的证据库中，不受影响。
-                  <br />
-                  <span className="text-muted-foreground">
-                    清空后会顺带压实存储，把索引占用的磁盘空间还给系统；这期间流量录制会短暂暂停。
-                  </span>
-                </>
-              )}
-              {deleteMode === "selected" && (
-                <>
-                  将永久删除 <span className="font-semibold tabular-nums">{selectedHosts.length}</span> 个目标（
-                  <span className="font-mono">
-                    {selectedHosts.slice(0, 3).join("、")}
-                    {selectedHosts.length > 3 ? "…" : ""}
-                  </span>
-                  ）的所有流量记录（含请求/响应原文），此操作不可撤销。
-                </>
-              )}
-              {deleteMode === "filter" && (
-                <>
-                  将永久删除 host 包含 <span className="font-mono font-semibold">{hostQ}</span>{" "}
-                  的所有流量记录（含请求/响应原文），此操作不可撤销。
-                </>
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => {
-                e.preventDefault();
-                confirmDelete();
-              }}
-              disabled={deleting}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {deleting ? `${deleteVerb}中…` : `确认${deleteVerb}`}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

@@ -1,283 +1,219 @@
 "use client";
 
 import * as React from "react";
-import { toast } from "sonner";
-import { Bot, PlusIcon, Trash2Icon } from "lucide-react";
+import Link from "next/link";
+import {
+  ArrowRight,
+  Bot,
+  Brain,
+  CheckCircle2,
+  Flame,
+  RefreshCw,
+  Scale,
+  ShieldCheck,
+  Sparkles,
+  Zap,
+} from "lucide-react";
 
+import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { AgentEditor } from "@/components/agent-editor";
-import { api } from "@/lib/api";
-import type { Agent } from "@/lib/types";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { riddleApi, type FusionStatusResponse, type RiddleTask } from "@/lib/riddle-api";
 
-// AgentGridCard is one clickable tile opening the agent's editor drawer. Custom
-// (non-builtin) agents get a delete button.
-function AgentGridCard({
-  agent,
-  onOpen,
-  onDeleted,
-}: {
-  agent: Agent;
-  onOpen: () => void;
-  onDeleted: () => void;
-}) {
-  async function del() {
+const AGENTS_PIPELINE = [
+  {
+    id: "planner",
+    roleKey: "planner",
+    name: "Planner · 战略规划与任务编排",
+    stage: "01 规划层",
+    icon: Brain,
+    desc: "拆解 SRC 规则与目标资产范围，按优先级编排探测队列并动态调节 Worker 并发节流。",
+    capabilities: ["目标预筛打分", "融合目标闸门 (GoalGate)", "智能并发节流"],
+    configHref: "/system/llm",
+    configLabel: "配置 Planner 模型",
+  },
+  {
+    id: "worker",
+    roleKey: "worker",
+    name: "Worker · 自主渗透与漏洞验证",
+    stage: "02 执行层",
+    icon: Bot,
+    desc: "多 Worker 并发自主调用 HTTP / Shell / 浏览器 / 测绘工具，按技能速查卡与全局情报完成漏洞挖掘与证据留痕。",
+    capabilities: ["技能速查卡注入", "跨任务情报自动命中", "实证流量 JSONL 留痕"],
+    configHref: "/system/skills",
+    configLabel: "管理技能与知识库",
+  },
+  {
+    id: "reviewer",
+    roleKey: "reviewer",
+    name: "Reviewer · AI 初审与复现核验",
+    stage: "03 审校层",
+    icon: ShieldCheck,
+    desc: "独立复现 Worker 提交的漏洞 PoC，结合 L1–L4 机械凭据门禁判定通过、降级或附带定向指令打回深挖。",
+    capabilities: ["PoC 独立重放复现", "L1–L4 证据硬闸门", "自动打回深挖指令"],
+    configHref: "/function/findings",
+    configLabel: "前往复审队列",
+  },
+  {
+    id: "escalate",
+    roleKey: "worker",
+    name: "Escalate · 危害扩大与深度利用",
+    stage: "04 深挖层",
+    icon: Flame,
+    desc: "针对低危/中危线索或人工定向深挖指令，自动串联凭据泄露、越权链与后台入口尝试证明更高业务危害。",
+    capabilities: ["定向深挖回炉", "利用链延伸证明", "新旧结果自动取代"],
+    configHref: "/function/tasks",
+    configLabel: "查看挖掘任务",
+  },
+  {
+    id: "killsweep",
+    roleKey: "worker",
+    name: "Killsweep Hunter · 指纹通杀扩面",
+    stage: "05 扩面层",
+    icon: Zap,
+    desc: "人工复审通过漏洞后自动提取产品指纹与测绘语句，全网检索同款受影响资产并批量验证衍生漏洞。",
+    capabilities: ["指纹与测绘语句提炼", "同款资产批量验证", "防递归通杀熔断"],
+    configHref: "/function/assets",
+    configLabel: "进入通杀候选",
+  },
+  {
+    id: "judge",
+    roleKey: "judge",
+    name: "Judge · 安全护栏与拦截判官",
+    stage: "06 护栏层",
+    icon: Scale,
+    desc: "窄视野独立裁决触发高危模式的执行命令（deny / judge / ask），并与八大类任务级硬拦截协同守住合规红线。",
+    capabilities: ["三层命令拦截裁决", "八大类硬拦截协同", "人工审批闭环"],
+    configHref: "/system/intercept",
+    configLabel: "进入护栏与审批",
+  },
+];
+
+export default function AgentsCollaborationPage() {
+  const [fusion, setFusion] = React.useState<FusionStatusResponse | null>(null);
+  const [tasks, setTasks] = React.useState<RiddleTask[]>([]);
+  const [primaryModel, setPrimaryModel] = React.useState("");
+  const [loading, setLoading] = React.useState(true);
+
+  const loadAll = React.useCallback(async () => {
+    setLoading(true);
     try {
-      await api.deleteAgent(agent.key);
-      toast.success(`已删除 Agent「${agent.name}」`);
-      onDeleted();
-    } catch (e) {
-      toast.error(`删除失败：${(e as Error).message}`);
-    }
-  }
-  return (
-    <div className="group relative flex flex-col gap-2 rounded-lg border p-4 transition-colors hover:border-primary/50">
-      <button type="button" onClick={onOpen} className="flex flex-col gap-2 text-left">
-        <div className="flex flex-wrap items-center gap-2">
-          <Bot className="size-4 text-muted-foreground" />
-          <span className="font-medium text-sm">{agent.name}</span>
-          <span className="font-mono text-muted-foreground text-xs">{agent.key}</span>
-          {agent.builtin ? (
-            <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
-              内置
-            </Badge>
-          ) : (
-            <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
-              自定义
-            </Badge>
-          )}
-          {!agent.enabled && (
-            <Badge variant="outline" className="px-1.5 py-0 text-[10px] text-destructive">
-              已停用
-            </Badge>
-          )}
-        </div>
-        <p className="line-clamp-2 min-h-8 text-muted-foreground text-xs">
-          {agent.description || "（无描述）"}
-        </p>
-        <div className="flex flex-wrap gap-1.5 text-[10px] text-muted-foreground">
-          <span className="rounded border px-1.5 py-0.5">MCP {agent.mcp_count ?? 0}</span>
-          <span className="rounded border px-1.5 py-0.5">Skill {agent.skill_count ?? 0}</span>
-          <span className="rounded border px-1.5 py-0.5">工具 {agent.tool_count ?? 0}</span>
-        </div>
-      </button>
-      {!agent.builtin && (
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="absolute top-2 right-2 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
-            >
-              <Trash2Icon className="size-3.5" />
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>删除 Agent「{agent.name}」？</AlertDialogTitle>
-              <AlertDialogDescription>
-                将一并删除它的提示词、变量、可见性与工具绑定。此操作不可撤销。
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>取消</AlertDialogCancel>
-              <AlertDialogAction onClick={del}>删除</AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      )}
-    </div>
-  );
-}
-
-function CreateAgentDialog({ onCreated }: { onCreated: (key: string) => void }) {
-  const [open, setOpen] = React.useState(false);
-  const [key, setKey] = React.useState("");
-  const [name, setName] = React.useState("");
-  const [description, setDescription] = React.useState("");
-  const [busy, setBusy] = React.useState(false);
-
-  async function create() {
-    setBusy(true);
-    try {
-      const a = await api.createAgent(key.trim(), name.trim(), description.trim());
-      toast.success(`已创建 Agent「${a.name}」`);
-      setOpen(false);
-      setKey("");
-      setName("");
-      setDescription("");
-      onCreated(a.key);
-    } catch (e) {
-      toast.error(`创建失败：${(e as Error).message}`);
+      const [fRes, tRes, sRes] = await Promise.allSettled([
+        riddleApi.getFusionStatus(),
+        riddleApi.listTasks(),
+        riddleApi.getSettings(),
+      ]);
+      if (fRes.status === "fulfilled") setFusion(fRes.value);
+      if (tRes.status === "fulfilled") setTasks(tRes.value);
+      if (sRes.status === "fulfilled") setPrimaryModel(sRes.value.llm.model || "");
     } finally {
-      setBusy(false);
+      setLoading(false);
     }
-  }
-
-  const keyOk = /^[a-z][a-z0-9_]*$/.test(key.trim());
-  const canCreate = keyOk && name.trim().length > 0 && !busy;
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button size="sm">
-          <PlusIcon /> 新建 Agent
-        </Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>新建自定义 Agent</DialogTitle>
-          <DialogDescription>
-            创建一个会话型助手。key 用于内部标识，创建后不可更改；名称与描述用于识别。
-          </DialogDescription>
-        </DialogHeader>
-        <div className="grid gap-4 py-2">
-          <div className="grid gap-1.5">
-            <Label htmlFor="agent-key">Key</Label>
-            <Input
-              id="agent-key"
-              placeholder="如 research_helper"
-              value={key}
-              onChange={(e) => setKey(e.target.value)}
-              className="font-mono"
-            />
-            {key.length > 0 && !keyOk && (
-              <span className="text-destructive text-xs">小写字母开头，仅含小写字母/数字/下划线</span>
-            )}
-          </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor="agent-name">名称</Label>
-            <Input
-              id="agent-name"
-              placeholder="如 研究助手"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor="agent-desc">描述</Label>
-            <Textarea
-              id="agent-desc"
-              placeholder="一句话说明这个 Agent 是干什么的"
-              rows={2}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button onClick={create} disabled={!canCreate}>
-            创建
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-export default function AgentsPage() {
-  const [agents, setAgents] = React.useState<Agent[]>([]);
-  const [editKey, setEditKey] = React.useState<string | null>(null);
-
-  const reload = React.useCallback(() => {
-    api.agents().then(setAgents).catch(() => setAgents([]));
   }, []);
-  React.useEffect(() => {
-    reload();
-  }, [reload]);
 
-  const editing = agents.find((a) => a.key === editKey) ?? null;
+  React.useEffect(() => {
+    void loadAll();
+  }, [loadAll]);
+
+  const runningTasks = tasks.filter((t) => t.status === "running");
+  const totalConcurrency = runningTasks.reduce((sum, t) => sum + Number(t.concurrency || 0), 0);
+  const routingMap = (fusion?.role_routing as Record<string, { model?: string; source?: string }> | undefined) ?? {};
 
   return (
-    <div className="flex flex-1 flex-col gap-4 md:gap-6">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="font-semibold text-xl tracking-tight">Agent</h1>
-          <p className="text-muted-foreground text-sm">
-            内置 Agent 的提示词/配置，以及自定义会话 Agent 的创建与管理
-          </p>
-        </div>
-        <CreateAgentDialog
-          onCreated={(key) => {
-            reload();
-            setEditKey(key);
-          }}
-        />
+    <div className="flex flex-1 flex-col gap-5">
+      <PageHeader
+        title="多 Agent 协同架构"
+        description="知蠹 Riddle 六大核心 Agent 协同闭环：规划 → 自主渗透 → AI 初审 → 危害扩大 → 指纹通杀 → 安全判官。"
+        actions={
+          <>
+            <Button variant="outline" size="sm" onClick={() => void loadAll()} disabled={loading}>
+              <RefreshCw className={`mr-1.5 size-3.5 ${loading ? "animate-spin" : ""}`} /> 刷新态势
+            </Button>
+            <Button size="sm" asChild>
+              <Link href="/system/llm">
+                <Sparkles className="mr-1.5 size-3.5" /> 调整角色模型路由
+              </Link>
+            </Button>
+          </>
+        }
+      />
+
+      {/* Runtime Summary Strip */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <Card>
+          <CardHeader className="pb-1">
+            <CardDescription className="text-xs">活跃协同任务</CardDescription>
+            <CardTitle className="text-2xl tabular-nums">{runningTasks.length}</CardTitle>
+          </CardHeader>
+          <CardContent className="text-xs text-muted-foreground">
+            总任务数 {tasks.length} · 在跑最大并发预算 {totalConcurrency} Worker
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-1">
+            <CardDescription className="text-xs">全局主力模型</CardDescription>
+            <CardTitle className="truncate font-mono text-base pt-1">{primaryModel || "未配置"}</CardTitle>
+          </CardHeader>
+          <CardContent className="text-xs text-muted-foreground">
+            角色分层路由：{fusion?.config?.role_routing_enabled ? "已开启" : "统一继承主力"}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-1">
+            <CardDescription className="text-xs">核心融合能力模块</CardDescription>
+            <CardTitle className="text-2xl tabular-nums">{fusion?.modules?.length ?? 10}</CardTitle>
+          </CardHeader>
+          <CardContent className="text-xs text-muted-foreground">
+            已配置目标闸门 {fusion?.goal_count ?? 0} 条 · CVE 情报 {fusion?.intel_feed_count ?? 0} 条
+          </CardContent>
+        </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Agent 清单</CardTitle>
-          <CardDescription>共 {agents.length} 个</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {agents.length === 0 ? (
-            <p className="py-6 text-center text-muted-foreground text-sm">（暂无 Agent）</p>
-          ) : (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {agents.map((a) => (
-                <AgentGridCard key={a.key} agent={a} onOpen={() => setEditKey(a.key)} onDeleted={reload} />
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Sheet open={!!editing} onOpenChange={(o) => !o && setEditKey(null)}>
-        <SheetContent
-          side="right"
-          className="flex w-full! max-w-none! flex-col gap-0 p-0 sm:w-[45vw]! sm:max-w-[45vw]!"
-        >
-          {editing && (
-            <>
-              <SheetHeader className="px-4">
-                <SheetTitle className="flex items-center gap-2">
-                  {editing.name}
-                  <span className="font-mono text-muted-foreground text-xs">{editing.key}</span>
-                  {!editing.builtin && (
-                    <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
-                      自定义
-                    </Badge>
-                  )}
-                </SheetTitle>
-                <SheetDescription>{editing.description || "提示词、配置、可见资源与工具绑定"}</SheetDescription>
-              </SheetHeader>
-              <AgentEditor agentKey={editing.key} onSaved={reload} />
-            </>
-          )}
-        </SheetContent>
-      </Sheet>
+      {/* 6-Agent Pipeline Cards */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {AGENTS_PIPELINE.map((ag) => {
+          const Icon = ag.icon;
+          const boundModel = routingMap[ag.roleKey]?.model || primaryModel || "继承全局主力模型";
+          return (
+            <Card key={ag.id} className="flex flex-col justify-between">
+              <CardHeader className="space-y-2 pb-3">
+                <div className="flex items-center justify-between gap-2">
+                  <Badge variant="outline" className="font-mono text-[11px]">
+                    {ag.stage}
+                  </Badge>
+                  <Badge variant="secondary" className="max-w-[160px] truncate font-mono text-[11px]">
+                    {boundModel}
+                  </Badge>
+                </div>
+                <div className="flex items-center gap-2.5 pt-1">
+                  <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <Icon className="size-4" />
+                  </div>
+                  <CardTitle className="text-sm leading-snug">{ag.name}</CardTitle>
+                </div>
+                <CardDescription className="text-xs leading-relaxed">{ag.desc}</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 pt-0">
+                <div className="space-y-1.5 rounded-lg border bg-muted/20 p-2.5">
+                  {ag.capabilities.map((cap) => (
+                    <div key={cap} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <CheckCircle2 className="size-3.5 shrink-0 text-emerald-500" />
+                      <span>{cap}</span>
+                    </div>
+                  ))}
+                </div>
+                <Button variant="ghost" size="sm" className="w-full justify-between text-xs" asChild>
+                  <Link href={ag.configHref}>
+                    <span>{ag.configLabel}</span>
+                    <ArrowRight className="size-3.5" />
+                  </Link>
+                </Button>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
     </div>
   );
 }

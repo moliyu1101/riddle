@@ -738,10 +738,86 @@ export const riddleApi = {
   downloadFindingExport: (findingId: string, format: "md" | "json" | "html" | "docx") =>
     downloadWithAuth(`/findings/${encodeURIComponent(findingId)}/export?format=${format}`, `${findingId}.${format}`),
 
-  // Settings, Workdir, Backup & Runtime Logs
+  // Knowledge Base
+  listKnowledge: (params: { category?: string; q?: string } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.category && params.category !== "all") qs.set("category", params.category);
+    if (params.q) qs.set("q", params.q);
+    return riddleFetch<Array<Record<string, unknown>>>(`/intel/knowledge?${qs.toString()}`);
+  },
+  getKnowledge: (id: string) => riddleFetch<Record<string, unknown>>(`/intel/knowledge/${encodeURIComponent(id)}`),
+  syncKnowledge: () => riddleFetch<Record<string, unknown>>("/intel/knowledge/sync", { method: "POST" }),
+  createKnowledge: (payload: { title: string; category?: string; keyword?: string; content: string; enabled?: boolean }) =>
+    riddleFetch<Record<string, unknown>>("/intel/knowledge", { method: "POST", body: JSON.stringify(payload) }),
+  updateKnowledge: (
+    id: string,
+    payload: { title?: string; category?: string; keyword?: string; content?: string; enabled?: boolean },
+  ) =>
+    riddleFetch<Record<string, unknown>>(`/intel/knowledge/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+
+  // Fusion Traffic Ledger
+  discoverTrafficDirs: () => riddleFetch<{ dirs: string[] }>("/fusion/traffic/discover"),
+  importTraffic: (task_id: string, work_dir = "") =>
+    riddleFetch<{ ok: boolean; scanned_dirs: string[]; scanned_rows: number; unique_rows: number; imported: number }>(
+      "/fusion/traffic/import",
+      { method: "POST", body: JSON.stringify({ task_id, work_dir }) },
+    ),
+  listFusionTraffic: (taskId: string, limit = 200) =>
+    riddleFetch<{
+      items: Array<{
+        id: string;
+        role: string;
+        method: string;
+        url: string;
+        status_code: number;
+        request_head: string;
+        response_head: string;
+        body_sha256: string;
+        finding_id: string;
+        created_at: string;
+      }>;
+      count: number;
+      grouped: Record<string, unknown[]>;
+    }>(`/fusion/traffic/${encodeURIComponent(taskId)}?limit=${limit}`),
+  bindFusionTraffic: (finding_id: string, traffic_ids: string[], role = "proof") =>
+    riddleFetch<{ ok: boolean; updated: number; role: string }>("/fusion/traffic/bind", {
+      method: "POST",
+      body: JSON.stringify({ finding_id, traffic_ids, role }),
+    }),
+
+  // Settings, LLM Studio, Workdir, Backup & Runtime Logs
   getSettings: () => riddleFetch<RiddleSettingsResponse>("/settings"),
   putSettings: (payload: Record<string, unknown>) =>
     riddleFetch<Record<string, unknown>>("/settings", { method: "PUT", body: JSON.stringify(payload) }),
+  getLlmPresets: () => riddleFetch<{ presets: Array<Record<string, unknown>> }>("/settings/llm-presets"),
+  probeLlmModels: (body: { base_url?: string; api_key?: string; protocol?: string; key_ref?: string; model?: string }) =>
+    riddleFetch<{ ok?: boolean; models?: string[]; error?: string }>("/settings/models", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  recommendTemperature: (model: string, role = "hunt") =>
+    riddleFetch<{ temperature?: number; reason?: string; range?: number[] }>("/settings/temperature-recommend", {
+      method: "POST",
+      body: JSON.stringify({ model, role }),
+    }),
+  testLlm: (body: {
+    base_url?: string;
+    api_key?: string;
+    key_ref?: string;
+    model?: string;
+    protocol?: string;
+    temperature?: number;
+    providers?: Array<Record<string, unknown>>;
+  }) =>
+    riddleFetch<Record<string, unknown>>("/settings/test-llm", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  getProviderHealth: () => riddleFetch<Record<string, unknown>>("/settings/provider-health"),
+  getHealthOverview: () => riddleFetch<Record<string, unknown>>("/settings/health-overview"),
   testEngine: (engine: string, key?: string, base_url?: string) =>
     riddleFetch<{ ok: boolean; engine: string; latency_ms?: number; size?: number; error?: string }>(
       "/settings/test-engine",

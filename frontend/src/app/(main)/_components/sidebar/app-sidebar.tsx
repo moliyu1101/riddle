@@ -43,7 +43,13 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             <SidebarMenuButton size="lg" asChild>
               <Link prefetch={false} href="/function/tasks">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/logo.png" alt="知蠹 Riddle" width={36} height={36} className="shrink-0 rounded-md" />
+                <img
+                  src="/logo.png"
+                  alt="知蠹 Riddle"
+                  width={36}
+                  height={36}
+                  className="shrink-0 rounded-full ring-1 ring-border/60 shadow-xs"
+                />
                 <div className="grid flex-1 text-left leading-tight">
                   <span className="truncate font-semibold text-base">{APP_CONFIG.name}</span>
                   <span className="truncate text-[11px] text-muted-foreground">AI 自主漏洞挖掘平台</span>
