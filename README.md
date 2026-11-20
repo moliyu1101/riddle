@@ -1,262 +1,205 @@
 <div align="center">
 
 <p align="center">
-  <img src="assets/logo.png" alt="知蠹 Riddle Logo" width="120">
+  <img src="assets/logo.png" alt="知蠹 Riddle Logo" width="128">
 </p>
 
-# 🐛 知蠹 Riddle
+# 知蠹 Riddle
 
-**把大模型当作「侦察兵」的自动化漏洞挖掘平台 · 多 Agent 协同 · 7×24 无人值守 · 人工只做复审决策**
+**AI 自主安全渗透与漏洞挖掘平台 · 六角色多 Agent 协同 · 融合治理护栏 · AI 初审 + 人工复审闭环**
 
 [![License](https://img.shields.io/badge/License-CC%20BY--NC%204.0-blue)](LICENSE)
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688)
-![Vue](https://img.shields.io/badge/Vue-3-4FC08D)
+![Next.js](https://img.shields.io/badge/Next.js-16-000000)
+![React](https://img.shields.io/badge/React-19-61DAFB)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
 
 </div>
 
 ---
 
-## 它解决什么问题
+## 项目定位
 
-传统自动化挖洞的两个老毛病：**误报满天飞**（把响应特征当漏洞，人工审核成本极高）和**只能扫已知模式**（业务逻辑、越权、状态机绕过这类需要理解业务的洞根本测不到）。
+传统自动化扫描器面临两大痛点：**海量低价值误报**（仅依赖特征匹配，人工排查成本高）与**业务逻辑盲区**（无法理解认证流程、状态机、权限边界与多步利用链）。
 
-Riddle 的做法：**让 LLM 理解目标、自主决策、真实发包验证**。AI 先侦察目标（页面 / JS / API / 入口），判断这是什么业务系统，再按业务逻辑构造测试，最后用真实请求拿到响应作为证据——只把「能拿到实际危害证据」的洞交给你。
+**知蠹 Riddle** 将大语言模型与真实安全工具链结合，构建了一套面向授权安全测试与 SRC 场景的**自主探索—实证验证—智能治理—报告交付**闭环平台：
 
-## 工作方式
+- **自主决策与真实取证**：Worker Agent 自动完成页面/JS/API 侦察、构造业务测试向量并驱动真实工具发包验证，拒绝「纸面猜洞」。
+- **AI 极理性初审 + 融合门禁**：内置 Reviewer 独立复现与 L1–L4 机械凭据评估，自动拦截误报、重复线索与半成品，并可附带定向指令自动打回深挖。
+- **人机协同与持续进化**：安全研究员只需聚焦最终复审裁决、运行中实时下发人工指令与定向深挖；过审漏洞自动触发指纹通杀扩面、情报反馈与高危知识蒸馏，让平台越挖越准。
 
-你只管定义目标和范围，剩下的交给流水线：
+---
 
-1. **目标搜集** —— 从 FOFA / 手动清单 / 单站持续产出目标，自动探活、预筛、按 IP/域名离线反查归属。
-2. **逐个挖洞** —— 一个目标一个 Worker，AI 自主侦察 + 驱动真实工具链（nmap / httpx / nuclei / sqlmap / curl）深度测试。
-3. **AI 初审** —— 极理性 Reviewer 只认「实际可利用 + 实锤危害」，把半成品和误报拦回去。
-4. **人工复审** —— 你花几分钟做最终裁决：调级别、通过、打回、编辑、标记提交。
+## 核心工作流与六角色协同架构
 
 ```mermaid
 flowchart TD
-    subgraph IN["🎯 目标输入"]
+    subgraph IN["🎯 资产入口与任务定义"]
         direction LR
-        F["FOFA / 测绘引擎"]
-        M["手动清单"]
-        S["单站协作"]
+        E1["6 大空间测绘引擎<br/>FOFA · Quake · Hunter · ZoomEye · Shodan · Censys"]
+        E2["手动目标清单<br/>域名 / IP / URL + 批量凭据"]
+        E3["单站深度协作<br/>多路线共享黑板"]
     end
 
-    subgraph ENG["⚙️ 挖洞引擎"]
+    subgraph PIPE["⚙️ 多 Agent 协同流水线"]
         direction TB
-        COL["🗺️ Collector 目标搜集<br/>探活 · 预筛 · 评分 · 归属反查"]
-        WORK["⚔️ Worker 挖洞集群<br/>LLM 自主侦察 · 驱动真实工具链"]
-        BB["📋 共享黑板（单站）<br/>已探测 · 覆盖 · 线索 · 分工"]
-        TOOL["🔧 工具链<br/>nmap · httpx · nuclei · sqlmap · curl"]
+        P["🧠 Planner 规划与调度<br/>预筛打分 · 智能节流 · GoalGate 目标闸门"]
+        W["⚔️ Worker 自主渗透集群<br/>真实工具链 · 技能速查注入 · 人工实时指令"]
+        J["⚖️ Judge 护栏与拦截<br/>八大类硬拦截 · deny/judge/ask 审批队列"]
+        R["🛡️ Reviewer AI 初审<br/>独立复现 · L1–L4 证据门禁 · 差异化评分"]
     end
 
-    subgraph MLLM["🧠 模型层"]
+    subgraph LOOP["🔁 闭环深化与知识沉淀"]
         direction LR
-        P1["单端点多模型灾备池"]
-        P2["端点池"]
+        H["👤 人工复审与报告台<br/>在线修订 · 版本回滚 · AI 助手 · Word 公文导出"]
+        ESC["🔥 Escalate 危害扩大<br/>越权链延伸 · 定向深挖回炉"]
+        KS["⚡ Killsweep 指纹通杀<br/>同款资产扩面与批量验证"]
+        KB["📚 跨任务情报与知识库<br/>Curator 策展 · CVE/KEV 时间流 · 实战蒸馏"]
     end
 
-    subgraph RV["🧪 审核链路"]
-        direction LR
-        R1["极理性初审<br/>过滤半成品 · 误报 · 无实锤"]
-        R2["👤 人工复审<br/>调级 · 通过 · 打回 · 提交"]
-        R3["📤 待提交清单<br/>报告导出 · 人工提交"]
-    end
-
-    subgraph ADV["💥 扩展 Agent"]
-        direction LR
-        K["Killsweep 通杀<br/>一打一片验证"]
-        E["Escalate 扩大危害<br/>越权 · 横向深化"]
-        I["🧠 情报库<br/>凭证 · 端点 · 指纹沉淀"]
-    end
-
-    F --> COL
-    M --> COL
-    S --> COL
-    COL --> WORK
-    WORK <--> BB
-    WORK --> TOOL
-    MLLM --> WORK
-    WORK -->|提交 finding| R1
-    R1 -->|够格| R2
-    R1 -->|回炉深挖| WORK
-    R2 -->|通过| R3
-    R2 -->|出洞后| K
-    K -->|验证线索| WORK
-    R2 --> E
-    E -->|利用链深化| WORK
-    R1 -.情报沉淀.-> I
-    I -.复用.-> WORK
+    E1 --> P
+    E2 --> P
+    E3 --> P
+    P --> W
+    W <--> J
+    W -->|提交漏洞线索| R
+    R -->|打回深挖| W
+    R -->|进入复审队列| H
+    H -->|定向深挖| ESC
+    ESC --> W
+    H -->|复审通过| KS
+    KS -->|衍生目标入队| W
+    H -.反馈与自动蒸馏.-> KB
+    KB -.情报与技能注入.-> W
 ```
 
-## 核心能力
+---
 
-### 挖洞质量
+## 核心能力一览
 
+### 1. 自主挖掘与质量保障
 | 能力 | 说明 |
 |---|---|
-| **AI 极理性初审** | 只认「实际可利用 + 实锤危害」，自动过滤重复 / 无效 / 证据不足 / 超范围 / 半成品 |
-| **差异化评分** | 从类型 + 目标 + 证据三维打分，一眼区分「大众洞」与「业务逻辑 / 越权」稀缺洞 |
-| **业务画像 + 状态机引导** | 识别 18 类业务，注入多步业务流程的绕过手法，AI 按业务逻辑去测 |
-| **利用链引导** | 9 类漏洞模板的实锤标准 + 深化路线，逼 AI 先深挖再提交 |
-| **通杀 Hunter + 扩大危害** | 出一个洞后自动分析能否一打一片，并对高危洞深化利用 |
-| **情报库沉淀** | 验证过的凭证 / 端点 / 指纹入全局情报库，后续 Worker 直接复用，越挖越聪明 |
+| **EduSRC / 企业 SRC 双模式** | 适配高校 IP/归属离线反查、教育网通杀优先与企业授权边界管控，支持独立评分与交付规范 |
+| **六大空间测绘引擎** | 原生接入 FOFA、Quake、Hunter、ZoomEye、Shodan、Censys，支持查询语法实时校验、模板填充与连通探活 |
+| **单站多路线协作** | 面向单站深挖自动拆分侦察盘点、认证越权、未授权/配置暴露、文件/上传、注入/RCE、业务逻辑等路线，通过共享黑板互通线索、自动错峰 |
+| **真实工具链 + 持久化终端** | 容器内置 `nmap`、`httpx`、`nuclei`、`sqlmap`、`whatweb` 及 20+ 专项安全工具；支持工作目录与环境持久化的受控终端执行 |
+| **硬骨头回捞与通杀闭环** | 跨任务聚合死磕失败（`dead`）与跳过（`skipped`）目标，支持一键唤醒回捞并注入最新沉淀情报；过审漏洞自动触发指纹通杀扩面 |
+| **登录态与凭据批量绑定** | 支持按 URL / 通配符批量粘贴 `Cookie`、`Authorization: Bearer`、`username:password`，实时解析并注入测试上下文 |
 
-### 工具与调度
-
-| 能力 | 说明 |
+### 2. 融合治理与交付层
+| 模块 | 说明 |
 |---|---|
-| **20+ 挖洞工具** | HTTP / Shell 之外还有 JS 审计、资产发现、指纹、弱口令、登录态、SQLi 探测、上传探测、权限边界、存证快照、已知漏洞验证等 |
-| **真实工具链** | nmap / httpx / nuclei / sqlmap / whatweb 容器内置，LLM 真实发包执行 |
-| **真·终端 run_shell** | 工作目录与环境变量跨命令持久化、超大输出自动摘要、随断点续跑 |
-| **多模型灾备** | 单端点多模型灾备池 / 多供应商端点池，主模型不可用自动顶替；断点恢复续挖不从头再来 |
-| **多测绘引擎** | FOFA / Quake / Censys / Hunter / Shodan / ZoomEye，查询语法自动适配 |
+| **目标闸门（GoalGate）** | 按任务场景智能拆解可核验验收标准，诚实评估任务终态（`achieved` / `incomplete`） |
+| **证据硬闸门（L1–L4）** | 按机械凭据对漏洞证据做 L1–L4 分级与试算，支持强拦截开关与提示词纪律双模式 |
+| **范围硬守卫（ScopeGuard）** | 按 `own / source / foreign` 对资产写回做越界分类，支持授权根域与 CIDR 校验 |
+| **命令三层拦截与审批** | 结合任务级八大高危操作硬拦截（脱库、删数据、篡改、清缓存、改密、爆破、DoS、落马）与 `deny / judge / ask` 人工审批台账 |
+| **多角色分层模型路由** | 支持单端点多模型灾备池与多供应商加权熔断池，并可为 `Planner / Worker / Reviewer / Judge` 独立覆写模型 |
+| **情报与 CVE/KEV 时间流** | 跨任务共享凭证/指纹/端点/经验情报（带效用打分与 Intel Curator 清理），同步 NVD & CISA KEV 并支持语义版本区间反查 |
+| **实证流量与双图溯源** | 自动导入工作区 HTTP JSONL 流量，按 `baseline / proof / verification / supporting` 绑定漏洞证据链；旁路构建资产图 × 探索图与覆盖度 |
+| **复测闭环与公文级 Word 报告** | 支持报告正文在线编辑（`user_edits`）、审计版本历史一键回滚、AI 报告润色助手、HTTP 只读探活/手工复测登记，一键导出公文级 `.docx`、Markdown、HTML、JSON 与整任务报告包 |
 
-### 安全边界
+### 3. 全新现代化控制台（Next.js 16 + Shadcn UI）
+控制台采用三分组 13 个核心模块设计，兼顾明暗主题与响应式布局：
 
-| 能力 | 说明 |
-|---|---|
-| **任务级危险操作硬拦截** | 删库 / 清缓存 / 改密等破坏性操作默认拦截，任务里还可勾选 8 类额外收紧 |
-| **SSRF 出网守卫** | 封禁内网地址 / 云元数据等敏感出网目标，防 Worker 打到内网 |
-| **内置 WAF** | 拦公网常见扫描 / 注入 / 路径穿越 / 异常 Header / 超大请求体，可开关可调阈值 |
-| **三级访问令牌** | 全权限 / 只读 / 观摩，观摩者只看运行概况、看不到敏感证据 |
-| **范围控制** | 教育域名锚点锁定授权资产；企业模式对生产数据只读验证、弱口令点到为止 |
+- **作战中心**：`作战总览` · `挖掘任务`（含三段式新建/编辑任务向导与实时作战大屏、在跑 Worker 人工实时指令、单目标轨迹回放）· `漏洞与复审`（抽屉快审 + 完整报告编辑与 AI 助手页）· `目标与硬骨头`（硬骨头一键回捞联动启动 + 通杀候选）· `实证流量库` · `执行回放`
+- **知识与治理**：`情报与 CVE`（实战情报策展 + CVE 时间流 + 语义版本反查）· `技能与知识库`（蒸馏知识 CRUD + 技能速查卡）· `融合护栏与审批`（三大硬闸门热开关 + 命令/证据/范围试算台）
+- **系统与模型**：`模型与多角色路由` · `Agent 协同` · `运行日志`（全局异常诊断 + SSE 实时流）· `系统与引擎配置`（六大测绘引擎 + 融合九开关 + 工作目录清理 + SQLite 快照备份恢复 + 三权分立令牌）
 
-### 控制台
-
-| 能力 | 说明 |
-|---|---|
-| **作战矩阵 + 轨迹抽屉** | 多 Worker 矩阵视图，点开任意 Worker 看完整轨迹（LLM 轮次 / 工具调用 / 认知更新） |
-| **任务态势图** | 三阶段流水线 + 阶段节点状态，一眼看清挖到哪 |
-| **事件流中文格式化** | 60+ 种事件类型全部映射中文描述 |
-| **六套主题预设** | 霓虹终端 / 赛博朋克 / 冰蓝管制 / 矩阵绿 / 琥珀暖夜 / 赤红警戒，一键切换 |
-| **三步任务向导 + 九分区设置** | 任务定义 → 目标来源 → 规则运行；模型 / 测绘 / 安全 / 数据全可视化配置 |
-
-## 单站协作
-
-面对**少数目标、挖深**的场景（比如手里一个教育站点要仔细过一遍），单站协作模式给一个站点派 **7 条固定路线**并发抢 Worker，每条路线聚焦一类攻击面，靠「共享黑板」实时互通情报、自动错开不撞车：
-
-| 阶段 | 路线 | 聚焦 |
-|---|---|---|
-| **侦察盘点** | 入口/API 盘点 · 前端 JS/密钥 | 全站入口与 API 清单；JS 审计挖接口 / token / 隐藏路由 / 硬编码密钥 |
-| **主题深挖** | 认证/越权 · 未授权/配置暴露 · 文件/导入导出 · 注入/RCE · 业务逻辑/状态流 | 登录与 SSO、IDOR 与越权、Swagger/Actuator/.env 暴露、上传与穿越、注入与反序列化、支付/审批/重放等业务流 |
-| **定向追打** | 定向 API 追打 | 前序 Worker 发现的高价值 API 逐项收敛验证 |
-
-黑板只做「镜子」不做「锁」——四类情报（已探测 / 已覆盖 / 共享线索 / 已排除）实时共享，靠信息让 AI 自主错开方向，不限制任何 Worker 发请求。看板以雷达图实时呈现情报分布，点路线联动查看贡献与分工。
-
-> **tip**：已带登录凭据或明确要打的接口，可在任务向导勾选「跳过入口盘点侦察」省 LLM 调用与流量（site_js 前端密钥价值高仍保留）。
-
-## 界面速览
-
-控制台首页实时呈现任务态势；在设置页统一配置模型的 LLM 通道（同一供应商可勾选多个模型做灾备调度）；新建任务用三步向导一步步定义目标与规则。
-
-<p align="center">
-  <img src="assets/ui-home.png" alt="控制台首页" width="840">
-  <br>
-  <sub>控制台首页 · 实时看板与任务入口</sub>
-</p>
-
-<p align="center">
-  <img src="assets/ui-settings.png" alt="设置页 · LLM 模型配置" width="408">
-  <img src="assets/ui-task.png" alt="新建任务三步向导" width="408">
-  <br>
-  <sub>左：设置页 LLM 模型配置 · 右：新建任务三步向导</sub>
-</p>
-
-<p align="center">
-  <img src="assets/ui-collab.png" alt="单站协作任务看板" width="840">
-  <br>
-  <sub>单站协作任务看板 · 协作态势 + 作战单元 + 事件流</sub>
-</p>
-
-<p align="center">
-  <img src="assets/ui-blackboard.png" alt="共享黑板态势图" width="840">
-  <br>
-  <sub>共享黑板 · 同站 worker 实时共享情报，错开路线不撞车</sub>
-</p>
+---
 
 ## 快速开始
 
-需要一台装得下 Docker 的机器（生产推荐 Linux，2C4G 起，磁盘 ≥ 20G）。
+### 方式一：Docker Compose 一键部署（推荐）
+
+准备一台安装 Docker 的 Linux / macOS / Windows 主机（建议 2C4G 起，磁盘 ≥ 20 GB）：
 
 ```bash
-git clone https://github.com/moliyu1101/Riddle.git && cd Riddle
-cp .env.example .env            # 至少填 LLM_API_KEY，见 .env.example 里的注释
+git clone https://github.com/moliyu1101/riddle.git
+cd riddle
+cp .env.example .env
+# 编辑 .env，至少填写 LLM_API_KEY；公网部署务必设置 RIDDLE_API_TOKEN
 docker compose up -d --build
 docker compose logs -f riddle
 ```
 
-首次构建会编译前端并安装挖洞工具链，约 **5–15 分钟**。就绪后访问 `http://<服务器IP>:18800/`。
+首次构建将编译 Next.js 静态前端并安装安全工具链，就绪后浏览器访问 `http://<服务器IP>:18800/`。
 
-> **首次进入的令牌是什么？**
->
-> - **没配任何令牌 → 无需令牌直接进入**（默认全权限）。
-> - **配了 `RIDDLE_API_TOKEN` → 用它的值登录**（首次访问弹出令牌输入框，填入即获得 full 全权限）。
-> - 令牌优先级：设置页「安全」里自定义的令牌 > 环境变量；设置页可分别配置全权限 / 只读 / 观摩三个令牌。
-> - 公网部署**务必**设置 `RIDDLE_API_TOKEN`，否则任何人可访问你的控制台。
-> - 忘记令牌？去 `.env` 改 `RIDDLE_API_TOKEN` 后重启容器即可。
+### 方式二：本地源码运行（前后端开发调试）
 
-> 国内网络 apt/pip 拉取超时，Dockerfile 已内置清华镜像兜底；Docker Desktop 拉基础镜像慢时自配 mirror。
-
-## 需要配置什么
-
-最少只要一个 **LLM API Key**，其他都有合理默认：
-
-| 变量 | 说明 |
-|---|---|
-| `LLM_API_KEY` | **必填**，大模型 API Key（DeepSeek / OpenAI / Claude / 通义等都能接） |
-| `LLM_BASE_URL` / `LLM_MODEL` / `LLM_PROTOCOL` | 模型端点，默认 DeepSeek Compatible（`deepseek-chat`） |
-| `FOFA_KEY` | 想用 FOFA 自动搜目标才需要 |
-| `RIDDLE_API_TOKEN` | 控制台登录令牌，**公网部署务必设置** |
-| `RIDDLE_HOST_PORT` | 对外端口，默认 18800 |
-
-Key 也可以不填 `.env`，直接在控制台「设置」页填进数据库——优先级更高，多机部署更灵活。
-
-## 常用运维
+环境要求：**Python 3.12+**、**Node.js 20+**。
 
 ```bash
-docker compose up -d --build    # 更新后重建
-docker compose restart riddle   # 重启
-docker compose down             # 停止（数据留在 volume）
-docker compose logs -f riddle   # 实时日志
+# 1. 安装后端依赖
+pip install -r requirements.txt
+
+# 2. 构建前端静态产物并同步至 web/dist/
+npm --prefix frontend ci
+npm --prefix frontend run build
+
+# 3. 配置环境变量并启动后端（同时托管 API 与前端页面）
+cp .env.example .env
+python -m uvicorn app.main:app --host 127.0.0.1 --port 18800
 ```
 
-- **数据存哪**：Docker volume `riddle_data`（SQLite + 证据）、`riddle_work`（Worker 工作区），升级重启不丢。别直接 `cp riddle.db`——WAL 模式拷半截库会坏，用设置页「数据备份」导出一致快照。
-- **从旧版本升级（数据卷改名）**：卷名由 `ah_data`/`ah_work` 改为 `riddle_data`/`riddle_work`，升级前迁移一次旧数据：
+如需单独进行前端热更新开发，可在保持后端运行在 `18800` 端口的同时执行：
 
-  ```bash
-  docker run --rm -v ah_data:/src -v riddle_data:/dst alpine sh -c "cp -a /src/. /dst/"
-  docker run --rm -v ah_work:/src -v riddle_work:/dst alpine sh -c "cp -a /src/. /dst/"
-  ```
+```bash
+npm --prefix frontend run dev
+```
 
-- **续跑**：`RIDDLE_RESTORE_ON_STARTUP=1` 时重启自动续跑进行中的任务。
-- **容器已非 root 运行**（应用用户 `riddle`，仅 `/app/data` 与 `/work` 可写）：即使 AI 被诱导执行破坏性命令也有 OS 权限层兜底。副作用是设置页「一键更新」不再可用，更新统一走 `docker compose up -d --build`。
+---
 
-## ⚠️ 免责声明
+## 关键配置说明
 
-**在使用知蠹 Riddle 之前，请务必完整阅读以下条款。**
+最少只需配置一个 **LLM API Key** 即可启动；所有密钥也可直接在控制台「系统与引擎配置 / 模型与多角色路由」中可视化配置（数据库配置优先级高于 `.env`，写入即热生效）。
 
-### 授权边界
+| 环境变量 | 说明 |
+|---|---|
+| `LLM_API_KEY` | **必填**，大模型 API Key（兼容 OpenAI / Anthropic 协议，支持 DeepSeek、Claude、GPT、Kimi、通义等） |
+| `LLM_BASE_URL` / `LLM_MODEL` / `LLM_PROTOCOL` | 模型端点与协议（默认 `deepseek-chat`，协议支持 `auto` / `openai_chat` / `anthropic_messages`） |
+| `FOFA_KEY` / `QUAKE_KEY` / `HUNTER_KEY` / `ZOOMEYE_KEY` / `SHODAN_KEY` / `CENSYS_KEY` | 可选，对应六大空间测绘引擎 API Key |
+| `RIDDLE_API_TOKEN` | 全权限访问令牌，**公网部署务必配置** |
+| `RIDDLE_READ_TOKEN` / `RIDDLE_OBSERVER_TOKEN` | 可选，分别对应只读审核角色与脱敏观摩角色令牌 |
+| `RIDDLE_HOST_PORT` | Docker 映射宿主机端口，默认 `18800` |
+| `RIDDLE_RESTORE_ON_STARTUP` | 设为 `1` 时，服务重启后自动续跑未完成的运行中任务 |
 
-- **仅限对已获明确书面授权的目标使用。** 本工具设计用于授权的安全测试、渗透测试、CTF 竞赛、SRC 漏洞挖掘等合规场景。
-- 未获授权对任何系统、网络、应用进行测试均属违法行为，由使用者自行承担全部法律责任。
-- 使用 FOFA 等测绘引擎时，务必用域名 / 证书 / org 等条件**收窄归属范围**，避免打到范围外资产。
+> **登录与三权分立说明**
+> - 未配置任何令牌时，本地可直接免密进入控制台（默认全权限）。
+> - 配置 `RIDDLE_API_TOKEN` 或在控制台设置页启用令牌后，访问将自动跳转登录页，按输入令牌赋予 `full`（全权限）、`readonly`（只读）或 `observer`（脱敏观摩）权限。
 
-### 技术风险
+---
 
-- 本工具依赖大模型（LLM）自主决策，AI 的行为存在**不可完全预测性**——包括但不限于：请求目标出乎意料、误报漏报、在极端情况下自主产生写操作等。
-- 本工具内置了删除限制等防护，但仍**不可能 100% 保证**在所有外部情况下（如模型自主意愿、目标反制、配置失误）不对数据造成修改或删除。
-- Worker 由大模型驱动，会真实发包、执行真实工具链。请在完全了解其行为的前提下使用。
+## 运维、备份与安全防护
 
-### 合规声明
+```bash
+docker compose up -d --build    # 拉取更新后重新构建部署
+docker compose restart riddle   # 重启服务
+docker compose down             # 停止服务（数据保留在命名卷中）
+docker compose logs -f riddle   # 查看实时运行日志
+```
 
-- 本工具遵循 **CC BY-NC 4.0** 许可，**禁止任何商业用途**，禁止用于任何违法或恶意活动。
-- 本项目为 **Demo 级别**，仅供参考学习与二次开发。使用中遇到的问题欢迎提 Issue，但**请勿归咎于原作者或本项目团队**。
-- 使用即视为你已理解并同意以上全部条款，且自行承担使用本工具带来的一切后果。
+- **数据持久化与备份恢复**：Docker 卷 `riddle_data` 存储 SQLite 数据库与取证文件，`riddle_work` 存储 Worker 工作区。由于 SQLite 使用 WAL 模式，请勿直接拷贝 `.db` 文件，统一在控制台「系统与引擎配置 → 工作目录与备份恢复」中创建热快照或导出 `.tar.gz` 归档。
+- **内建安全边界**：容器以非 root 用户运行，内置 SSRF 出网守卫（封禁内网与云元数据地址）、可调阈值 WAF 中间件与任务级高危操作硬拦截。
+
+---
 
 ## 技术栈
 
-后端 Python 3.12 + FastAPI + SQLite；前端 Vue 3 + Vite；模型走 OpenAI / Anthropic 兼容接口（支持 tool calling，哑模型可用 `RIDDLE_TOOL_COMPAT=prompt` 模拟）；多测绘引擎（FOFA / Quake / Censys / Hunter / Shodan / ZoomEye）；容器内置 nmap / httpx / nuclei / sqlmap / whatweb。
+- **后端**：Python 3.12 · FastAPI · SQLAlchemy (Async) · Alembic · SQLite (WAL) · python-docx
+- **前端**：Next.js 16 (Static Export) · React 19 · TypeScript · Tailwind CSS 4 · Shadcn UI · Lucide Icons
+- **模型与测绘**：OpenAI / Anthropic 双协议兼容（含 `RIDDLE_TOOL_COMPAT=prompt` 兜底与多端点熔断池）· 6 大空间测绘引擎 · 内置 `nmap / httpx / nuclei / sqlmap / whatweb`
+
+---
+
+## 免责声明与许可协议
+
+**使用知蠹 Riddle 前，请完整阅读并同意以下条款：**
+
+1. **严格限定授权范围**：本平台仅面向获得明确书面授权的渗透测试、安全评估、SRC 众测及学术研究场景。严禁对任何未授权目标实施扫描或测试，因违规使用产生的一切法律责任由使用者自行承担。
+2. **技术与自动化风险**：大模型驱动的自主工具调用具有一定不确定性。尽管系统内置了高危操作硬拦截、范围守卫与 SSRF 防护，仍无法对极端场景提供 100% 绝对担保，请务必在充分评估测试边界后使用。
+3. **开源许可**：本项目基于 **CC BY-NC 4.0** 协议发布，仅限学习研究与非商业用途，禁止任何商业化封装或恶意滥用。
 
 ---
 
