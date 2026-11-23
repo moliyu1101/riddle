@@ -402,3 +402,45 @@ class FusionTraffic(Base):
     body_sha256: Mapped[str] = mapped_column(String(64), default="", index=True)
     notes: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now, index=True)
+
+
+class ChatConversation(Base):
+    """独立多轮对话会话（按 Agent 角色分组，支持置顶、重命名、模型覆盖与多轮上下文持久化）。"""
+    __tablename__ = "chat_conversations"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    agent_key: Mapped[str] = mapped_column(String(64), default="assistant", index=True)
+    title: Mapped[str] = mapped_column(String(200), default="新对话")
+    model_override: Mapped[str] = mapped_column(String(200), default="")
+    pinned: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    pinned_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now, index=True)
+
+    activities: Mapped[list["ChatActivity"]] = relationship(
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+    )
+
+
+class ChatActivity(Base):
+    """对话步骤流水（user / thinking / tool_use / tool_result / assistant / result / error / stopped）。"""
+    __tablename__ = "chat_activities"
+    __table_args__ = (Index("ix_chat_activities_conv_id", "conversation_id", "id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    conversation_id: Mapped[str] = mapped_column(
+        ForeignKey("chat_conversations.id", ondelete="CASCADE"),
+        index=True,
+    )
+    kind: Mapped[str] = mapped_column(String(30), index=True)
+    text: Mapped[str] = mapped_column(Text, default="")
+    detail: Mapped[str] = mapped_column(Text, default="")
+    tool_name: Mapped[str] = mapped_column(String(80), default="")
+    attachments: Mapped[list] = mapped_column(JSON, default=list)
+    meta: Mapped[dict] = mapped_column(JSON, default=dict)
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now, index=True)
+
+    conversation: Mapped["ChatConversation"] = relationship(back_populates="activities")

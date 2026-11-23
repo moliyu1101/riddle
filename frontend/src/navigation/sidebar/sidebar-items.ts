@@ -5,6 +5,7 @@ import {
   Bug,
   LayoutDashboard,
   type LucideIcon,
+  MessageSquare,
   Network,
   ScrollText,
   Settings2,
@@ -59,6 +60,7 @@ export const sidebarItems: NavGroup[] = [
     label: "作战中心",
     items: [
       { id: "dashboard", title: "作战总览", url: "/dashboard", icon: LayoutDashboard },
+      { id: "chat", title: "智能对话", url: "/chat", icon: MessageSquare, badge: "new" },
       { id: "tasks", title: "挖掘任务", url: "/function/tasks", icon: Target },
       { id: "findings", title: "漏洞与复审", url: "/function/findings", icon: Bug },
       { id: "assets", title: "目标与硬骨头", url: "/function/assets", icon: Network },

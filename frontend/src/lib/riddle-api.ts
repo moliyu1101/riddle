@@ -427,6 +427,89 @@ export interface CreateKillsweepTaskResponse {
   task: RiddleTask;
 }
 
+export interface ChatAgentInfo {
+  key: string;
+  name: string;
+  description: string;
+}
+
+export interface ChatModelOption {
+  model: string;
+  label: string;
+}
+
+export interface ChatAgentsResponse {
+  agents: ChatAgentInfo[];
+  models: ChatModelOption[];
+  llm_ready: boolean;
+}
+
+export interface ChatMentionItem {
+  kind: "finding" | "task" | "target" | "intel";
+  id: string;
+  label: string;
+  description: string;
+}
+
+export interface ChatAttachment {
+  name: string;
+  path: string;
+  size: number;
+  content_type?: string;
+}
+
+export interface ChatConversationItem {
+  id: string;
+  agent_key: string;
+  agent_name: string;
+  title: string;
+  model_override: string;
+  pinned: boolean;
+  pinned_at: string | null;
+  running: boolean;
+  message_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  last_preview?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChatActivityItem {
+  id: number;
+  conversation_id: string;
+  kind: "user" | "thinking" | "tool_use" | "tool_result" | "assistant" | "result" | "error" | "stopped" | string;
+  text: string;
+  detail: string;
+  has_more_detail?: boolean;
+  tool_name?: string;
+  attachments?: ChatAttachment[];
+  meta?: Record<string, unknown>;
+  input_tokens?: number;
+  output_tokens?: number;
+  created_at: string;
+}
+
+export interface ChatMessagesResponse {
+  items: ChatActivityItem[];
+  cursor: number;
+  running: boolean;
+  has_more: boolean;
+  token_usage: {
+    input_tokens: number;
+    output_tokens: number;
+  };
+}
+
+export interface SideQuestionResponse {
+  ok: boolean;
+  answer: string;
+  model: string;
+  duration_ms: number;
+  input_tokens: number;
+  output_tokens: number;
+}
+
 export interface IntelStats {
   total: number;
   by_kind: Record<string, number>;
@@ -1035,4 +1118,77 @@ export const riddleApi = {
     if (params.limit) qs.set("limit", String(params.limit));
     return riddleFetch<{ items: Array<Record<string, unknown>>; total: number }>(`/runtime-logs?${qs.toString()}`);
   },
+
+  // Chat Conversations & Side Questions
+  listChatAgents: () => riddleFetch<ChatAgentsResponse>("/chat/agents"),
+  searchChatMentions: (params: { kind?: string; q?: string; limit?: number } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.kind) qs.set("kind", params.kind);
+    if (params.q) qs.set("q", params.q);
+    if (params.limit) qs.set("limit", String(params.limit));
+    return riddleFetch<{ items: ChatMentionItem[] }>(`/chat/mentions?${qs.toString()}`);
+  },
+  listChatConversations: () =>
+    riddleFetch<{ conversations: ChatConversationItem[] }>("/chat/conversations"),
+  createChatConversation: (body: { agent_key: string; title?: string; model_override?: string }) =>
+    riddleFetch<ChatConversationItem>("/chat/conversations", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateChatConversation: (
+    convId: string,
+    body: { title?: string; pinned?: boolean; model_override?: string },
+  ) =>
+    riddleFetch<ChatConversationItem>(`/chat/conversations/${encodeURIComponent(convId)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  deleteChatConversation: (convId: string) =>
+    riddleFetch<{ ok: boolean; deleted: string }>(`/chat/conversations/${encodeURIComponent(convId)}`, {
+      method: "DELETE",
+    }),
+  batchDeleteChatConversations: (ids: string[]) =>
+    riddleFetch<{ items: Array<{ id: string; ok: boolean; error?: string }> }>("/chat/conversations/batch-delete", {
+      method: "POST",
+      body: JSON.stringify({ ids }),
+    }),
+  listChatMessages: (convId: string, params: { since?: number; before?: number; limit?: number } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.since !== undefined) qs.set("since", String(params.since));
+    if (params.before !== undefined) qs.set("before", String(params.before));
+    if (params.limit !== undefined) qs.set("limit", String(params.limit));
+    const qstr = qs.toString();
+    return riddleFetch<ChatMessagesResponse>(
+      `/chat/conversations/${encodeURIComponent(convId)}/messages${qstr ? `?${qstr}` : ""}`,
+    );
+  },
+  getChatMessageDetail: (convId: string, seq: number) =>
+    riddleFetch<{ detail: string }>(`/chat/conversations/${encodeURIComponent(convId)}/messages/${seq}/detail`),
+  uploadChatFile: (convId: string, file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return riddleFetch<ChatAttachment>(`/chat/conversations/${encodeURIComponent(convId)}/uploads`, {
+      method: "POST",
+      body: form,
+    });
+  },
+  sendChatMessage: (convId: string, body: { message: string; attachments?: ChatAttachment[] }) =>
+    riddleFetch<{
+      ok: boolean;
+      running: boolean;
+      user_activity: ChatActivityItem;
+      conversation: ChatConversationItem;
+    }>(`/chat/conversations/${encodeURIComponent(convId)}/messages`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  stopChatConversation: (convId: string) =>
+    riddleFetch<{ ok: boolean; status: string }>(`/chat/conversations/${encodeURIComponent(convId)}/stop`, {
+      method: "POST",
+    }),
+  askChatSideQuestion: (convId: string, question: string) =>
+    riddleFetch<SideQuestionResponse>(`/chat/conversations/${encodeURIComponent(convId)}/side-question`, {
+      method: "POST",
+      body: JSON.stringify({ question }),
+    }),
 };

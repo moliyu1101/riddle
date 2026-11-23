@@ -34,7 +34,7 @@ from app.agent_runtime import (
     REVIEW_MAX_CONCURRENCY,
     WORKER_MAX_CONCURRENCY,
 )
-from app.api import backup, console_compat, findings, fusion, intel, notify, runtime_logs, settings, stream, tasks, update, vulns
+from app.api import backup, chat, console_compat, findings, fusion, intel, notify, runtime_logs, settings, stream, tasks, update, vulns
 from app.backup import run_periodic_backup
 from app.config import worker_config
 from app.db.session import init_db
@@ -240,6 +240,7 @@ app.include_router(vulns.router)
 app.include_router(update.router)
 app.include_router(fusion.router)
 app.include_router(notify.router)
+app.include_router(chat.router)
 app.include_router(console_compat.router)
 
 
