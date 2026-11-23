@@ -287,7 +287,7 @@ export default function TasksPage() {
                               )}
                               {t.goal_summary?.configured ? (
                                 <Badge variant="outline" className="text-[11px]">
-                                  目标 {t.goal_summary.achieved ?? 0}/{t.goal_summary.total ?? 0}
+                                  目标 {t.goal_summary.met_count ?? t.goal_summary.achieved ?? 0}/{t.goal_summary.total ?? 0}
                                 </Badge>
                               ) : null}
                             </div>

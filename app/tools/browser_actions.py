@@ -198,9 +198,75 @@ class BrowserSession:
         self._context: Any = None
         self._page: Any = None
         self._last_used = 0.0
+        self._captured_apis: list[dict[str, Any]] = []
+
+    def record_api_response(
+        self,
+        *,
+        method: str,
+        url: str,
+        status: int,
+        resource_type: str = "",
+        content_type: str = "",
+        auth_headers: list[str] | None = None,
+    ) -> bool:
+        """记录同域 XHR / Fetch / JSON API 响应（有界去重，不落敏感凭证值）。"""
+        rtype = (resource_type or "").lower()
+        ctype = (content_type or "").lower()
+        if rtype not in ("xhr", "fetch") and "json" not in ctype and "graphql" not in (url or "").lower():
+            return False
+        target_host = _target_host(getattr(self._executor, "target", "") or "")
+        if not _url_allowed(url, target_host):
+            return False
+        m = (method or "GET").upper()
+        key = (m, url.split("?")[0])
+        for existing in self._captured_apis:
+            if (existing.get("method"), str(existing.get("url") or "").split("?")[0]) == key:
+                existing["status"] = int(status or 0)
+                existing["hits"] = int(existing.get("hits", 1)) + 1
+                return False
+        self._captured_apis.append({
+            "method": m,
+            "url": url[:320],
+            "status": int(status or 0),
+            "content_type": ctype.split(";")[0][:60],
+            "auth_headers": list(auth_headers or [])[:6],
+            "hits": 1,
+        })
+        if len(self._captured_apis) > 60:
+            self._captured_apis = self._captured_apis[-60:]
+        return True
+
+    def get_captured_apis(self, limit: int = 20) -> list[dict[str, Any]]:
+        return list(self._captured_apis[-max(1, limit):])
+
+    def _attach_network_listener(self, page: Any) -> None:
+        def _on_response(resp: Any) -> None:
+            try:
+                req = resp.request
+                headers = req.headers or {}
+                auth_names = [
+                    k for k in headers.keys()
+                    if k.lower() in ("authorization", "x-auth-token", "x-csrf-token", "x-xsrf-token", "token")
+                ]
+                self.record_api_response(
+                    method=str(getattr(req, "method", "GET") or "GET"),
+                    url=str(getattr(resp, "url", "") or ""),
+                    status=int(getattr(resp, "status", 0) or 0),
+                    resource_type=str(getattr(req, "resource_type", "") or ""),
+                    content_type=str((resp.headers or {}).get("content-type") or ""),
+                    auth_headers=auth_names,
+                )
+            except Exception:
+                pass
+
+        try:
+            page.on("response", _on_response)
+        except Exception:
+            pass
 
     def _ensure(self) -> Any:
-        """获取或创建浏览器 + context + page（注入会话 cookie/头）。"""
+        """获取或创建浏览器 + context + page（注入会话 cookie/头 + XHR/Fetch 监听）。"""
         now = time.time()
         if self._browser is not None:
             self._last_used = now
@@ -223,6 +289,7 @@ class BrowserSession:
             except Exception:
                 pass
         page = context.new_page()
+        self._attach_network_listener(page)
         self._p = p
         self._browser = browser
         self._context = context
@@ -354,11 +421,15 @@ def browser_action(
             return {"ok": True, "action": action, "message": "浏览器已关闭，资源已释放。"}
 
         n_cookies = _sync_cookies(executor, session._context)
+        captured_apis = session.get_captured_apis(limit=15)
         page_info = _extract_page(page)
         summary_lines = [
             f"浏览器 {action} 完成 @ {page_info.get('url') or '-'}",
             f"标题: {page_info.get('title') or '-'} | HTTP {page_info.get('status') or '-'}",
         ]
+        if captured_apis:
+            api_preview = "; ".join(f"{a['method']} {a['url']} [{a['status']}]" for a in captured_apis[-6:])
+            summary_lines.append(f"捕获同域 XHR/Fetch API({len(captured_apis)}): {api_preview}")
         if page_info.get("aria_snapshot"):
             summary_lines.append(f"ARIA 结构树: {page_info['aria_snapshot'][:600]}")
         if page_info.get("visible_text"):
@@ -391,6 +462,7 @@ def browser_action(
             "inputs": page_info.get("inputs") or [],
             "buttons": page_info.get("buttons") or [],
             "forms": page_info.get("forms") or [],
+            "captured_apis": captured_apis,
             "cookies_synced": n_cookies,
             "summary": "\n".join(summary_lines),
             "guidance": (

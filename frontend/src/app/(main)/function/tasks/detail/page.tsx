@@ -85,7 +85,7 @@ interface BoardPayload {
   throttle?: { cap?: number; base_cap?: number; reasons?: string[]; queued?: number; llm_under_cooldown?: boolean };
   tab_summary?: Record<string, number>;
   events?: Array<Record<string, unknown>>;
-  goal_summary?: { configured?: boolean; total?: number; achieved?: number; terminal_state?: string; summary?: string } | null;
+  goal_summary?: { configured?: boolean; total?: number; met_count?: number; achieved?: number; terminal_state?: string; summary?: string } | null;
 }
 
 function extractFindings(res: { items?: RiddleFinding[] } | RiddleFinding[]): RiddleFinding[] {
@@ -112,6 +112,8 @@ function TaskDetailInner() {
 
   const [loading, setLoading] = React.useState(true);
   const [editOpen, setEditOpen] = React.useState(false);
+  const [wsConnected, setWsConnected] = React.useState(false);
+  const [liveEvents, setLiveEvents] = React.useState<Array<Record<string, unknown>>>([]);
 
   // Mid-run directive input map by target_id
   const [directiveMap, setDirectiveMap] = React.useState<Record<string, string>>({});
@@ -153,9 +155,54 @@ function TaskDetailInner() {
 
   React.useEffect(() => {
     void loadCore(false);
-    const timer = setInterval(() => void loadCore(true), 5000);
+    const timer = setInterval(() => void loadCore(true), 8000);
     return () => clearInterval(timer);
   }, [loadCore]);
+
+  // Native WebSocket real-time event stream (/api/tasks/{id}/stream)
+  React.useEffect(() => {
+    if (!taskId) return;
+    let ws: WebSocket | null = null;
+    let closed = false;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const connect = () => {
+      if (closed) return;
+      const url = riddleApi.taskStreamWsUrl(taskId);
+      if (!url) return;
+      try {
+        ws = new WebSocket(url);
+        ws.onopen = () => setWsConnected(true);
+        ws.onclose = () => {
+          setWsConnected(false);
+          if (!closed) reconnectTimer = setTimeout(connect, 4000);
+        };
+        ws.onerror = () => setWsConnected(false);
+        ws.onmessage = (evt) => {
+          try {
+            const msg = JSON.parse(evt.data) as Record<string, unknown>;
+            if (msg.kind === "ping") return;
+            setLiveEvents((prev) => [msg, ...prev].slice(0, 60));
+            const k = String(msg.kind ?? "");
+            if (k === "review_done" || k === "finding" || k === "worker_finish" || k.startsWith("killsweep")) {
+              void loadCore(true);
+            }
+          } catch {
+            // ignore non-json frames
+          }
+        };
+      } catch {
+        setWsConnected(false);
+      }
+    };
+
+    connect();
+    return () => {
+      closed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      ws?.close();
+    };
+  }, [taskId, loadCore]);
 
   const handleControl = async (action: "start" | "pause" | "stop") => {
     if (!task) return;
@@ -283,7 +330,10 @@ function TaskDetailInner() {
   const liveWorkers = board?.live_workers ?? [];
   const liveEscalations = board?.live_escalations ?? [];
   const vulnDist = board?.vuln_dist ?? [];
-  const events = board?.events ?? [];
+  const events = React.useMemo(() => {
+    const combined = [...liveEvents, ...(board?.events ?? [])];
+    return combined.slice(0, 60);
+  }, [liveEvents, board?.events]);
   const stats = board?.stats ?? {};
   const totalTargets = Number(stats.total_targets ?? task?.total_targets ?? 0);
   const doneTargets = Number(stats.done_targets ?? task?.stats?.done_targets ?? 0);
@@ -312,6 +362,9 @@ function TaskDetailInner() {
               {task.src_type === "edusrc" ? "EduSRC" : "企业SRC"}
             </Badge>
           ) : null}
+          <Badge variant={wsConnected ? "default" : "secondary"} className="hidden md:inline-flex text-[11px]">
+            {wsConnected ? "实时流已连接" : "轮询同步"}
+          </Badge>
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5">
@@ -405,7 +458,7 @@ function TaskDetailInner() {
               <CardDescription className="text-xs">融合目标闸门</CardDescription>
               <CardTitle className="text-xl tabular-nums">
                 {board?.goal_summary?.configured
-                  ? `${board.goal_summary.achieved ?? 0} / ${board.goal_summary.total ?? 0}`
+                  ? `${board.goal_summary.met_count ?? board.goal_summary.achieved ?? 0} / ${board.goal_summary.total ?? 0}`
                   : "未配置"}
               </CardTitle>
             </CardHeader>

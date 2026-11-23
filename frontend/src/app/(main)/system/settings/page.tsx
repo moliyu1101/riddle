@@ -2,12 +2,14 @@
 
 import * as React from "react";
 import {
+  BellRing,
   Database,
   Download,
   HardDrive,
   KeyRound,
   RefreshCw,
   Save,
+  Send,
   Shield,
   Sliders,
   Trash2,
@@ -71,13 +73,31 @@ export default function RiddleSettingsPage() {
   const [readToken, setReadToken] = React.useState("");
   const [observerToken, setObserverToken] = React.useState("");
 
+  // Tab 5: Real-time Alert Notifications
+  const [notifyEnabled, setNotifyEnabled] = React.useState(false);
+  const [notifyChannel, setNotifyChannel] = React.useState("feishu");
+  const [notifyWebhook, setNotifyWebhook] = React.useState("");
+  const [notifyWebhookSet, setNotifyWebhookSet] = React.useState(false);
+  const [notifyTgToken, setNotifyTgToken] = React.useState("");
+  const [notifyTgTokenSet, setNotifyTgTokenSet] = React.useState(false);
+  const [notifyTgChat, setNotifyTgChat] = React.useState("");
+  const [notifyConsoleUrl, setNotifyConsoleUrl] = React.useState("");
+  const [notifyMinSev, setNotifyMinSev] = React.useState("高危");
+  const [notifyOnFinding, setNotifyOnFinding] = React.useState(true);
+  const [notifyOnIntercept, setNotifyOnIntercept] = React.useState(true);
+  const [notifyOnTaskDone, setNotifyOnTaskDone] = React.useState(true);
+  const [notifyHistory, setNotifyHistory] = React.useState<Array<Record<string, unknown>>>([]);
+  const [testingNotify, setTestingNotify] = React.useState(false);
+
   const loadAll = React.useCallback(async () => {
     setLoading(true);
     try {
-      const [sRes, wRes, bRes] = await Promise.allSettled([
+      const [sRes, wRes, bRes, nRes, nhRes] = await Promise.allSettled([
         riddleApi.getSettings(),
         riddleApi.getWorkdirStats(),
         riddleApi.getBackupStatus(),
+        riddleApi.getNotifyConfig(),
+        riddleApi.getNotifyHistory(20),
       ]);
       if (sRes.status === "fulfilled") {
         const s = sRes.value;
@@ -99,6 +119,22 @@ export default function RiddleSettingsPage() {
       }
       if (wRes.status === "fulfilled") setWorkdirStats(wRes.value);
       if (bRes.status === "fulfilled") setBackupStatus(bRes.value);
+      if (nRes.status === "fulfilled") {
+        const nc = nRes.value.config;
+        setNotifyEnabled(Boolean(nc.enabled));
+        setNotifyChannel(nc.channel || "feishu");
+        setNotifyWebhook("");
+        setNotifyWebhookSet(Boolean(nc.webhook_url_set));
+        setNotifyTgToken("");
+        setNotifyTgTokenSet(Boolean(nc.telegram_bot_token_set));
+        setNotifyTgChat(nc.telegram_chat_id || "");
+        setNotifyConsoleUrl(nc.console_base_url || "");
+        setNotifyMinSev(nc.min_severity || "高危");
+        setNotifyOnFinding(nc.on_finding_accepted !== false);
+        setNotifyOnIntercept(nc.on_intercept_pending !== false);
+        setNotifyOnTaskDone(nc.on_task_done !== false);
+      }
+      if (nhRes.status === "fulfilled") setNotifyHistory(nhRes.value.items ?? []);
     } catch (err) {
       toast.error(`加载系统配置失败：${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -236,9 +272,12 @@ export default function RiddleSettingsPage() {
       />
 
       <Tabs defaultValue="engines" className="space-y-4">
-        <TabsList>
+        <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="engines">测绘引擎与探活</TabsTrigger>
           <TabsTrigger value="fusion">挖掘并发与融合九开关</TabsTrigger>
+          <TabsTrigger value="notify">
+            <BellRing className="mr-1.5 size-3.5" /> 告警通知
+          </TabsTrigger>
           <TabsTrigger value="backup">工作目录与备份恢复</TabsTrigger>
           <TabsTrigger value="auth">三权分立令牌</TabsTrigger>
         </TabsList>
@@ -560,6 +599,207 @@ export default function RiddleSettingsPage() {
               <KeyRound className="mr-1.5 size-4" /> 更新访问令牌
             </Button>
           </div>
+        </TabsContent>
+
+        {/* Tab 5: Real-time Alert Notifications */}
+        <TabsContent value="notify" className="space-y-4">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <BellRing className="size-4" /> 7×24 实时告警推送通道
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  支持飞书、钉钉、企业微信、Telegram 与自定义 Webhook；出网目标强制过 SSRF 校验。
+                </CardDescription>
+              </div>
+              <Switch checked={notifyEnabled} onCheckedChange={setNotifyEnabled} />
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">通知渠道</Label>
+                  <Select value={notifyChannel} onValueChange={setNotifyChannel}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="feishu">飞书机器人 (Feishu)</SelectItem>
+                      <SelectItem value="dingtalk">钉钉机器人 (DingTalk)</SelectItem>
+                      <SelectItem value="wecom">企业微信 (WeCom)</SelectItem>
+                      <SelectItem value="telegram">Telegram Bot</SelectItem>
+                      <SelectItem value="webhook">通用 JSON Webhook</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">漏洞推送最低危险等级</Label>
+                  <Select value={notifyMinSev} onValueChange={setNotifyMinSev}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="严重">仅严重</SelectItem>
+                      <SelectItem value="高危">高危及以上</SelectItem>
+                      <SelectItem value="中危">中危及以上</SelectItem>
+                      <SelectItem value="低危">全部等级</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">控制台访问基地址（用于卡片直达链接）</Label>
+                  <Input
+                    placeholder="例如：http://127.0.0.1:18800"
+                    value={notifyConsoleUrl}
+                    onChange={(e) => setNotifyConsoleUrl(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {notifyChannel === "telegram" ? (
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs flex items-center justify-between">
+                      <span>Telegram Bot Token</span>
+                      <Badge variant={notifyTgTokenSet ? "default" : "secondary"}>
+                        {notifyTgTokenSet ? "已配置" : "未设置"}
+                      </Badge>
+                    </Label>
+                    <Input
+                      type="password"
+                      placeholder={notifyTgTokenSet ? "留空保持原 Token 不变" : "123456:ABC-DEF..."}
+                      value={notifyTgToken}
+                      onChange={(e) => setNotifyTgToken(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Chat ID</Label>
+                    <Input
+                      placeholder="-1001234567890"
+                      value={notifyTgChat}
+                      onChange={(e) => setNotifyTgChat(e.target.value)}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <Label className="text-xs flex items-center justify-between">
+                    <span>Webhook URL</span>
+                    <Badge variant={notifyWebhookSet ? "default" : "secondary"}>
+                      {notifyWebhookSet ? "已配置" : "未设置"}
+                    </Badge>
+                  </Label>
+                  <Input
+                    type="password"
+                    placeholder={notifyWebhookSet ? "留空保持现有 Webhook 不变" : "https://open.feishu.cn/open-apis/bot/v2/hook/..."}
+                    value={notifyWebhook}
+                    onChange={(e) => setNotifyWebhook(e.target.value)}
+                  />
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                <div className="flex items-center justify-between rounded-lg border p-3 text-xs">
+                  <span>AI 初审通过高危漏洞</span>
+                  <Switch checked={notifyOnFinding} onCheckedChange={setNotifyOnFinding} />
+                </div>
+                <div className="flex items-center justify-between rounded-lg border p-3 text-xs">
+                  <span>命令拦截等待人工审批</span>
+                  <Switch checked={notifyOnIntercept} onCheckedChange={setNotifyOnIntercept} />
+                </div>
+                <div className="flex items-center justify-between rounded-lg border p-3 text-xs">
+                  <span>任务完成或异常熔断</span>
+                  <Switch checked={notifyOnTaskDone} onCheckedChange={setNotifyOnTaskDone} />
+                </div>
+              </div>
+
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={testingNotify}
+                  onClick={async () => {
+                    setTestingNotify(true);
+                    try {
+                      const res = await riddleApi.testNotify({
+                        enabled: notifyEnabled,
+                        channel: notifyChannel,
+                        ...(notifyWebhook.trim() ? { webhook_url: notifyWebhook.trim() } : {}),
+                        ...(notifyTgToken.trim() ? { telegram_bot_token: notifyTgToken.trim() } : {}),
+                        telegram_chat_id: notifyTgChat.trim(),
+                        console_base_url: notifyConsoleUrl.trim(),
+                        min_severity: notifyMinSev,
+                      });
+                      if (res.ok) {
+                        toast.success(`测试告警发送成功 (${res.latency_ms ?? 0}ms)`);
+                      } else {
+                        toast.error(`发送失败：${res.error || "未知错误"}`);
+                      }
+                      const hist = await riddleApi.getNotifyHistory(20);
+                      setNotifyHistory(hist.items ?? []);
+                    } catch (err) {
+                      toast.error(`测试失败：${err instanceof Error ? err.message : String(err)}`);
+                    } finally {
+                      setTestingNotify(false);
+                    }
+                  }}
+                >
+                  <Send className="mr-1.5 size-3.5" /> {testingNotify ? "发送中…" : "发送测试告警"}
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={saving}
+                  onClick={async () => {
+                    setSaving(true);
+                    try {
+                      await riddleApi.putNotifyConfig({
+                        enabled: notifyEnabled,
+                        channel: notifyChannel,
+                        ...(notifyWebhook.trim() ? { webhook_url: notifyWebhook.trim() } : {}),
+                        ...(notifyTgToken.trim() ? { telegram_bot_token: notifyTgToken.trim() } : {}),
+                        telegram_chat_id: notifyTgChat.trim(),
+                        console_base_url: notifyConsoleUrl.trim(),
+                        min_severity: notifyMinSev,
+                        on_finding_accepted: notifyOnFinding,
+                        on_intercept_pending: notifyOnIntercept,
+                        on_task_done: notifyOnTaskDone,
+                      });
+                      toast.success("告警通知配置已保存并热生效");
+                      await loadAll();
+                    } catch (err) {
+                      toast.error(`保存失败：${err instanceof Error ? err.message : String(err)}`);
+                    } finally {
+                      setSaving(false);
+                    }
+                  }}
+                >
+                  <Save className="mr-1.5 size-3.5" /> 保存通知配置
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {notifyHistory.length > 0 ? (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">近期告警投递记录</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-1.5 text-xs">
+                {notifyHistory.slice(0, 10).map((item, idx) => (
+                  <div key={idx} className="flex flex-wrap items-center justify-between gap-2 rounded border px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <Badge variant={item.ok ? "default" : "destructive"}>{item.ok ? "成功" : "失败"}</Badge>
+                      <Badge variant="outline" className="uppercase">{String(item.channel ?? "")}</Badge>
+                      <span className="font-medium">{String(item.title ?? "")}</span>
+                    </div>
+                    <span className="text-muted-foreground">
+                      {item.error ? String(item.error) : `${Number(item.latency_ms ?? 0)}ms · ${String(item.ts ?? "").slice(11, 19)}`}
+                    </span>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          ) : null}
         </TabsContent>
       </Tabs>
     </div>

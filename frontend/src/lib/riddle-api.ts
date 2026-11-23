@@ -154,6 +154,7 @@ export interface RiddleTask {
   goal_summary?: {
     configured?: boolean;
     total?: number;
+    met_count?: number;
     achieved?: number;
     terminal_state?: string;
     summary?: string;
@@ -914,6 +915,45 @@ export const riddleApi = {
     const qs = `?include_work=${includeWork ? "true" : "false"}&restart=${restart ? "true" : "false"}`;
     return riddleFetch<Record<string, unknown>>(`/backup/restore${qs}`, { method: "POST", body: form });
   },
+  // Notify Alerts
+  getNotifyConfig: () =>
+    riddleFetch<{
+      config: {
+        enabled: boolean;
+        channel: string;
+        webhook_url: string;
+        webhook_url_set: boolean;
+        telegram_bot_token: string;
+        telegram_bot_token_set: boolean;
+        telegram_chat_id: string;
+        console_base_url: string;
+        min_severity: string;
+        on_finding_accepted: boolean;
+        on_intercept_pending: boolean;
+        on_task_done: boolean;
+      };
+      channels: string[];
+    }>("/notify/config"),
+  putNotifyConfig: (payload: Record<string, unknown>) =>
+    riddleFetch<{ ok: boolean; config: Record<string, unknown> }>("/notify/config", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  testNotify: (payload?: Record<string, unknown>) =>
+    riddleFetch<{ ok: boolean; status_code?: number; latency_ms?: number; error?: string }>("/notify/test", {
+      method: "POST",
+      body: JSON.stringify(payload ?? {}),
+    }),
+  getNotifyHistory: (limit = 30) =>
+    riddleFetch<{ items: Array<Record<string, unknown>> }>(`/notify/history?limit=${limit}`),
+  taskStreamWsUrl: (taskId: string) => {
+    if (typeof window === "undefined") return "";
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const token = auth.getToken();
+    const qs = token && !token.endsWith(".local") ? `?token=${encodeURIComponent(token)}` : "";
+    return `${proto}//${window.location.host}/api/tasks/${encodeURIComponent(taskId)}/stream${qs}`;
+  },
+
   getRuntimeLogStats: () => riddleFetch<{ total: number; errors: number; warns: number; by_agent: Record<string, number> }>("/runtime-logs/stats"),
   listRuntimeLogs: (params: { level?: string; agent?: string; q?: string; limit?: number } = {}) => {
     const qs = new URLSearchParams();

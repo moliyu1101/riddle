@@ -339,12 +339,40 @@ class ReviewMixin:
                     )
                 except Exception:
                     pass
+                # 融合层全自动闭环：初审通过后自动归集绑定同主机实证流量并重评目标闸门。
+                if rv["verdict"] == "accepted":
+                    try:
+                        from app.fusion.auto_sync import on_finding_reviewed
+
+                        await on_finding_reviewed(session, task_id, finding_id, f.target_url)
+                    except Exception:
+                        pass
                 await session.commit()
                 await self._log(session, "reviewer", "review_done",
                                 f"审核「{f.title}」: {rv['verdict']} {rv.get('severity_final') or ''}{extra}",
                                 finding_id=finding_id, verdict=rv["verdict"],
                                 severity=rv.get("severity_final"), score=rv["score"])
                 self._review_attempts.pop(finding_id, None)
+                # 实时告警推送：AI 初审通过且达到配置危险等级阈值时异步推送卡片。
+                if rv["verdict"] == "accepted":
+                    try:
+                        from app import notify as _notify
+
+                        sev_final = str(rv.get("severity_final") or f.severity_claimed or "中危")
+                        cfg_n = _notify.raw_notify_config()
+                        if _notify.severity_meets_threshold(sev_final, str(cfg_n.get("min_severity") or "高危")):
+                            _notify.fire_notification_async(
+                                f"发现 {sev_final} 漏洞待人工复审",
+                                [
+                                    f"标题：{f.title}",
+                                    f"类型：{f.vuln_type} | AI 评分：{rv.get('score', 0)}",
+                                    f"目标：{f.target_url}",
+                                ],
+                                event_type="finding_accepted",
+                                link_path=f"/function/findings/detail?id={finding_id}",
+                            )
+                    except Exception:
+                        pass
                 # 通杀 Hunter 不在 AI accepted 后触发；必须等人工复审 passed 后再启动。
                 # 扩大危害 Hunter：AI accepted 后自动触发（仅对有纵向升级空间的洞），
                 # 顺着已确认据点再打一层，显著升级才产出新 finding，否则丢弃。

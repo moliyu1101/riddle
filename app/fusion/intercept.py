@@ -167,7 +167,24 @@ def _record_entry(
         _ENTRIES.append(entry)
         if len(_ENTRIES) > MAX_ENTRIES:
             del _ENTRIES[: len(_ENTRIES) - MAX_ENTRIES]
-        return dict(entry)
+        result = dict(entry)
+    if status == "pending":
+        try:
+            from app import notify as _notify
+
+            _notify.fire_notification_async(
+                "高危命令触发人工拦截审批",
+                [
+                    f"规则：{rule} | 场景：{src_type}",
+                    f"命令：{command[:180]}",
+                    f"原因：{reason[:200]}",
+                ],
+                event_type="intercept_pending",
+                link_path="/system/intercept",
+            )
+        except Exception:
+            pass
+    return result
 
 
 def evaluate_command(
