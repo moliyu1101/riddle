@@ -12,13 +12,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agents.deepen import clamp_deepen_cap
 from app.agents.prompts import normalize_src_type
 from app.api.tasks import _clamp_task_concurrency, _task_to_dto
+from app.assets import ai_collector
 from app.assets import collector_service as svc
 from app.db.models import AssetCollectJob, AssetCompany, GlobalAsset, Task, TaskEvent, to_cst_iso
 from app.db.session import get_session
 from app.engines import get_engine, list_engines
 from app.fusion import graphs as fusion_graphs
 from app.orchestrator import manager
-from app.settings_service import effective_settings, public_settings_view, refresh_cache, resolve_engine_key
+from app.settings_service import (
+    effective_settings,
+    public_settings_view,
+    refresh_cache,
+    resolve_engine_key,
+    resolve_llm_providers,
+)
 from app.tools.guard import normalize_guard_ops
 
 router = APIRouter(prefix="/api/assets", tags=["assets"])
@@ -65,6 +72,19 @@ class CollectJobCreateRequest(BaseModel):
     engine: str = ""
     engine_query: str = ""
     max_pages: int = Field(default=3, ge=1, le=10)
+
+
+class AICollectPlanRequest(BaseModel):
+    prompt: str
+    preferred_engine: str = ""
+
+
+class AICollectJobCreateRequest(BaseModel):
+    prompt: str
+    name: str = ""
+    company_id: str | None = None
+    preferred_engine: str = ""
+    max_rounds: int = Field(default=8, ge=3, le=12)
 
 
 class AssetsToTaskRequest(BaseModel):
@@ -124,6 +144,8 @@ def _job_dto(j: AssetCollectJob) -> dict[str, Any]:
     return {
         "id": j.id,
         "name": j.name or "资产自动收集",
+        "mode": getattr(j, "mode", None) or "manual",
+        "prompt": getattr(j, "prompt", None) or "",
         "seeds": j.seeds or [],
         "company_id": j.company_id,
         "company_name": j.company_name or "",
@@ -135,6 +157,9 @@ def _job_dto(j: AssetCollectJob) -> dict[str, Any]:
         "running": svc.is_collect_job_running(j.id),
         "stats": j.stats or {},
         "logs": j.logs or [],
+        "ai_plan": getattr(j, "ai_plan", None) or {},
+        "ai_trace": getattr(j, "ai_trace", None) or [],
+        "ai_summary": getattr(j, "ai_summary", None) or "",
         "error": j.error or "",
         "created_at": to_cst_iso(j.created_at),
         "finished_at": to_cst_iso(j.finished_at),
@@ -178,6 +203,7 @@ async def assets_overview(session: AsyncSession = Depends(get_session)):
         "total_assets": total_assets,
         "running_jobs": int(running_jobs),
         "engines": engines,
+        "llm_ready": bool(resolve_llm_providers(None)),
     }
 
 
@@ -545,6 +571,8 @@ async def start_collect_job(
     )
     job = AssetCollectJob(
         name=(req.name or "").strip()[:200] or default_name,
+        mode="manual",
+        prompt="",
         seeds=seeds_list[:100],
         company_id=comp.id if comp else None,
         company_name=comp.name if comp else "",
@@ -561,6 +589,89 @@ async def start_collect_job(
     await session.refresh(job)
 
     svc.launch_collect_job_background(job.id)
+    return {"ok": True, "job": _job_dto(job)}
+
+
+@router.post("/collect/ai-plan")
+async def preview_ai_collect_plan(
+    req: AICollectPlanRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    """自然语言资产收集预规划：调用 AI 解析目标边界、归属主体、测绘语法与执行步骤。"""
+    await refresh_cache(session)
+    prompt = (req.prompt or "").strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="请输入自然语言资产收集需求")
+    if not resolve_llm_providers(None):
+        raise HTTPException(
+            status_code=503,
+            detail="尚未配置大模型 API Key，请先前往「模型与多角色路由」或「系统设置」完成配置",
+        )
+    try:
+        plan = await ai_collector.plan_collection_from_prompt(
+            prompt, session, preferred_engine=(req.preferred_engine or "").strip().lower()
+        )
+        return {"ok": True, "plan": plan}
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"AI 收集规划失败：{exc}") from exc
+
+
+@router.post("/collect/ai-jobs")
+async def start_ai_collect_job(
+    req: AICollectJobCreateRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    """基于自然语言启动 AI 自主资产收集 Agent，自主思考并多轮调用真实探测/测绘工具。"""
+    await refresh_cache(session)
+    prompt = (req.prompt or "").strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="请用自然语言描述需要收集的目标资产与要求")
+    if not resolve_llm_providers(None):
+        raise HTTPException(
+            status_code=503,
+            detail="尚未配置大模型 API Key，请先前往「模型与多角色路由」或「系统设置」完成配置",
+        )
+
+    comp = await session.get(AssetCompany, req.company_id) if req.company_id else None
+    pref_eng = (req.preferred_engine or "").strip().lower()
+    if pref_eng and get_engine(pref_eng) is None:
+        raise HTTPException(status_code=400, detail=f"不支持的测绘引擎：{pref_eng}")
+
+    auto_title = (req.name or "").strip()[:200] or f"AI 收集 · {prompt.splitlines()[0][:36]}"
+    job = AssetCollectJob(
+        name=auto_title,
+        mode="ai",
+        prompt=prompt,
+        seeds=[],
+        company_id=comp.id if comp else None,
+        company_name=comp.name if comp else "",
+        sources=["ai_agent"],
+        engine=pref_eng,
+        engine_query="",
+        max_pages=3,
+        status="running",
+        stats={},
+        logs=[{"ts": to_cst_iso(datetime.now(timezone.utc)), "message": "AI 自主资产收集任务已启动，正在调用大模型思考规划…"}],
+        ai_plan={},
+        ai_trace=[{
+            "ts": to_cst_iso(datetime.now(timezone.utc)),
+            "kind": "thinking",
+            "title": "已接收自然语言收集指令",
+            "detail": prompt,
+            "tool_name": "",
+            "duration_ms": 0,
+        }],
+        ai_summary="",
+    )
+    session.add(job)
+    await session.commit()
+    await session.refresh(job)
+
+    ai_collector.launch_ai_collect_job_background(
+        job.id,
+        max_rounds=int(req.max_rounds),
+        preferred_engine=pref_eng,
+    )
     return {"ok": True, "job": _job_dto(job)}
 
 

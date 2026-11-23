@@ -9,8 +9,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.api import assets as assets_api
+from app.assets import ai_collector
 from app.assets import collector_service as svc
-from app.db.models import Base, Finding, FusionGoal, GlobalAsset, Target, Task
+from app.db.models import AssetCompany, Base, Finding, FusionGoal, GlobalAsset, SystemSettings, Target, Task
 from app.orchestrator import manager
 
 
@@ -20,6 +21,7 @@ async def _make_db(monkeypatch):
         await conn.run_sync(Base.metadata.create_all)
     factory = async_sessionmaker(engine, expire_on_commit=False)
     monkeypatch.setattr(svc, "SessionLocal", factory)
+    monkeypatch.setattr(ai_collector, "SessionLocal", factory)
     return factory, engine
 
 
@@ -230,4 +232,149 @@ async def test_auto_collect_job_pipeline_and_convert_to_task(monkeypatch):
 
         persisted = (await session.execute(select(GlobalAsset))).scalars().all()
         assert len(persisted) >= 6
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_ai_natural_language_plan_and_autonomous_collection(monkeypatch):
+    from types import SimpleNamespace
+
+    factory, engine = await _make_db(monkeypatch)
+    monkeypatch.setattr(svc, "_fetch_crtsh_subdomains", AsyncMock(return_value=["portal.delta.edu.cn", "jw.delta.edu.cn"]))
+    monkeypatch.setattr(
+        svc,
+        "_resolve_dns_batch",
+        AsyncMock(return_value={"portal.delta.edu.cn": ["203.0.113.10"], "jw.delta.edu.cn": ["203.0.113.11"]}),
+    )
+
+    async def _fake_probe(client, url_candidate):
+        if "jw.delta.edu.cn" in url_candidate and url_candidate.startswith("https://"):
+            return {
+                "url": "https://jw.delta.edu.cn",
+                "status_code": 200,
+                "title": "教务系统登录入口",
+                "technologies": ["Nginx", "Spring/Java"],
+                "endpoints": ["https://jw.delta.edu.cn/login"],
+            }
+        return None
+
+    monkeypatch.setattr(svc, "_probe_http_host", _fake_probe)
+
+    class _FakeCollectLLM:
+        def __init__(self):
+            self.step = 0
+
+        def chat(self, messages, tools=None, tool_choice=None, temperature=0.25):
+            # Planning call has tools=None
+            if tools is None:
+                return SimpleNamespace(
+                    content=(
+                        '```json\n'
+                        '{"task_name":"Delta高校资产收集","summary":"围绕 delta.edu.cn 开展被动子域、DNS与HTTP指纹收集",'
+                        '"company_name":"Delta 大学","scope_rules":[{"kind":"domain","value":"delta.edu.cn"}],'
+                        '"seeds":["delta.edu.cn"],"recommended_engine":"","queries":[],'
+                        '"steps":["建立Delta大学主体","crt.sh收集子域","DNS与HTTP探活"],"reasoning":"优先被动收敛范围"}\n'
+                        '```'
+                    ),
+                    tool_calls=None,
+                    reasoning_content="分析目标高校根域名并制定安全收集计划",
+                )
+
+            self.step += 1
+            if self.step == 1:
+                return SimpleNamespace(
+                    content="先建立主体 Delta 大学，并查询 delta.edu.cn 的证书透明度子域名。",
+                    reasoning_content="先建主体再收集子域",
+                    tool_calls=[
+                        SimpleNamespace(
+                            id="tc1",
+                            function=SimpleNamespace(
+                                name="ensure_asset_company",
+                                arguments='{"name":"Delta 大学","scope_rules":[{"kind":"domain","value":"delta.edu.cn"}]}',
+                            ),
+                        ),
+                        SimpleNamespace(
+                            id="tc2",
+                            function=SimpleNamespace(
+                                name="query_crtsh_subdomains",
+                                arguments='{"root_domain":"delta.edu.cn"}',
+                            ),
+                        ),
+                    ],
+                )
+            if self.step == 2:
+                return SimpleNamespace(
+                    content="已发现 2 个子域，接下来并发解析 DNS 并对主机做轻量 HTTP 存活指纹探测。",
+                    reasoning_content="补全 IP 与存活指纹",
+                    tool_calls=[
+                        SimpleNamespace(
+                            id="tc3",
+                            function=SimpleNamespace(
+                                name="resolve_dns_hosts",
+                                arguments='{"hosts":["portal.delta.edu.cn","jw.delta.edu.cn"]}',
+                            ),
+                        ),
+                        SimpleNamespace(
+                            id="tc4",
+                            function=SimpleNamespace(
+                                name="probe_http_services",
+                                arguments='{"targets":["jw.delta.edu.cn"]}',
+                            ),
+                        ),
+                    ],
+                )
+            return SimpleNamespace(
+                content="## AI 资产摸排总结\n\n- 已自动创建主体 **Delta 大学**\n- 发现高价值入口：`https://jw.delta.edu.cn`（教务系统登录入口）",
+                reasoning_content="",
+                tool_calls=None,
+            )
+
+    fake_llm = _FakeCollectLLM()
+    monkeypatch.setattr(ai_collector, "_build_llm", lambda usage_key=None: fake_llm)
+
+    async with factory() as session:
+        session.add(
+            SystemSettings(
+                id="global",
+                llm={"base_url": "https://api.example.com/v1", "api_key": "sk-test-ai-collect", "model": "deepseek-chat"},
+            )
+        )
+        await session.commit()
+
+        # 1) Test natural language plan preview
+        plan_res = await assets_api.preview_ai_collect_plan(
+            assets_api.AICollectPlanRequest(prompt="帮我收集 Delta 大学 delta.edu.cn 的教务与门户资产"),
+            session=session,
+        )
+        assert plan_res["ok"] is True
+        assert plan_res["plan"]["company_name"] == "Delta 大学"
+        assert "delta.edu.cn" in plan_res["plan"]["seeds"]
+
+        # 2) Launch autonomous AI collection job
+        started = await assets_api.start_ai_collect_job(
+            assets_api.AICollectJobCreateRequest(
+                prompt="帮我收集 Delta 大学 delta.edu.cn 的教务与门户资产，并识别存活指纹",
+                max_rounds=6,
+            ),
+            session=session,
+        )
+        job_id = started["job"]["id"]
+        bg = svc._COLLECT_TASKS.get(job_id)
+        if bg is not None:
+            await asyncio.wait_for(bg, timeout=5.0)
+
+        done_job = await assets_api.get_collect_job(job_id, session=session)
+        assert done_job["mode"] == "ai"
+        assert done_job["status"] == "done"
+        assert done_job["company_name"] == "Delta 大学"
+        assert "教务系统登录入口" in done_job["ai_summary"]
+        trace_kinds = {t["kind"] for t in done_job["ai_trace"]}
+        assert {"thinking", "tool_use", "tool_result", "summary"} <= trace_kinds
+        assert done_job["stats"]["root_domain"] >= 1
+        assert done_job["stats"]["subdomain"] >= 2
+        assert done_job["stats"]["ip"] >= 2
+        assert done_job["stats"]["service"] >= 1
+
+        comps = (await session.execute(select(AssetCompany))).scalars().all()
+        assert any(c.name == "Delta 大学" for c in comps)
     await engine.dispose()

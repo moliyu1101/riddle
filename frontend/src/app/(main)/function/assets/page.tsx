@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { Database, Flame, GitBranch, Play, Radar, RefreshCw, RotateCcw, Search, ShieldBan, Sparkles, Zap } from "lucide-react";
 import { toast } from "sonner";
 
@@ -22,7 +23,6 @@ import {
   type RiddleTarget,
   type RiddleTask,
 } from "@/lib/riddle-api";
-import { AssetAutoCollectPanel } from "./_components/asset-auto-collect";
 import { DualGraphViewer } from "./_components/dual-graph-viewer";
 import { GlobalAssetLibrary } from "./_components/global-asset-library";
 
@@ -211,22 +211,30 @@ export default function AssetsAndHardTargetsPage() {
   return (
     <div className="flex flex-1 flex-col gap-5">
       <PageHeader
-        title="双图资产中心与自动收集工作台"
-        description="全局共享六类资产真值库（企业/根域/子域/IP/服务/应用/接口）、资产图 × 探索图双图血缘拓扑、多源自动资产收集，以及硬骨头与通杀调度。"
+        title="双图资产中心"
+        description="全局共享六类资产真值库（企业/根域/子域/IP/服务/应用/接口）、资产图 × 探索图双图血缘拓扑，以及硬骨头与通杀调度。"
         actions={
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              void loadAssetMeta();
-              void loadHardTargets();
-              void loadTaskTargets();
-              void loadKillsweeps();
-            }}
-          >
-            <RefreshCw className="mr-1.5 size-3.5" />
-            刷新全部
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" asChild>
+              <Link href="/function/collect">
+                <Radar className="mr-1.5 size-3.5" />
+                AI 资产收集
+              </Link>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                void loadAssetMeta();
+                void loadHardTargets();
+                void loadTaskTargets();
+                void loadKillsweeps();
+              }}
+            >
+              <RefreshCw className="mr-1.5 size-3.5" />
+              刷新全部
+            </Button>
+          </div>
         }
       />
 
@@ -239,15 +247,6 @@ export default function AssetsAndHardTargetsPage() {
           <TabsTrigger value="dualgraph">
             <GitBranch className="mr-1.5 size-3.5" />
             双图拓扑
-          </TabsTrigger>
-          <TabsTrigger value="collect">
-            <Radar className="mr-1.5 size-3.5" />
-            资产自动收集
-            {(assetOverview?.running_jobs ?? 0) > 0 ? (
-              <Badge variant="default" className="ml-1.5 h-4 px-1 text-[10px]">
-                {assetOverview?.running_jobs} 运行中
-              </Badge>
-            ) : null}
           </TabsTrigger>
           <TabsTrigger value="hard">
             <Flame className="mr-1.5 size-3.5" />
@@ -273,14 +272,6 @@ export default function AssetsAndHardTargetsPage() {
             tasks={tasks}
             companies={companies}
             refreshToken={graphRefreshToken}
-          />
-        </TabsContent>
-
-        <TabsContent value="collect" className="space-y-4">
-          <AssetAutoCollectPanel
-            companies={companies}
-            overview={assetOverview}
-            onAssetsUpdated={() => void loadAssetMeta()}
           />
         </TabsContent>
 

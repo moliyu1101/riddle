@@ -94,6 +94,11 @@ _MIGRATIONS = [
     ("system_settings", "ui", "JSON DEFAULT '{}'"),
     ("system_settings", "auth", "JSON DEFAULT '{}'"),
     ("tasks", "guard_ops", "JSON DEFAULT '[]'"),
+    ("asset_collect_jobs", "mode", "VARCHAR(20) DEFAULT 'manual'"),
+    ("asset_collect_jobs", "prompt", "TEXT DEFAULT ''"),
+    ("asset_collect_jobs", "ai_plan", "JSON DEFAULT '{}'"),
+    ("asset_collect_jobs", "ai_trace", "JSON DEFAULT '[]'"),
+    ("asset_collect_jobs", "ai_summary", "TEXT DEFAULT ''"),
 ]
 
 # 唯一索引：目标库(host)/漏洞库(dedup_key)的 DB 级查重兜底。

@@ -496,11 +496,13 @@ class GlobalAsset(Base):
 
 
 class AssetCollectJob(Base):
-    """资产自动收集任务记录与实时进度日志。"""
+    """资产自动收集任务记录与实时进度日志（支持 AI 自然语言自主收集与规则收集）。"""
     __tablename__ = "asset_collect_jobs"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
     name: Mapped[str] = mapped_column(String(200), default="资产自动收集")
+    mode: Mapped[str] = mapped_column(String(20), default="ai", index=True)  # ai / manual
+    prompt: Mapped[str] = mapped_column(Text, default="")
     seeds: Mapped[list] = mapped_column(JSON, default=list)
     company_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     company_name: Mapped[str] = mapped_column(String(200), default="")
@@ -511,6 +513,9 @@ class AssetCollectJob(Base):
     status: Mapped[str] = mapped_column(String(20), default="running", index=True)  # running/done/failed/stopped
     stats: Mapped[dict] = mapped_column(JSON, default=dict)
     logs: Mapped[list] = mapped_column(JSON, default=list)
+    ai_plan: Mapped[dict] = mapped_column(JSON, default=dict)
+    ai_trace: Mapped[list] = mapped_column(JSON, default=list)
+    ai_summary: Mapped[str] = mapped_column(Text, default="")
     error: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now, index=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

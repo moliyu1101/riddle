@@ -558,6 +558,28 @@ export interface AssetsOverviewResponse {
   total_assets: number;
   running_jobs: number;
   engines: Array<{ name: string; display_name: string; key_set: boolean }>;
+  llm_ready?: boolean;
+}
+
+export interface AICollectPlan {
+  task_name: string;
+  summary: string;
+  company_name: string;
+  scope_rules: AssetScopeRule[];
+  seeds: string[];
+  recommended_engine: string;
+  queries: string[];
+  steps: string[];
+  reasoning: string;
+}
+
+export interface AICollectTraceItem {
+  ts: string;
+  kind: "thinking" | "tool_use" | "tool_result" | "summary" | "error" | string;
+  title: string;
+  detail: string;
+  tool_name?: string;
+  duration_ms?: number;
 }
 
 export interface DualGraphNode {
@@ -593,6 +615,8 @@ export interface DualGraphResponse {
 export interface AssetCollectJobItem {
   id: string;
   name: string;
+  mode?: "ai" | "manual" | string;
+  prompt?: string;
   seeds: string[];
   company_id: string | null;
   company_name: string;
@@ -604,6 +628,9 @@ export interface AssetCollectJobItem {
   running: boolean;
   stats: Record<string, number>;
   logs: Array<{ ts: string; message: string }>;
+  ai_plan?: Partial<AICollectPlan>;
+  ai_trace?: AICollectTraceItem[];
+  ai_summary?: string;
   error: string;
   created_at: string;
   finished_at: string | null;
@@ -1372,6 +1399,22 @@ export const riddleApi = {
     max_pages?: number;
   }) =>
     riddleFetch<{ ok: boolean; job: AssetCollectJobItem }>("/assets/collect/jobs", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  previewAICollectPlan: (body: { prompt: string; preferred_engine?: string }) =>
+    riddleFetch<{ ok: boolean; plan: AICollectPlan }>("/assets/collect/ai-plan", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  startAICollectJob: (body: {
+    prompt: string;
+    name?: string;
+    company_id?: string | null;
+    preferred_engine?: string;
+    max_rounds?: number;
+  }) =>
+    riddleFetch<{ ok: boolean; job: AssetCollectJobItem }>("/assets/collect/ai-jobs", {
       method: "POST",
       body: JSON.stringify(body),
     }),
