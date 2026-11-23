@@ -63,7 +63,7 @@ export const sidebarItems: NavGroup[] = [
       { id: "chat", title: "智能对话", url: "/chat", icon: MessageSquare, badge: "new" },
       { id: "tasks", title: "挖掘任务", url: "/function/tasks", icon: Target },
       { id: "findings", title: "漏洞与复审", url: "/function/findings", icon: Bug },
-      { id: "assets", title: "目标与硬骨头", url: "/function/assets", icon: Network },
+      { id: "assets", title: "双图资产与收集", url: "/function/assets", icon: Network },
       { id: "traffic", title: "实证流量库", url: "/function/traffic", icon: Activity },
       { id: "commands", title: "执行回放", url: "/function/commands", icon: Terminal },
     ],

@@ -510,6 +510,105 @@ export interface SideQuestionResponse {
   output_tokens: number;
 }
 
+export interface AssetScopeRule {
+  kind: "domain" | "ip" | "cidr" | "icp" | "keyword" | string;
+  value: string;
+}
+
+export interface AssetCompanyItem {
+  id: string;
+  name: string;
+  nkey: string;
+  scope_rules: AssetScopeRule[];
+  notes: string;
+  asset_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GlobalAssetItem {
+  id: string;
+  asset_type: "root_domain" | "subdomain" | "ip" | "service" | "app" | "endpoint" | string;
+  dedup_key: string;
+  value: string;
+  company_id: string | null;
+  company_name: string;
+  company_source: string;
+  root_domain: string;
+  host: string;
+  ip: string;
+  c_segment: string;
+  port: number;
+  protocol: string;
+  status_code: number;
+  title: string;
+  technologies: string[];
+  open_ports: number[];
+  bound_domains: string[];
+  method: string;
+  params: string[];
+  source: string;
+  task_ids: string[];
+  first_seen: string;
+  last_seen: string;
+}
+
+export interface AssetsOverviewResponse {
+  counts: Record<string, number>;
+  total_assets: number;
+  running_jobs: number;
+  engines: Array<{ name: string; display_name: string; key_set: boolean }>;
+}
+
+export interface DualGraphNode {
+  id: string;
+  graph: "asset" | "exploration" | string;
+  kind: string;
+  label: string;
+  ref_id: string;
+  payload: Record<string, unknown>;
+}
+
+export interface DualGraphEdge {
+  id: string;
+  kind: string;
+  src: string;
+  dst: string;
+}
+
+export interface DualGraphResponse {
+  task_id: string;
+  nodes: DualGraphNode[];
+  edges: DualGraphEdge[];
+  coverage: {
+    asset_nodes: number;
+    exploration_nodes: number;
+    edges: number;
+    anchored_assets: number;
+    ratio: number;
+    by_kind: Record<string, number>;
+  };
+}
+
+export interface AssetCollectJobItem {
+  id: string;
+  name: string;
+  seeds: string[];
+  company_id: string | null;
+  company_name: string;
+  sources: string[];
+  engine: string;
+  engine_query: string;
+  max_pages: number;
+  status: "running" | "done" | "failed" | "stopped" | string;
+  running: boolean;
+  stats: Record<string, number>;
+  logs: Array<{ ts: string; message: string }>;
+  error: string;
+  created_at: string;
+  finished_at: string | null;
+}
+
 export interface IntelStats {
   total: number;
   by_kind: Record<string, number>;
@@ -1190,5 +1289,98 @@ export const riddleApi = {
     riddleFetch<SideQuestionResponse>(`/chat/conversations/${encodeURIComponent(convId)}/side-question`, {
       method: "POST",
       body: JSON.stringify({ question }),
+    }),
+
+  // Global Dual-Graph Assets & Auto-Collection
+  getAssetsOverview: () => riddleFetch<AssetsOverviewResponse>("/assets/overview"),
+  listGlobalAssets: (params: { asset_type?: string; company_id?: string; q?: string; limit?: number; offset?: number } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.asset_type && params.asset_type !== "all") qs.set("asset_type", params.asset_type);
+    if (params.company_id && params.company_id !== "all") qs.set("company_id", params.company_id);
+    if (params.q) qs.set("q", params.q);
+    if (params.limit) qs.set("limit", String(params.limit));
+    if (params.offset) qs.set("offset", String(params.offset));
+    return riddleFetch<{ items: GlobalAssetItem[]; total: number; has_more: boolean }>(`/assets?${qs.toString()}`);
+  },
+  manualImportAssets: (body: { seeds_text?: string; seeds?: string[]; company_id?: string | null }) =>
+    riddleFetch<{ ok: boolean; inserted: Record<string, number>; total_inserted: number }>("/assets", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  batchDeleteGlobalAssets: (ids: string[]) =>
+    riddleFetch<{ ok: boolean; deleted: number }>("/assets/batch-delete", {
+      method: "POST",
+      body: JSON.stringify({ ids }),
+    }),
+  syncAssetsFromTasks: (taskId?: string) =>
+    riddleFetch<{ ok: boolean; synced: Record<string, number> }>("/assets/sync-from-tasks", {
+      method: "POST",
+      body: JSON.stringify({ task_id: taskId || null }),
+    }),
+  createTaskFromAssets: (body: {
+    name?: string;
+    asset_ids?: string[];
+    company_id?: string | null;
+    src_type?: string;
+    concurrency?: number;
+    start_immediately?: boolean;
+  }) =>
+    riddleFetch<{ ok: boolean; started: boolean; target_count: number; task: RiddleTask }>("/assets/to-task", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  listAssetCompanies: () => riddleFetch<{ companies: AssetCompanyItem[] }>("/assets/companies"),
+  createAssetCompany: (body: { name: string; scope_rules: AssetScopeRule[]; notes?: string }) =>
+    riddleFetch<{ ok: boolean; company: AssetCompanyItem; claimed_assets: number }>("/assets/companies", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateAssetCompany: (
+    companyId: string,
+    body: { name?: string; scope_rules?: AssetScopeRule[]; notes?: string },
+  ) =>
+    riddleFetch<{ ok: boolean; company: AssetCompanyItem; claimed_assets: number }>(
+      `/assets/companies/${encodeURIComponent(companyId)}`,
+      { method: "PATCH", body: JSON.stringify(body) },
+    ),
+  deleteAssetCompany: (companyId: string, deleteAssets = false) =>
+    riddleFetch<{ ok: boolean; deleted: string }>(
+      `/assets/companies/${encodeURIComponent(companyId)}?delete_assets=${deleteAssets ? "true" : "false"}`,
+      { method: "DELETE" },
+    ),
+  getDualGraph: (params: { task_id?: string; company_id?: string; limit?: number } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.task_id && params.task_id !== "global") qs.set("task_id", params.task_id);
+    if (params.company_id && params.company_id !== "all") qs.set("company_id", params.company_id);
+    if (params.limit) qs.set("limit", String(params.limit));
+    return riddleFetch<DualGraphResponse>(`/assets/dual-graph?${qs.toString()}`);
+  },
+  getDualGraphLineage: (params: { node_id: string; task_id?: string; company_id?: string; direction?: "both" | "backward" | "forward" }) => {
+    const qs = new URLSearchParams({ node_id: params.node_id, direction: params.direction ?? "both" });
+    if (params.task_id && params.task_id !== "global") qs.set("task_id", params.task_id);
+    if (params.company_id && params.company_id !== "all") qs.set("company_id", params.company_id);
+    return riddleFetch<{ node_id: string; lineage: DualGraphNode[] }>(`/assets/dual-graph/lineage?${qs.toString()}`);
+  },
+  startAssetCollectJob: (body: {
+    name?: string;
+    seeds_text?: string;
+    seeds?: string[];
+    company_id?: string | null;
+    sources: string[];
+    engine?: string;
+    engine_query?: string;
+    max_pages?: number;
+  }) =>
+    riddleFetch<{ ok: boolean; job: AssetCollectJobItem }>("/assets/collect/jobs", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  listAssetCollectJobs: (limit = 30) =>
+    riddleFetch<{ jobs: AssetCollectJobItem[] }>(`/assets/collect/jobs?limit=${limit}`),
+  getAssetCollectJob: (jobId: string) =>
+    riddleFetch<AssetCollectJobItem>(`/assets/collect/jobs/${encodeURIComponent(jobId)}`),
+  stopAssetCollectJob: (jobId: string) =>
+    riddleFetch<{ ok: boolean; status: string }>(`/assets/collect/jobs/${encodeURIComponent(jobId)}/stop`, {
+      method: "POST",
     }),
 };

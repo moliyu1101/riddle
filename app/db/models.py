@@ -444,3 +444,73 @@ class ChatActivity(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now, index=True)
 
     conversation: Mapped["ChatConversation"] = relationship(back_populates="activities")
+
+
+class AssetCompany(Base):
+    """全局资产归属主体（企业/高校）及其范围规则（domain/ip/cidr/icp/keyword）。"""
+    __tablename__ = "asset_companies"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(String(200))
+    nkey: Mapped[str] = mapped_column(String(200), unique=True, index=True)
+    scope_rules: Mapped[list] = mapped_column(JSON, default=list)  # [{kind, value}]
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
+
+
+class GlobalAsset(Base):
+    """全局共享六类资产图真值库：root_domain / subdomain / ip / service / app / endpoint。"""
+    __tablename__ = "global_assets"
+    __table_args__ = (
+        Index("ux_global_assets_type_key", "asset_type", "dedup_key", unique=True),
+        Index("ix_global_assets_root_domain", "root_domain"),
+        Index("ix_global_assets_company", "company_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    asset_type: Mapped[str] = mapped_column(String(24), index=True)  # root_domain/subdomain/ip/service/app/endpoint
+    dedup_key: Mapped[str] = mapped_column(String(512))
+    value: Mapped[str] = mapped_column(String(1000), default="")
+    company_id: Mapped[str | None] = mapped_column(ForeignKey("asset_companies.id", ondelete="SET NULL"), nullable=True)
+    company_name: Mapped[str] = mapped_column(String(200), default="")
+    company_source: Mapped[str] = mapped_column(String(20), default="scope")  # explicit / scope
+    root_domain: Mapped[str] = mapped_column(String(255), default="")
+    host: Mapped[str] = mapped_column(String(255), default="", index=True)
+    ip: Mapped[str] = mapped_column(String(64), default="", index=True)
+    c_segment: Mapped[str] = mapped_column(String(64), default="")
+    port: Mapped[int] = mapped_column(Integer, default=0)
+    protocol: Mapped[str] = mapped_column(String(32), default="")
+    status_code: Mapped[int] = mapped_column(Integer, default=0)
+    title: Mapped[str] = mapped_column(String(500), default="")
+    technologies: Mapped[list] = mapped_column(JSON, default=list)
+    open_ports: Mapped[list] = mapped_column(JSON, default=list)
+    bound_domains: Mapped[list] = mapped_column(JSON, default=list)
+    method: Mapped[str] = mapped_column(String(16), default="")
+    params: Mapped[list] = mapped_column(JSON, default=list)
+    source: Mapped[str] = mapped_column(String(32), default="auto_collect")  # auto_collect/task_sync/manual
+    task_ids: Mapped[list] = mapped_column(JSON, default=list)
+    metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    first_seen: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    last_seen: Mapped[datetime] = mapped_column(DateTime, default=_now, index=True)
+
+
+class AssetCollectJob(Base):
+    """资产自动收集任务记录与实时进度日志。"""
+    __tablename__ = "asset_collect_jobs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(String(200), default="资产自动收集")
+    seeds: Mapped[list] = mapped_column(JSON, default=list)
+    company_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    company_name: Mapped[str] = mapped_column(String(200), default="")
+    sources: Mapped[list] = mapped_column(JSON, default=list)  # crtsh/dns/http_probe/engine/task_sync
+    engine: Mapped[str] = mapped_column(String(24), default="")
+    engine_query: Mapped[str] = mapped_column(Text, default="")
+    max_pages: Mapped[int] = mapped_column(Integer, default=3)
+    status: Mapped[str] = mapped_column(String(20), default="running", index=True)  # running/done/failed/stopped
+    stats: Mapped[dict] = mapped_column(JSON, default=dict)
+    logs: Mapped[list] = mapped_column(JSON, default=list)
+    error: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now, index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

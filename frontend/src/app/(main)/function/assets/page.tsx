@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Flame, Play, RefreshCw, RotateCcw, Search, ShieldBan, Sparkles, Zap } from "lucide-react";
+import { Database, Flame, GitBranch, Play, Radar, RefreshCw, RotateCcw, Search, ShieldBan, Sparkles, Zap } from "lucide-react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/page-header";
@@ -15,15 +15,39 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   riddleApi,
+  type AssetCompanyItem,
+  type AssetsOverviewResponse,
   type HardTargetsStats,
   type KillsweepItem,
   type RiddleTarget,
   type RiddleTask,
 } from "@/lib/riddle-api";
+import { AssetAutoCollectPanel } from "./_components/asset-auto-collect";
+import { DualGraphViewer } from "./_components/dual-graph-viewer";
+import { GlobalAssetLibrary } from "./_components/global-asset-library";
 
 export default function AssetsAndHardTargetsPage() {
   const [tasks, setTasks] = React.useState<RiddleTask[]>([]);
   const [selectedTaskId, setSelectedTaskId] = React.useState<string>("");
+
+  // Dual-Graph Asset Center & Auto-Collect Meta
+  const [assetOverview, setAssetOverview] = React.useState<AssetsOverviewResponse | null>(null);
+  const [companies, setCompanies] = React.useState<AssetCompanyItem[]>([]);
+  const [graphRefreshToken, setGraphRefreshToken] = React.useState(0);
+
+  const loadAssetMeta = React.useCallback(async () => {
+    try {
+      const [ov, comp] = await Promise.all([
+        riddleApi.getAssetsOverview(),
+        riddleApi.listAssetCompanies(),
+      ]);
+      setAssetOverview(ov);
+      setCompanies(comp.companies ?? []);
+      setGraphRefreshToken((n) => n + 1);
+    } catch {
+      // ignore transient error
+    }
+  }, []);
 
   // Tab 1: Task Targets
   const [targetStatus, setTargetStatus] = React.useState("all");
@@ -107,7 +131,8 @@ export default function AssetsAndHardTargetsPage() {
   React.useEffect(() => {
     void loadTasks();
     void loadHardTargets();
-  }, [loadTasks, loadHardTargets]);
+    void loadAssetMeta();
+  }, [loadTasks, loadHardTargets, loadAssetMeta]);
 
   React.useEffect(() => {
     if (selectedTaskId) {
@@ -186,13 +211,14 @@ export default function AssetsAndHardTargetsPage() {
   return (
     <div className="flex flex-1 flex-col gap-5">
       <PageHeader
-        title="目标池、硬骨头与通杀工作台"
-        description="按任务巡检探测目标优先级，跨任务一键唤醒死磕失败的硬骨头（自动注入最新实战情报），并调度指纹通杀扩展。"
+        title="双图资产中心与自动收集工作台"
+        description="全局共享六类资产真值库（企业/根域/子域/IP/服务/应用/接口）、资产图 × 探索图双图血缘拓扑、多源自动资产收集，以及硬骨头与通杀调度。"
         actions={
           <Button
             variant="outline"
             size="sm"
             onClick={() => {
+              void loadAssetMeta();
               void loadHardTargets();
               void loadTaskTargets();
               void loadKillsweeps();
@@ -204,8 +230,25 @@ export default function AssetsAndHardTargetsPage() {
         }
       />
 
-      <Tabs defaultValue="hard" className="space-y-4">
-        <TabsList>
+      <Tabs defaultValue="library" className="space-y-4">
+        <TabsList className="flex flex-wrap h-auto gap-1">
+          <TabsTrigger value="library">
+            <Database className="mr-1.5 size-3.5" />
+            双图资产库 ({assetOverview?.total_assets ?? 0})
+          </TabsTrigger>
+          <TabsTrigger value="dualgraph">
+            <GitBranch className="mr-1.5 size-3.5" />
+            双图拓扑
+          </TabsTrigger>
+          <TabsTrigger value="collect">
+            <Radar className="mr-1.5 size-3.5" />
+            资产自动收集
+            {(assetOverview?.running_jobs ?? 0) > 0 ? (
+              <Badge variant="default" className="ml-1.5 h-4 px-1 text-[10px]">
+                {assetOverview?.running_jobs} 运行中
+              </Badge>
+            ) : null}
+          </TabsTrigger>
           <TabsTrigger value="hard">
             <Flame className="mr-1.5 size-3.5" />
             硬骨头库 ({hardStats?.total ?? 0})
@@ -216,6 +259,30 @@ export default function AssetsAndHardTargetsPage() {
             通杀候选 ({killsweeps.length})
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="library" className="space-y-4">
+          <GlobalAssetLibrary
+            overview={assetOverview}
+            companies={companies}
+            onReloadAll={() => void loadAssetMeta()}
+          />
+        </TabsContent>
+
+        <TabsContent value="dualgraph" className="space-y-4">
+          <DualGraphViewer
+            tasks={tasks}
+            companies={companies}
+            refreshToken={graphRefreshToken}
+          />
+        </TabsContent>
+
+        <TabsContent value="collect" className="space-y-4">
+          <AssetAutoCollectPanel
+            companies={companies}
+            overview={assetOverview}
+            onAssetsUpdated={() => void loadAssetMeta()}
+          />
+        </TabsContent>
 
         {/* Tab 2 first by usefulness: Global Hard Targets Revive */}
         <TabsContent value="hard" className="space-y-4">
