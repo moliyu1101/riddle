@@ -5,7 +5,6 @@
 
 import type { ChatMention } from "@/lib/chat-mentions";
 import { auth } from "@/lib/auth";
-import { MOCK } from "@/lib/mock/enabled";
 import type {
   ActiveFindingRetest,
   RetestCandidate,
@@ -135,13 +134,6 @@ function getToken(): string | null {
 }
 
 export async function http<T>(path: string, init?: RequestInit): Promise<T> {
-  // Mock handler 按需加载:handler 静态引着 242KB 的 demo 数据集(data.ts),无条件
-  // import 会把它拖进首屏主包——生产构建(NEXT_PUBLIC_MOCK 未设)白白付出体积。
-  // 动态 import 让 MOCK=false 的构建走不到这条分支(DefinePlugin 折叠后整块不可达)。
-  if (MOCK) {
-    const { mockHandle } = await import("@/lib/mock/handler");
-    return mockHandle<T>(init?.method ?? "GET", path, init?.body ?? null);
-  }
   const token = getToken();
   const r = await fetch(`/api/console${path}`, {
     ...init,
@@ -157,10 +149,6 @@ export async function http<T>(path: string, init?: RequestInit): Promise<T> {
       window.location.href = "/login";
     }
     throw new Error("未授权");
-  }
-  if (r.status === 404) {
-    const { mockHandle } = await import("@/lib/mock/handler");
-    return mockHandle<T>(init?.method ?? "GET", path, init?.body ?? null);
   }
   if (!r.ok) {
     const fallback = `${init?.method ?? "GET"} ${path}: ${r.status}`;
@@ -199,29 +187,6 @@ export async function http<T>(path: string, init?: RequestInit): Promise<T> {
 //
 // Override either default with NEXT_PUBLIC_SSE_BASE (set it to "" to force same-origin).
 // Token is appended as ?token= because SSE can't carry cookies cross-origin.
-// mockReport returns a canned Markdown report for the demo.
-function mockReport(_task?: string): string {
-  return `# 知蠹 Riddle 渗透测试报告 — Acme Corp
-
-## 概览
-- 范围：acme.com（含 www / admin / api / shop / vpn 子域）
-- 已确认发现：6 项（高危 3 · 中危 3 · 低危 2）
-- 引擎模式：exploring
-
-## 关键发现
-1. **[高] 后台默认口令** admin.acme.com admin/admin123 → 可完全接管后台。
-2. **[高] SQL 注入** www.acme.com/search?q= → 可读取 acme_prod 库。
-3. **[高] IDOR** api.acme.com/v1/orders?id= → 可越权读取他人订单（含手机号/地址）。
-4. **[中] 反射型 XSS**、**暴露 .git 源码**、**登录无速率限制**。
-
-## 建议
-- 后台强制改密 + 启用 MFA、封禁默认口令。
-- search 接口参数化查询、输出编码。
-- API 增加对象级授权校验（IDOR）、更换强 JWT 密钥。
-
-> （demo）本报告由 mock 数据生成，仅用于界面演示。`;
-}
-
 export function sseUrl(path: string): string {
   const rewritten =
     path.startsWith("/api/") && !path.startsWith("/api/console/")
@@ -505,7 +470,6 @@ export const api = {
   workspaceMkdir: (path: string) => post<{ ok: boolean; path: string }>(`/workspace/mkdir`, { path }),
   workspaceDelete: (path: string) => del<{ ok: boolean }>(`/workspace/delete?path=${encodeURIComponent(path)}`),
   workspaceUpload: async (dir: string, files: File[]) => {
-    if (MOCK) return { uploaded: files.length };
     const fd = new FormData();
     for (const f of files) fd.append("file", f);
     const token = getToken();
@@ -518,17 +482,12 @@ export const api = {
     return r.json() as Promise<{ uploaded: number }>;
   },
   workspaceDownload: async (path: string) => {
-    let blob: Blob;
-    if (MOCK) {
-      blob = new Blob([`（demo）${path} 的下载内容示例。`], { type: "text/plain" });
-    } else {
-      const token = getToken();
-      const r = await fetch(`/api/console/workspace/download?path=${encodeURIComponent(path)}`, {
-        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      });
-      if (!r.ok) throw new Error(`下载失败: ${r.status}`);
-      blob = await r.blob();
-    }
+    const token = getToken();
+    const r = await fetch(`/api/console/workspace/download?path=${encodeURIComponent(path)}`, {
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    });
+    if (!r.ok) throw new Error(`下载失败: ${r.status}`);
+    const blob = await r.blob();
     const objUrl = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = objUrl;
@@ -1049,18 +1008,13 @@ export const api = {
   // 诊断包：下载 zip（设置 + 运行指标 + 任务/目标/意图 + 轨迹 + 日志聚合 +
   // 流量/代理/LLM 统计 + 完整性自检）。detail=true 带更大窗口与 worker 轨迹摘要。
   exportDiagnostics: async (opts?: { detail?: boolean }) => {
-    let blob: Blob;
-    if (MOCK) {
-      blob = new Blob(["（demo）诊断包内容"], { type: "application/zip" });
-    } else {
-      const token = getToken();
-      const qs = opts?.detail ? "?detail=1" : "";
-      const r = await fetch(`/api/console/diagnostics/export${qs}`, {
-        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      });
-      if (!r.ok) throw new Error(`诊断包导出失败: ${r.status}`);
-      blob = await r.blob();
-    }
+    const token = getToken();
+    const qs = opts?.detail ? "?detail=1" : "";
+    const r = await fetch(`/api/console/diagnostics/export${qs}`, {
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    });
+    if (!r.ok) throw new Error(`诊断包导出失败: ${r.status}`);
+    const blob = await r.blob();
     triggerBlobDownload(blob, `riddle-diagnostics-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "")}.zip`);
   },
   vulnintelStatus: () => get<VulnIntelStatus>(`/vulnintel/status`),
@@ -1132,7 +1086,6 @@ export const api = {
   },
   notifyRetryDelivery: (id: number) => post<{ ok: boolean }>(`/notify/deliveries/${id}/retry`),
   report: async (task?: string) => {
-    if (MOCK) return mockReport(task);
     const token = getToken();
     const r = await fetch(`/api/console/report${tq(task)}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -1170,15 +1123,6 @@ export const api = {
   chatStatus: (taskId: string) => get<{ running: boolean }>(`/tasks/${taskId}/chat/status`),
   // 方式1 文件上传:落到会话/任务工作目录 uploads/，返回可供 agent Read 的相对路径。
   chatUpload: async (scope: "task" | "session" | "staging", id: string, files: File[]) => {
-    if (MOCK)
-      return {
-        attachments: files.map((f) => ({
-          name: f.name,
-          path: `uploads/${f.name}`,
-          size: f.size,
-          abs: `/mock/${f.name}`,
-        })),
-      };
     const fd = new FormData();
     for (const f of files) fd.append("file", f);
     const token = getToken();
@@ -1443,7 +1387,6 @@ export const api = {
   // uploadSkill installs a skill from a .zip (multipart). Surfaces the backend
   // error text (e.g. 已存在 / 缺少 SKILL.md) so the UI can show a precise message.
   uploadSkill: async (file: File, overwrite = false): Promise<{ name: string; files: number }> => {
-    if (MOCK) return { name: file.name.replace(/\.zip$/i, ""), files: 1 };
     const fd = new FormData();
     fd.append("file", file);
     const token = getToken();
@@ -1534,7 +1477,6 @@ export const api = {
 
   // ---- intercept tool-config (全局工具拦截范围) ----
   interceptGetToolConfig: async (): Promise<{ enabled_tools: string[] }> => {
-    if (MOCK) return { enabled_tools: ["bash"] };
     const token = getToken();
     const r = await fetch("/api/console/intercept/tool-config", {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -1544,7 +1486,6 @@ export const api = {
     return r.json();
   },
   interceptSetToolConfig: async (enabledTools: string[]): Promise<void> => {
-    if (MOCK) return;
     const token = getToken();
     const r = await fetch("/api/console/intercept/tool-config", {
       method: "PUT",

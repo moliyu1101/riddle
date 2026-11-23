@@ -84,16 +84,6 @@ export default function VulnIntelPage() {
     void loadCves();
   }, [loadCves]);
 
-  const handlePreviewCurate = async () => {
-    try {
-      const res = await riddleApi.previewCurateIntel(1000);
-      setCuratorPreview(res);
-      toast.success(`Curator 扫描完成：建议清理 ${Number(res.prune_count ?? res.candidates_count ?? 0)} 条低价值情报`);
-    } catch (err) {
-      toast.error(`Curator 预览失败：${err instanceof Error ? err.message : String(err)}`);
-    }
-  };
-
   const handleApplyCurate = async () => {
     try {
       const res = await riddleApi.applyCurateIntel(1000);
@@ -242,11 +232,8 @@ export default function VulnIntelPage() {
             </div>
 
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={() => void handlePreviewCurate()}>
-                <Sparkles className="mr-1.5 size-3.5" /> Curator 预览退化项
-              </Button>
               <Button variant="secondary" size="sm" onClick={() => void handleApplyCurate()}>
-                执行情报策展清理
+                <Sparkles className="mr-1.5 size-3.5" /> 执行情报策展清理
               </Button>
             </div>
           </div>

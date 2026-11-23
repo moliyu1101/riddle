@@ -1,79 +1,86 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import {
   Activity,
+  Building2,
   Check,
-  Play,
+  ExternalLink,
   RefreshCw,
   ShieldAlert,
   ShieldCheck,
-  Terminal,
+  Target,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/page-header";
+import { StatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
-import { riddleApi, type FusionConfigState, type InterceptItem } from "@/lib/riddle-api";
+import {
+  riddleApi,
+  type AssetCompanyItem,
+  type FusionConfigState,
+  type InterceptItem,
+  type RiddleFinding,
+  type RiddleTask,
+} from "@/lib/riddle-api";
 
-const FORBIDDEN_OPS = [
-  { id: "db_dump", label: "脱库/拖库" },
-  { id: "db_delete", label: "删除数据" },
-  { id: "db_write", label: "篡改写入" },
-  { id: "brute_force", label: "爆破字典" },
-  { id: "dos", label: "压测轰炸" },
-  { id: "webshell", label: "落马后门" },
-];
+function extractFindingsArray(res: { items?: RiddleFinding[] } | RiddleFinding[]): RiddleFinding[] {
+  return Array.isArray(res) ? res : res.items ?? [];
+}
 
 export default function FusionGovernAndInterceptPage() {
   const [fusionCfg, setFusionCfg] = React.useState<FusionConfigState | null>(null);
   const [savingGate, setSavingGate] = React.useState(false);
+  const [loading, setLoading] = React.useState(true);
 
-  // Intercept Queue + Testbench
+  // Real live interception & approval queue
   const [intercepts, setIntercepts] = React.useState<InterceptItem[]>([]);
   const [statusFilter, setStatusFilter] = React.useState("all");
-  const [testCmd, setTestCmd] = React.useState("sqlmap -u https://target.edu.cn/item?id=1 --dump-all");
-  const [testSrcType, setTestSrcType] = React.useState("edusrc");
-  const [testForbiddenOps, setTestForbiddenOps] = React.useState<string[]>(["db_dump", "webshell"]);
-  const [testRecord, setTestRecord] = React.useState(false);
-  const [cmdResult, setCmdResult] = React.useState<Record<string, unknown> | null>(null);
 
-  // Evidence Gate L1-L4 Testbench
-  const [evTitle, setEvTitle] = React.useState("统一认证接口 SQL 注入验证");
-  const [evVulnType, setEvVulnType] = React.useState("SQL注入");
-  const [evSeverity, setEvSeverity] = React.useState("高危");
-  const [evPoc, setEvPoc] = React.useState("curl -isk 'https://auth.edu.cn/login?id=1%27'");
-  const [evReq, setEvReq] = React.useState("GET /login?id=1' HTTP/1.1\nHost: auth.edu.cn");
-  const [evResp, setEvResp] = React.useState("HTTP/1.1 500 Internal Server Error\nYou have an error in your SQL syntax;");
-  const [evResult, setEvResult] = React.useState<Record<string, unknown> | null>(null);
+  // Real persisted findings for L1-L4 Evidence Gate audit
+  const [findings, setFindings] = React.useState<RiddleFinding[]>([]);
+  const [evidenceFilter, setEvidenceFilter] = React.useState<"all" | "passed" | "blocked">("all");
 
-  // Scope Guard Testbench
-  const [scopeRoots, setScopeRoots] = React.useState("edu.cn\nexample.com");
-  const [scopeCidrs, setScopeCidrs] = React.useState("10.0.0.0/8");
-  const [scopeTargetUrl, setScopeTargetUrl] = React.useState("https://portal.demo.edu.cn/login");
-  const [scopeResult, setScopeResult] = React.useState<Record<string, unknown> | null>(null);
+  // Real persisted Task & Company scope inventory
+  const [tasks, setTasks] = React.useState<RiddleTask[]>([]);
+  const [companies, setCompanies] = React.useState<AssetCompanyItem[]>([]);
 
   const loadAll = React.useCallback(async () => {
+    setLoading(true);
     try {
-      const [cfgRes, listRes] = await Promise.all([
+      const [cfgRes, listRes, taskList, compRes] = await Promise.all([
         riddleApi.getFusionConfig(),
         riddleApi.listIntercepts({ status: statusFilter }),
+        riddleApi.listTasks(),
+        riddleApi.listAssetCompanies().catch(() => ({ companies: [] })),
       ]);
       setFusionCfg(cfgRes.config);
       setIntercepts(listRes.items ?? []);
+      setTasks(taskList);
+      setCompanies(compRes.companies ?? []);
+
+      const perTask = await Promise.allSettled(
+        taskList.slice(0, 12).map((t) => riddleApi.listTaskFindings(t.id, { limit: 100 })),
+      );
+      const merged: RiddleFinding[] = [];
+      for (const r of perTask) {
+        if (r.status === "fulfilled") merged.push(...extractFindingsArray(r.value));
+      }
+      merged.sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
+      setFindings(merged);
     } catch (err) {
-      toast.error(`加载护栏配置失败：${err instanceof Error ? err.message : String(err)}`);
+      toast.error(`加载护栏与审批数据失败：${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setLoading(false);
     }
   }, [statusFilter]);
 
@@ -89,28 +96,11 @@ export default function FusionGovernAndInterceptPage() {
     try {
       const res = await riddleApi.putFusionConfig({ [key]: val });
       setFusionCfg(res.config);
-      toast.success("融合护栏开关已保存并实时生效");
+      toast.success("融合护栏策略已持久化并实时生效");
     } catch (err) {
       toast.error(`保存失败：${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setSavingGate(false);
-    }
-  };
-
-  const handleCheckCommand = async () => {
-    if (!testCmd.trim()) return;
-    try {
-      const res = await riddleApi.checkIntercept({
-        command: testCmd.trim(),
-        tool: "run_shell",
-        src_type: testSrcType,
-        forbidden_ops: testForbiddenOps,
-        record: testRecord,
-      });
-      setCmdResult(res);
-      if (testRecord) await loadAll();
-    } catch (err) {
-      toast.error(`裁决试算失败：${err instanceof Error ? err.message : String(err)}`);
     }
   };
 
@@ -124,52 +114,37 @@ export default function FusionGovernAndInterceptPage() {
     }
   };
 
-  const handleCheckEvidence = async () => {
-    try {
-      const res = await riddleApi.checkEvidence({
-        title: evTitle,
-        vuln_type: evVulnType,
-        severity_claimed: evSeverity,
-        poc: evPoc,
-        raw_request: evReq,
-        raw_response: evResp,
-      });
-      setEvResult(res);
-    } catch (err) {
-      toast.error(`证据试算失败：${err instanceof Error ? err.message : String(err)}`);
-    }
-  };
+  const pendingCount = React.useMemo(
+    () => intercepts.filter((it) => it.status === "pending").length,
+    [intercepts],
+  );
 
-  const handleCheckScope = async () => {
-    try {
-      const res = await riddleApi.checkScope(
-        { url: scopeTargetUrl.trim(), host: scopeTargetUrl.trim() },
-        {
-          roots: scopeRoots
-            .split(/[\r\n,]+/)
-            .map((s) => s.trim())
-            .filter(Boolean),
-          cidrs: scopeCidrs
-            .split(/[\r\n,]+/)
-            .map((s) => s.trim())
-            .filter(Boolean),
-        },
-      );
-      setScopeResult(res);
-    } catch (err) {
-      toast.error(`范围守卫试算失败：${err instanceof Error ? err.message : String(err)}`);
-    }
-  };
+  const filteredFindings = React.useMemo(() => {
+    if (evidenceFilter === "passed") return findings.filter((f) => Boolean(f.fusion_evidence?.passed));
+    if (evidenceFilter === "blocked") return findings.filter((f) => !f.fusion_evidence?.passed);
+    return findings;
+  }, [findings, evidenceFilter]);
+
+  const passedEvidenceCount = React.useMemo(
+    () => findings.filter((f) => Boolean(f.fusion_evidence?.passed)).length,
+    [findings],
+  );
+
+  const taskNameMap = React.useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const t of tasks) map[t.id] = t.name;
+    return map;
+  }, [tasks]);
 
   return (
     <div className="flex flex-1 flex-col gap-5">
       <PageHeader
         title="融合护栏与审批中心"
-        description="三大核心硬闸门快捷管控 · 命令三层拦截 (deny/judge/ask) 审批队列 · L1–L4 证据门禁与范围守卫试算台。"
+        description="全局三大硬闸门实时管控 · 生产命令拦截人工审批台账 · 实证漏洞 L1–L4 门禁合规审计 · 任务与主体授权范围总览。"
         actions={
-          <Button variant="outline" size="sm" onClick={() => void loadAll()}>
-            <RefreshCw className="mr-1.5 size-3.5" />
-            刷新队列
+          <Button variant="outline" size="sm" onClick={() => void loadAll()} disabled={loading}>
+            <RefreshCw className={`mr-1.5 size-3.5 ${loading ? "animate-spin" : ""}`} />
+            刷新实时数据
           </Button>
         }
       />
@@ -228,90 +203,36 @@ export default function FusionGovernAndInterceptPage() {
         </Card>
       </div>
 
-      {/* 3 Governance Tabs */}
+      {/* 3 Real Production Governance Tabs */}
       <Tabs defaultValue="intercept" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="intercept">命令三层拦截与审批 ({intercepts.length})</TabsTrigger>
-          <TabsTrigger value="evidence">证据门禁 L1–L4 试算</TabsTrigger>
-          <TabsTrigger value="scope">范围守卫分类试算</TabsTrigger>
+          <TabsTrigger value="intercept">
+            命令拦截审批台账 ({intercepts.length})
+            {pendingCount > 0 ? (
+              <Badge variant="destructive" className="ml-1.5 h-4 px-1 text-[10px]">
+                {pendingCount} 待审
+              </Badge>
+            ) : null}
+          </TabsTrigger>
+          <TabsTrigger value="evidence">
+            漏洞 L1–L4 门禁合规审计 ({passedEvidenceCount}/{findings.length})
+          </TabsTrigger>
+          <TabsTrigger value="scope">
+            任务与主体授权范围 ({tasks.length + companies.length})
+          </TabsTrigger>
         </TabsList>
 
+        {/* Tab 1: Real Interception Approval Ledger */}
         <TabsContent value="intercept" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Terminal className="size-4" /> 三层命令拦截沙箱试算
-              </CardTitle>
-              <CardDescription className="text-xs">
-                验证命令在当前规则下命中 deny / judge / ask / allow 哪一层级，支持选择是否写入审批队列。
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-                <div className="md:col-span-3 space-y-1.5">
-                  <Label className="text-xs">待评估 Shell 命令</Label>
-                  <Input
-                    className="font-mono text-xs"
-                    value={testCmd}
-                    onChange={(e) => setTestCmd(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">SRC 场景</Label>
-                  <Select value={testSrcType} onValueChange={setTestSrcType}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="edusrc">EduSRC</SelectItem>
-                      <SelectItem value="enterprise">企业 SRC</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center gap-4">
-                {FORBIDDEN_OPS.map((op) => (
-                  <label key={op.id} className="flex cursor-pointer items-center gap-1.5 text-xs">
-                    <Checkbox
-                      checked={testForbiddenOps.includes(op.id)}
-                      onCheckedChange={(v) =>
-                        setTestForbiddenOps((prev) =>
-                          v ? [...new Set([...prev, op.id])] : prev.filter((x) => x !== op.id),
-                        )
-                      }
-                    />
-                    <span>{op.label}</span>
-                  </label>
-                ))}
-              </div>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <label className="flex cursor-pointer items-center gap-2 text-xs">
-                  <Checkbox checked={testRecord} onCheckedChange={(v) => setTestRecord(Boolean(v))} />
-                  <span>触发审批/拦截时写入下方台账</span>
-                </label>
-                <Button size="sm" onClick={() => void handleCheckCommand()}>
-                  <Play className="mr-1.5 size-3.5" /> 执行三层拦截试算
-                </Button>
-              </div>
-              {cmdResult ? (
-                <div className="rounded-lg border bg-muted/40 p-3 text-xs space-y-1">
-                  <div className="flex items-center gap-2 font-medium">
-                    <span>裁决结果：</span>
-                    <Badge variant={cmdResult.verdict === "allow" ? "default" : "destructive"}>
-                      {String(cmdResult.verdict ?? "unknown")}
-                    </Badge>
-                    {cmdResult.rule ? <Badge variant="outline">{String(cmdResult.rule)}</Badge> : null}
-                  </div>
-                  <p className="text-muted-foreground">{String(cmdResult.reason ?? JSON.stringify(cmdResult))}</p>
-                </div>
-              ) : null}
-            </CardContent>
-          </Card>
-
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-sm">人工审批台账与拦截记录</h2>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="font-semibold text-sm">实时命令拦截与人工审批台账</h2>
+              <p className="text-xs text-muted-foreground">
+                展示任务执行过程中真实触发 deny / ask 策略的命令记录，待审批项可由操作员直接核准放行或拒绝。
+              </p>
+            </div>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[150px]">
+              <SelectTrigger className="w-[150px] text-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -328,25 +249,25 @@ export default function FusionGovernAndInterceptPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>命令 / 工具</TableHead>
-                    <TableHead>裁决 / 规则</TableHead>
-                    <TableHead>状态</TableHead>
-                    <TableHead className="text-right">审批操作</TableHead>
+                    <TableHead>拦截命令 / 工具</TableHead>
+                    <TableHead className="w-[110px]">裁决级别</TableHead>
+                    <TableHead className="w-[110px]">审批状态</TableHead>
+                    <TableHead className="w-[180px] text-right">审批操作</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {intercepts.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={4} className="h-24 text-center text-sm text-muted-foreground">
-                        当前无匹配拦截审批记录。
+                        当前无真实命令拦截或待审批记录。
                       </TableCell>
                     </TableRow>
                   ) : (
                     intercepts.map((it) => (
                       <TableRow key={it.id}>
-                        <TableCell className="max-w-[380px]">
+                        <TableCell className="max-w-[420px]">
                           <div className="truncate font-mono text-xs">{it.command}</div>
-                          <div className="text-xs text-muted-foreground">
+                          <div className="mt-0.5 text-xs text-muted-foreground">
                             {it.tool} · {it.src_type} {it.reason ? `· ${it.reason}` : ""}
                           </div>
                         </TableCell>
@@ -379,76 +300,197 @@ export default function FusionGovernAndInterceptPage() {
           </Card>
         </TabsContent>
 
+        {/* Tab 2: Real Evidence Gate Compliance Audit on Persisted Findings */}
         <TabsContent value="evidence" className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="font-semibold text-sm">已落盘漏洞 L1–L4 证据门禁实时合规审计</h2>
+              <p className="text-xs text-muted-foreground">
+                基于真实入库漏洞的请求/响应证据与机械凭据自动评估，直接定位待补证或已通过硬闸门的记录。
+              </p>
+            </div>
+            <Select value={evidenceFilter} onValueChange={(v) => setEvidenceFilter(v as "all" | "passed" | "blocked")}>
+              <SelectTrigger className="w-[160px] text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部漏洞（{findings.length}）</SelectItem>
+                <SelectItem value="passed">已通过硬闸门（{passedEvidenceCount}）</SelectItem>
+                <SelectItem value="blocked">待补证/未过门禁（{findings.length - passedEvidenceCount}）</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
           <Card>
-            <CardHeader>
-              <CardTitle className="text-base">证据硬闸门 (L1–L4) 试算台</CardTitle>
-              <CardDescription className="text-xs">只读校验一条漏洞证据能否达到高可信分级，不影响正式数据库。</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <Input value={evTitle} onChange={(e) => setEvTitle(e.target.value)} placeholder="漏洞标题" />
-                <Input value={evVulnType} onChange={(e) => setEvVulnType(e.target.value)} placeholder="漏洞类型" />
-                <Select value={evSeverity} onValueChange={setEvSeverity}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="严重">严重</SelectItem>
-                    <SelectItem value="高危">高危</SelectItem>
-                    <SelectItem value="中危">中危</SelectItem>
-                    <SelectItem value="低危">低危</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <Input className="font-mono text-xs" value={evPoc} onChange={(e) => setEvPoc(e.target.value)} placeholder="PoC" />
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <Textarea className="font-mono text-xs" rows={4} value={evReq} onChange={(e) => setEvReq(e.target.value)} placeholder="原始请求" />
-                <Textarea className="font-mono text-xs" rows={4} value={evResp} onChange={(e) => setEvResp(e.target.value)} placeholder="响应文本" />
-              </div>
-              <Button size="sm" onClick={() => void handleCheckEvidence()}>试算证据门禁分级</Button>
-              {evResult ? (
-                <pre className="overflow-auto rounded-lg border bg-muted/40 p-3 font-mono text-xs">
-                  {JSON.stringify(evResult, null, 2)}
-                </pre>
-              ) : null}
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>漏洞标题与目标</TableHead>
+                    <TableHead className="w-[110px]">等级</TableHead>
+                    <TableHead className="w-[150px]">L1–L4 证据等级</TableHead>
+                    <TableHead>门禁核验依据</TableHead>
+                    <TableHead className="w-[90px] text-right">详情</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredFindings.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="h-24 text-center text-sm text-muted-foreground">
+                        当前无已落盘漏洞记录。
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    filteredFindings.map((f) => {
+                      const ev = f.fusion_evidence;
+                      return (
+                        <TableRow key={f.id}>
+                          <TableCell className="max-w-[320px]">
+                            <div className="truncate font-medium text-sm">{f.title}</div>
+                            <div className="truncate font-mono text-[11px] text-muted-foreground">
+                              {f.target_url} · {taskNameMap[f.task_id] || f.task_id}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <StatusBadge
+                              domain="severity"
+                              value={f.review?.effective_severity || f.review?.severity_final || f.severity_claimed}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={ev?.passed ? "default" : "destructive"} className="text-xs">
+                              {ev?.tier_label || ev?.tier || "待评估"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="max-w-[280px] text-xs text-muted-foreground">
+                            {ev?.reasons?.length ? ev.reasons.join("；") : ev?.passed ? "已满足机械实证门禁" : "缺少可验证响应凭据"}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button size="sm" variant="ghost" asChild>
+                              <Link href={`/function/findings/detail?id=${encodeURIComponent(f.id)}`}>
+                                查看 <ExternalLink className="ml-1 size-3" />
+                              </Link>
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
             </CardContent>
           </Card>
         </TabsContent>
 
+        {/* Tab 3: Real Task & Company Scope Governance */}
         <TabsContent value="scope" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">范围硬守卫 (own / source / foreign) 试算</CardTitle>
-              <CardDescription className="text-xs">校验资产写回分类，判断目标域名或 IP 是否越界。</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label className="text-xs">授权根域名（每行或逗号分隔）</Label>
-                  <Textarea className="font-mono text-xs" rows={3} value={scopeRoots} onChange={(e) => setScopeRoots(e.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">授权 CIDR 网段</Label>
-                  <Textarea className="font-mono text-xs" rows={3} value={scopeCidrs} onChange={(e) => setScopeCidrs(e.target.value)} />
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Input
-                  className="font-mono text-xs flex-1"
-                  value={scopeTargetUrl}
-                  onChange={(e) => setScopeTargetUrl(e.target.value)}
-                  placeholder="https://portal.demo.edu.cn/login"
-                />
-                <Button size="sm" onClick={() => void handleCheckScope()}>执行范围守卫校验</Button>
-              </div>
-              {scopeResult ? (
-                <pre className="overflow-auto rounded-lg border bg-muted/40 p-3 font-mono text-xs">
-                  {JSON.stringify(scopeResult, null, 2)}
-                </pre>
-              ) : null}
-            </CardContent>
-          </Card>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-1.5 text-sm">
+                  <Target className="size-4 text-primary" /> 挖掘任务授权范围与护栏（{tasks.length}）
+                </CardTitle>
+                <CardDescription className="text-xs">各正式任务的 SRC 场景、资产来源与高危操作护栏配置</CardDescription>
+              </CardHeader>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>任务名称</TableHead>
+                      <TableHead>范围定义</TableHead>
+                      <TableHead>护栏拦截项</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {tasks.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={3} className="h-20 text-center text-xs text-muted-foreground">
+                          暂无正式挖掘任务。
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      tasks.slice(0, 20).map((t) => (
+                        <TableRow key={t.id}>
+                          <TableCell>
+                            <Link
+                              href={`/function/tasks/detail?id=${encodeURIComponent(t.id)}`}
+                              className="font-medium text-xs hover:underline"
+                            >
+                              {t.name}
+                            </Link>
+                            <div className="text-[11px] text-muted-foreground">
+                              {t.src_type} · {t.status}
+                            </div>
+                          </TableCell>
+                          <TableCell className="max-w-[200px] truncate font-mono text-[11px] text-muted-foreground">
+                            {t.fofa_query || `${t.manual_targets?.length ?? 0} 个手动目标`}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-1">
+                              {(t.guard_ops ?? []).length === 0 ? (
+                                <span className="text-[11px] text-muted-foreground">默认</span>
+                              ) : (
+                                (t.guard_ops ?? []).slice(0, 4).map((op) => (
+                                  <Badge key={op} variant="outline" className="h-4 px-1 text-[10px]">
+                                    {op}
+                                  </Badge>
+                                ))
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-1.5 text-sm">
+                  <Building2 className="size-4 text-primary" /> 企业/高校主体授权边界（{companies.length}）
+                </CardTitle>
+                <CardDescription className="text-xs">双图资产中心已落盘的正式主体及其域名/IP/CIDR 范围规则</CardDescription>
+              </CardHeader>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>归属主体</TableHead>
+                      <TableHead>范围规则</TableHead>
+                      <TableHead className="w-[70px] text-right">资产</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {companies.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={3} className="h-20 text-center text-xs text-muted-foreground">
+                          暂未配置企业/高校主体，可前往「双图资产中心」或「AI 资产收集」建立。
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      companies.map((c) => (
+                        <TableRow key={c.id}>
+                          <TableCell className="font-medium text-xs">{c.name}</TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-1">
+                              {(c.scope_rules ?? []).map((r, idx) => (
+                                <Badge key={idx} variant="outline" className="h-4 px-1 font-mono text-[10px]">
+                                  {r.kind}:{r.value}
+                                </Badge>
+                              ))}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right font-mono text-xs">{c.asset_count}</TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
       </Tabs>
     </div>

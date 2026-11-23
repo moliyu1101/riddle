@@ -364,7 +364,7 @@ export default function DashboardPage() {
                   <ShieldCheck className="size-3.5 text-emerald-500" /> 证据硬闸门 (L1–L4)
                 </span>
                 <Badge variant={cfg?.evidence_gate_hard ? "default" : "secondary"}>
-                  {cfg?.evidence_gate_hard ? "强拦截" : "仅试算"}
+                  {cfg?.evidence_gate_hard ? "强拦截" : "仅告警标记"}
                 </Badge>
               </div>
               <div className="flex items-center justify-between text-xs">

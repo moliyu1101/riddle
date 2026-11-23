@@ -216,13 +216,11 @@ export default function RiddleSettingsPage() {
     }
   };
 
-  const handleCleanupWorkdir = async (dryRun: boolean) => {
+  const handleCleanupWorkdir = async () => {
     try {
-      const res = await riddleApi.cleanupWorkdir(retentionDays, dryRun);
+      const res = await riddleApi.cleanupWorkdir(retentionDays, false);
       toast.success(
-        dryRun
-          ? `模拟清理：可释放 ${Number(res.reclaimed_mb ?? 0).toFixed(1)} MB (${Number(res.removed_count ?? 0)} 目录)`
-          : `清理完成：已移除 ${Number(res.removed_count ?? 0)} 个过期目录`,
+        `清理完成：已移除 ${Number(res.removed_count ?? 0)} 个过期目录，释放 ${Number(res.reclaimed_mb ?? 0).toFixed(1)} MB`,
       );
       await loadAll();
     } catch (err) {
@@ -462,11 +460,8 @@ export default function RiddleSettingsPage() {
                     value={retentionDays}
                     onChange={(e) => setRetentionDays(Number(e.target.value) || 0)}
                   />
-                  <Button variant="outline" size="sm" onClick={() => void handleCleanupWorkdir(true)}>
-                    模拟统计可释放空间
-                  </Button>
-                  <Button variant="destructive" size="sm" onClick={() => void handleCleanupWorkdir(false)}>
-                    <Trash2 className="mr-1 size-3.5" /> 执行清理
+                  <Button variant="destructive" size="sm" onClick={() => void handleCleanupWorkdir()}>
+                    <Trash2 className="mr-1 size-3.5" /> 清理过期目录
                   </Button>
                 </div>
               </CardContent>

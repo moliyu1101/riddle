@@ -38,7 +38,6 @@ import { AssetAutoCollectPanel } from "@/app/(main)/function/assets/_components/
 import { fmtDuration, fmtTokens } from "@/lib/chat-utils";
 import {
   riddleApi,
-  type AICollectPlan,
   type AICollectTraceItem,
   type AssetCollectJobItem,
   type AssetCompanyItem,
@@ -140,8 +139,6 @@ export default function AIAssetCollectPage() {
   const [preferredEngine, setPreferredEngine] = React.useState("auto");
   const [maxRounds, setMaxRounds] = React.useState(8);
 
-  const [planning, setPlanning] = React.useState(false);
-  const [planPreview, setPlanPreview] = React.useState<AICollectPlan | null>(null);
   const [launching, setLaunching] = React.useState(false);
   const [convertingTask, setConvertingTask] = React.useState(false);
 
@@ -180,27 +177,7 @@ export default function AIAssetCollectPage() {
     return () => window.clearInterval(timer);
   }, [anyRunning, loadAll]);
 
-  const handlePreviewPlan = async () => {
-    if (!prompt.trim()) {
-      toast.error("请先输入自然语言资产收集需求");
-      return;
-    }
-    setPlanning(true);
-    try {
-      const res = await riddleApi.previewAICollectPlan({
-        prompt: prompt.trim(),
-        preferred_engine: preferredEngine === "auto" ? "" : preferredEngine,
-      });
-      setPlanPreview(res.plan);
-      toast.success("AI 已完成目标拆解与收集策略规划");
-    } catch (err) {
-      toast.error(`AI 规划失败：${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      setPlanning(false);
-    }
-  };
-
-  const handleLaunchAI = async (customName?: string) => {
+  const handleLaunchAI = async () => {
     if (!prompt.trim()) {
       toast.error("请用自然语言描述你想收集的资产目标");
       return;
@@ -209,14 +186,12 @@ export default function AIAssetCollectPage() {
     try {
       const res = await riddleApi.startAICollectJob({
         prompt: prompt.trim(),
-        name: customName || planPreview?.task_name || undefined,
         company_id: companyId === "auto" ? null : companyId,
         preferred_engine: preferredEngine === "auto" ? "" : preferredEngine,
         max_rounds: maxRounds,
       });
       toast.success(`已启动 AI 资产收集任务：${res.job.name}`);
       setActiveJobId(res.job.id);
-      setPlanPreview(null);
       await loadAll();
     } catch (err) {
       toast.error(`启动 AI 资产收集失败：${err instanceof Error ? err.message : String(err)}`);
@@ -391,16 +366,6 @@ export default function AIAssetCollectPage() {
                 <div className="ml-auto flex flex-wrap items-center gap-2">
                   <Button
                     type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={planning || launching || !prompt.trim() || !llmReady}
-                    onClick={() => void handlePreviewPlan()}
-                  >
-                    {planning ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : <Brain className="mr-1.5 size-3.5" />}
-                    先预览 AI 规划
-                  </Button>
-                  <Button
-                    type="button"
                     size="sm"
                     disabled={launching || !prompt.trim() || !llmReady}
                     onClick={() => void handleLaunchAI()}
@@ -410,54 +375,6 @@ export default function AIAssetCollectPage() {
                   </Button>
                 </div>
               </div>
-
-              {/* AI Plan Preview Card */}
-              {planPreview ? (
-                <div className="rounded-lg border border-primary/30 bg-primary/5 p-3.5 text-xs space-y-2.5">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 font-semibold text-sm">
-                      <Sparkles className="size-4 text-primary" />
-                      AI 规划预览：{planPreview.task_name}
-                    </div>
-                    <Button size="sm" className="h-7 text-xs" disabled={launching} onClick={() => void handleLaunchAI(planPreview.task_name)}>
-                      <Rocket className="mr-1 size-3" /> 按此规划立即收集
-                    </Button>
-                  </div>
-                  <p className="text-muted-foreground">{planPreview.summary}</p>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    <div className="rounded border bg-background/80 p-2 space-y-1">
-                      <div className="font-medium">识别主体与种子</div>
-                      <div className="text-muted-foreground">
-                        主体：{planPreview.company_name || "自动归属"} · 推荐引擎：{planPreview.recommended_engine || "被动+DNS+HTTP"}
-                      </div>
-                      <div className="flex flex-wrap gap-1 pt-0.5">
-                        {(planPreview.seeds ?? []).map((s) => (
-                          <Badge key={s} variant="secondary" className="font-mono text-[10px]">
-                            {s}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="rounded border bg-background/80 p-2 space-y-1">
-                      <div className="font-medium">计划测绘语法</div>
-                      {(planPreview.queries ?? []).length === 0 ? (
-                        <div className="text-muted-foreground">将优先使用 crt.sh + DNS + HTTP 探活</div>
-                      ) : (
-                        <div className="space-y-1 font-mono text-[11px] text-primary">
-                          {planPreview.queries.map((q, i) => (
-                            <div key={i} className="truncate">{q}</div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  {(planPreview.steps ?? []).length > 0 ? (
-                    <div className="text-[11px] text-muted-foreground">
-                      执行步骤：{planPreview.steps.map((s, i) => `${i + 1}. ${s}`).join(" → ")}
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
             </CardContent>
           </Card>
 

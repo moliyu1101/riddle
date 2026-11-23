@@ -20,7 +20,6 @@ export const auth = {
     const saved = localStorage.getItem(TOKEN_KEY) ?? localStorage.getItem(RIDDLE_TOKEN_KEY);
     if (saved) return saved;
     if (localStorage.getItem(LOGOUT_KEY) === "1") return null;
-    if (process.env.NEXT_PUBLIC_MOCK === "1") return "mock-demo";
     return DEFAULT_LOCAL_TOKEN;
   },
 
