@@ -5,7 +5,7 @@ __pycache__/
 .venv/
 venv/
 *.log
-findings/
+/findings/
 work/
 *.sqlite
 *.db

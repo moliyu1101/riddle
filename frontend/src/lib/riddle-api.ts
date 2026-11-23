@@ -362,6 +362,71 @@ export interface RiddleVulnStats {
   by_severity: Record<string, number>;
 }
 
+export interface KillsweepEngineStatus {
+  name: string;
+  display_name: string;
+  key_set: boolean;
+  base_url: string;
+}
+
+export interface KillsweepPreviewResponse {
+  finding: {
+    id: string;
+    task_id: string;
+    task_name: string;
+    title: string;
+    vuln_type: string;
+    target_url: string;
+    owner: string;
+    effective_severity: string;
+    user_status: string;
+  };
+  killsweep: {
+    id: string;
+    product_name: string;
+    fingerprint: string;
+    fofa_query: string;
+    vuln_summary: string;
+    asset_count: number;
+    edu_count: number;
+    verified: boolean;
+  } | null;
+  suggested_name: string;
+  suggested_query: string;
+  query_source: "killsweep" | "suggested" | string;
+  default_src_type: string;
+  default_engine: string;
+  has_configured_engine: boolean;
+  engines: KillsweepEngineStatus[];
+  defaults: {
+    concurrency: number;
+    deepen_cap: number;
+    max_pages: number;
+    page_size: number;
+    guard_ops: string[];
+  };
+}
+
+export interface CreateKillsweepTaskInput {
+  engine: string;
+  query: string;
+  name?: string;
+  src_type?: string;
+  concurrency?: number;
+  deepen_cap?: number;
+  max_pages?: number;
+  page_size?: number;
+  extra_src_rules?: string;
+  guard_ops?: string[];
+  start_immediately?: boolean;
+}
+
+export interface CreateKillsweepTaskResponse {
+  ok: boolean;
+  started: boolean;
+  task: RiddleTask;
+}
+
 export interface IntelStats {
   total: number;
   by_kind: Record<string, number>;
@@ -616,6 +681,13 @@ export const riddleApi = {
 
   // Vulns & Findings & Killsweep
   getVulnStats: () => riddleFetch<RiddleVulnStats>("/vulns/stats"),
+  getKillsweepPreview: (findingId: string) =>
+    riddleFetch<KillsweepPreviewResponse>(`/vulns/${encodeURIComponent(findingId)}/killsweep-preview`),
+  createKillsweepTask: (findingId: string, body: CreateKillsweepTaskInput) =>
+    riddleFetch<CreateKillsweepTaskResponse>(`/vulns/${encodeURIComponent(findingId)}/killsweep-task`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   listVulns: (params: { submitted?: "all" | "yes" | "no"; severity?: string; q?: string; sort?: string; limit?: number } = {}) => {
     const qs = new URLSearchParams();
     if (params.submitted) qs.set("submitted", params.submitted);
